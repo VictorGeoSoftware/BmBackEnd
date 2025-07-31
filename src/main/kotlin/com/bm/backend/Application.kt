@@ -16,8 +16,12 @@ import kotlinx.serialization.json.Json
 import kotlin.time.Duration.Companion.seconds
 
 fun main() {
-    embeddedServer(Netty, port = 8080, host = "0.0.0.0", module = Application::module)
-        .start(wait = true)
+    embeddedServer(
+        factory = Netty,
+        port = 8080,
+        host = "0.0.0.0",
+        module = Application::module
+    ).start(wait = true)
 }
 
 fun Application.configurePlugins() {
@@ -63,12 +67,7 @@ fun Application.configureRouting() {
 
 
 fun Application.module() {
-    // Initialize database unless explicitly in test mode
-    val isTestMode = System.getProperty("test.mode") == "true"
-    if (!isTestMode) {
-        DatabaseFactory.init()
-    }
-
+    DatabaseFactory.init()
     this.configurePlugins()
     this.configureRouting()
 }
