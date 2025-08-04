@@ -29,6 +29,24 @@ fun Route.priceTableRoutes(priceTableService: PriceTableService) {
         }
     }
 
+    post("/batch-process-price-tables") {
+        try {
+            val request = call.receive<BatchPriceTablesRequest>()
+            val response = priceTableService.processBatchPriceTables(request)
+            call.respond(HttpStatusCode.Created, response)
+        } catch (e: ValidationException) {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ErrorResponse(message = "Validation failed", details = e.message)
+            )
+        } catch (e: Exception) {
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error", details = e.message)
+            )
+        }
+    }
+
     get("/price-tables") {
         try {
             val limit = call.parameters["limit"]?.toIntOrNull()

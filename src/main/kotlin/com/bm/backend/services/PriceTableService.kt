@@ -43,6 +43,111 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
         }
     }
 
+    fun processBatchPriceTables(request: BatchPriceTablesRequest): BatchProcessResponse {
+        var totalRowsInserted = 0
+        var processedFiles = 0
+
+        for (fileResult in request.results) {
+            try {
+                // Process termino_potencia -> prices_1
+                fileResult.extracted_tables.termino_potencia?.let { data ->
+                    val rows = transposeJsonToRows(data)
+                    repository.insertIntoPrices1(rows)
+                    totalRowsInserted += rows.size
+                }
+
+                // Process termino_energia_clasica_base -> prices_2
+                fileResult.extracted_tables.termino_energia_clasica_base?.let { data ->
+                    val rows = transposeJsonToRows(data)
+                    repository.insertIntoPrices2(rows)
+                    totalRowsInserted += rows.size
+                }
+
+                // Process termino_energia_clasica_unica -> prices_3
+                fileResult.extracted_tables.termino_energia_clasica_unica?.let { data ->
+                    val rows = transposeJsonToRows(data)
+                    repository.insertIntoPrices3(rows)
+                    totalRowsInserted += rows.size
+                }
+
+                processedFiles++
+            } catch (e: Exception) {
+                throw ValidationException("Error processing file ${fileResult.fileName}: ${e.message}")
+            }
+        }
+
+        return BatchProcessResponse(
+            success = true,
+            message = "Batch processing completed successfully",
+            processed_files = processedFiles,
+            total_rows_inserted = totalRowsInserted
+        )
+    }
+
+    private fun transposeJsonToRows(jsonData: JsonObject): List<PriceRow> {
+        val keys = jsonData.keys.toList()
+        if (keys.isEmpty()) return emptyList()
+
+        // Get the first array to determine the number of rows
+        val firstKey = keys.first()
+        val firstArray = jsonData[firstKey]?.let { element ->
+            if (element.toString().startsWith("[")) {
+                // Parse as array of values
+                element.toString().removeSurrounding("[", "]")
+                    .split(",")
+                    .map { it.trim().removeSurrounding("\"") }
+            } else {
+                listOf(element.toString().removeSurrounding("\""))
+            }
+        } ?: emptyList()
+
+        val numRows = firstArray.size
+        val rows = mutableListOf<PriceRow>()
+
+        for (rowIndex in 0 until numRows) {
+            val row = PriceRow(
+                tarifa = getValueAtIndex(jsonData, "TARIFA", rowIndex),
+                potencia_contratada = getValueAtIndex(jsonData, "POTENCIA CONTRATADA", rowIndex),
+                p1 = getDoubleValueAtIndex(jsonData, "P1", rowIndex),
+                p2 = getDoubleValueAtIndex(jsonData, "P2", rowIndex),
+                p3 = getDoubleValueAtIndex(jsonData, "P3", rowIndex),
+                p4 = getDoubleValueAtIndex(jsonData, "P4", rowIndex),
+                p5 = getDoubleValueAtIndex(jsonData, "P5", rowIndex),
+                p6 = getDoubleValueAtIndex(jsonData, "P6", rowIndex)
+            )
+            rows.add(row)
+        }
+
+        return rows
+    }
+
+    private fun getValueAtIndex(jsonData: JsonObject, key: String, index: Int): String? {
+        return jsonData[key]?.let { element ->
+            val arrayStr = element.toString()
+            if (arrayStr.startsWith("[")) {
+                val values = arrayStr.removeSurrounding("[", "]")
+                    .split(",")
+                    .map { it.trim().removeSurrounding("\"") }
+                if (index < values.size) {
+                    val value = values[index]
+                    if (value == "null") null else value
+                } else null
+            } else {
+                if (index == 0) element.toString().removeSurrounding("\"") else null
+            }
+        }
+    }
+
+    private fun getDoubleValueAtIndex(jsonData: JsonObject, key: String, index: Int): Double? {
+        return getValueAtIndex(jsonData, key, index)?.let { value ->
+            try {
+                value.toDouble()
+            } catch (e: NumberFormatException) {
+                null
+            }
+        }
+    }
+
     private fun validateRequest(request: StorePriceTablesRequest) {
         if (request.filename.isBlank()) {
             throw ValidationException("Filename cannot be blank")

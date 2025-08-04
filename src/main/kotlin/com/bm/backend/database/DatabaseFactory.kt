@@ -17,7 +17,10 @@ object DatabaseFactory {
                 PriceTableRecords,
                 TerminoPotencia,
                 TerminoEnergiaClasicaBase,
-                TerminoEnergiaClasicaUnica
+                TerminoEnergiaClasicaUnica,
+                Prices1,
+                Prices2,
+                Prices3
             )
         }
     }
@@ -38,7 +41,10 @@ object DatabaseFactory {
                 PriceTableRecords,
                 TerminoPotencia,
                 TerminoEnergiaClasicaBase,
-                TerminoEnergiaClasicaUnica
+                TerminoEnergiaClasicaUnica,
+                Prices1,
+                Prices2,
+                Prices3
             )
         }
     }

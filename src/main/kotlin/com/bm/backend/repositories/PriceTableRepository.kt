@@ -4,9 +4,13 @@ import com.bm.backend.database.PriceTableRecords
 import com.bm.backend.database.TerminoEnergiaClasicaBase
 import com.bm.backend.database.TerminoEnergiaClasicaUnica
 import com.bm.backend.database.TerminoPotencia
+import com.bm.backend.database.Prices1
+import com.bm.backend.database.Prices2
+import com.bm.backend.database.Prices3
 import com.bm.backend.models.ExtractedTables
 import com.bm.backend.models.PriceTableRecord
 import com.bm.backend.models.PriceTablesResponse
+import com.bm.backend.models.PriceRow
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.*
@@ -114,5 +118,50 @@ class PriceTableRepository {
             timestamp = row[PriceTableRecords.timestampValue],
             created_at = row[PriceTableRecords.createdAt].toString()
         )
+    }
+
+    fun insertIntoPrices1(rows: List<PriceRow>) {
+        transaction {
+            Prices1.batchInsert(rows) { row ->
+                this[Prices1.tarifa] = row.tarifa
+                this[Prices1.potenciaContratada] = row.potencia_contratada
+                this[Prices1.p1] = row.p1
+                this[Prices1.p2] = row.p2
+                this[Prices1.p3] = row.p3
+                this[Prices1.p4] = row.p4
+                this[Prices1.p5] = row.p5
+                this[Prices1.p6] = row.p6
+            }
+        }
+    }
+
+    fun insertIntoPrices2(rows: List<PriceRow>) {
+        transaction {
+            Prices2.batchInsert(rows) { row ->
+                this[Prices2.tarifa] = row.tarifa
+                this[Prices2.potenciaContratada] = row.potencia_contratada
+                this[Prices2.p1] = row.p1
+                this[Prices2.p2] = row.p2
+                this[Prices2.p3] = row.p3
+                this[Prices2.p4] = row.p4
+                this[Prices2.p5] = row.p5
+                this[Prices2.p6] = row.p6
+            }
+        }
+    }
+
+    fun insertIntoPrices3(rows: List<PriceRow>) {
+        transaction {
+            Prices3.batchInsert(rows) { row ->
+                this[Prices3.tarifa] = row.tarifa
+                this[Prices3.potenciaContratada] = row.potencia_contratada
+                this[Prices3.p1] = row.p1
+                this[Prices3.p2] = row.p2
+                this[Prices3.p3] = row.p3
+                this[Prices3.p4] = row.p4
+                this[Prices3.p5] = row.p5
+                this[Prices3.p6] = row.p6
+            }
+        }
     }
 }

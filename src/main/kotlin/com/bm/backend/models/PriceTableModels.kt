@@ -53,7 +53,40 @@ data class PriceTableDetailResponse(
 
 @Serializable
 data class ErrorResponse(
-    val success: Boolean = false,
     val message: String,
     val details: String? = null
+)
+
+// New models for batch processing and transposed tables
+@Serializable
+data class BatchPriceTablesRequest(
+    val success: Boolean,
+    val results: List<BatchFileResult>
+)
+
+@Serializable
+data class BatchFileResult(
+    val fileName: String,
+    val extracted_tables: ExtractedTables
+)
+
+// Models for the three transposed price tables
+@Serializable
+data class PriceRow(
+    val tarifa: String?,
+    val potencia_contratada: String?,
+    val p1: Double?,
+    val p2: Double?,
+    val p3: Double?,
+    val p4: Double?,
+    val p5: Double?,
+    val p6: Double?
+)
+
+@Serializable
+data class BatchProcessResponse(
+    val success: Boolean,
+    val message: String,
+    val processed_files: Int,
+    val total_rows_inserted: Int
 )
