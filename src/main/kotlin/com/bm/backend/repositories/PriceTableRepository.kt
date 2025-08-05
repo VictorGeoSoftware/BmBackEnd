@@ -11,6 +11,7 @@ import com.bm.backend.models.ExtractedTables
 import com.bm.backend.models.PriceTableRecord
 import com.bm.backend.models.PriceTablesResponse
 import com.bm.backend.models.PriceRow
+import com.bm.backend.models.PriceTableDataResponse
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
 import org.jetbrains.exposed.sql.*
@@ -120,9 +121,10 @@ class PriceTableRepository {
         )
     }
 
-    fun insertIntoPrices1(rows: List<PriceRow>) {
+    fun insertIntoPrices1(rows: List<PriceRow>, fileName: String) {
         transaction {
             Prices1.batchInsert(rows) { row ->
+                this[Prices1.fileName] = fileName
                 this[Prices1.tarifa] = row.tarifa
                 this[Prices1.potenciaContratada] = row.potencia_contratada
                 this[Prices1.p1] = row.p1
@@ -135,9 +137,10 @@ class PriceTableRepository {
         }
     }
 
-    fun insertIntoPrices2(rows: List<PriceRow>) {
+    fun insertIntoPrices2(rows: List<PriceRow>, fileName: String) {
         transaction {
             Prices2.batchInsert(rows) { row ->
+                this[Prices2.fileName] = fileName
                 this[Prices2.tarifa] = row.tarifa
                 this[Prices2.potenciaContratada] = row.potencia_contratada
                 this[Prices2.p1] = row.p1
@@ -150,9 +153,10 @@ class PriceTableRepository {
         }
     }
 
-    fun insertIntoPrices3(rows: List<PriceRow>) {
+    fun insertIntoPrices3(rows: List<PriceRow>, fileName: String) {
         transaction {
             Prices3.batchInsert(rows) { row ->
+                this[Prices3.fileName] = fileName
                 this[Prices3.tarifa] = row.tarifa
                 this[Prices3.potenciaContratada] = row.potencia_contratada
                 this[Prices3.p1] = row.p1
@@ -162,6 +166,133 @@ class PriceTableRepository {
                 this[Prices3.p5] = row.p5
                 this[Prices3.p6] = row.p6
             }
+        }
+    }
+
+    // New methods to fetch transposed table data
+    fun getPrices1Data(limit: Int?, offset: Int?, fileName: String? = null): PriceTableDataResponse {
+        return transaction {
+            var query = Prices1.selectAll()
+
+            fileName?.let {
+                query = query.andWhere { Prices1.fileName eq it }
+            }
+
+            val total = query.count().toInt()
+            
+            val limitedQuery = if (limit != null && offset != null) {
+                query.limit(limit, offset.toLong())
+            } else if (limit != null) {
+                query.limit(limit)
+            } else {
+                query
+            }
+            
+            val rows = limitedQuery.map { row ->
+                PriceRow(
+                    fileName = row[Prices1.fileName],
+                    tarifa = row[Prices1.tarifa],
+                    potencia_contratada = row[Prices1.potenciaContratada],
+                    p1 = row[Prices1.p1],
+                    p2 = row[Prices1.p2],
+                    p3 = row[Prices1.p3],
+                    p4 = row[Prices1.p4],
+                    p5 = row[Prices1.p5],
+                    p6 = row[Prices1.p6]
+                )
+            }
+            
+            PriceTableDataResponse(
+                success = true,
+                data = rows,
+                total = total,
+                limit = limit,
+                offset = offset
+            )
+        }
+    }
+
+    fun getPrices2Data(limit: Int?, offset: Int?, fileName: String? = null): PriceTableDataResponse {
+        return transaction {
+            var query = Prices2.selectAll()
+
+            fileName?.let {
+                query = query.andWhere { Prices2.fileName eq it }
+            }
+
+            val total = query.count().toInt()
+            
+            val limitedQuery = if (limit != null && offset != null) {
+                query.limit(limit, offset.toLong())
+            } else if (limit != null) {
+                query.limit(limit)
+            } else {
+                query
+            }
+            
+            val rows = limitedQuery.map { row ->
+                PriceRow(
+                    fileName = row[Prices2.fileName],
+                    tarifa = row[Prices2.tarifa],
+                    potencia_contratada = row[Prices2.potenciaContratada],
+                    p1 = row[Prices2.p1],
+                    p2 = row[Prices2.p2],
+                    p3 = row[Prices2.p3],
+                    p4 = row[Prices2.p4],
+                    p5 = row[Prices2.p5],
+                    p6 = row[Prices2.p6]
+                )
+            }
+            
+            PriceTableDataResponse(
+                success = true,
+                data = rows,
+                total = total,
+                limit = limit,
+                offset = offset
+            )
+        }
+    }
+
+    fun getPrices3Data(limit: Int?, offset: Int?, fileName: String? = null): PriceTableDataResponse {
+        return transaction {
+            var query = Prices3.selectAll()
+
+            fileName?.let {
+                query = query.andWhere { Prices3.fileName eq it }
+            }
+
+            val total = query.count().toInt()
+            
+            val limitedQuery = if (limit != null && offset != null) {
+                query.limit(limit, offset.toLong())
+            } else if (limit != null) {
+                query.limit(limit)
+            } else {
+                query
+            }
+            
+            val rows = limitedQuery.map { row ->
+                PriceRow(
+                    fileName = row[Prices3.fileName],
+                    tarifa = row[Prices3.tarifa],
+                    potencia_contratada = row[Prices3.potenciaContratada],
+                    p1 = row[Prices3.p1],
+                    p2 = row[Prices3.p2],
+                    p3 = row[Prices3.p3],
+                    p4 = row[Prices3.p4],
+                    p5 = row[Prices3.p5],
+                    p6 = row[Prices3.p6]
+                )
+            }
+            
+            PriceTableDataResponse(
+                success = true,
+                data = rows,
+                total = total,
+                limit = limit,
+                offset = offset
+            )
         }
     }
 }

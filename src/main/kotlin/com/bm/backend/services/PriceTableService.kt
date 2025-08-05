@@ -52,21 +52,21 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
                 // Process termino_potencia -> prices_1
                 fileResult.extracted_tables.termino_potencia?.let { data ->
                     val rows = transposeJsonToRows(data)
-                    repository.insertIntoPrices1(rows)
+                    repository.insertIntoPrices1(rows, fileResult.fileName)
                     totalRowsInserted += rows.size
                 }
 
                 // Process termino_energia_clasica_base -> prices_2
                 fileResult.extracted_tables.termino_energia_clasica_base?.let { data ->
                     val rows = transposeJsonToRows(data)
-                    repository.insertIntoPrices2(rows)
+                    repository.insertIntoPrices2(rows, fileResult.fileName)
                     totalRowsInserted += rows.size
                 }
 
                 // Process termino_energia_clasica_unica -> prices_3
                 fileResult.extracted_tables.termino_energia_clasica_unica?.let { data ->
                     val rows = transposeJsonToRows(data)
-                    repository.insertIntoPrices3(rows)
+                    repository.insertIntoPrices3(rows, fileResult.fileName)
                     totalRowsInserted += rows.size
                 }
 
@@ -170,6 +170,19 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
                 throw ValidationException("Invalid timestamp format. Use ISO 8601 format")
             }
         }
+    }
+
+    // New methods to fetch transposed table data
+    fun getPrices1Data(limit: Int?, offset: Int?, filename: String? = null): PriceTableDataResponse {
+        return repository.getPrices1Data(limit, offset, filename)
+    }
+
+    fun getPrices2Data(limit: Int?, offset: Int?, filename: String? = null): PriceTableDataResponse {
+        return repository.getPrices2Data(limit, offset, filename)
+    }
+
+    fun getPrices3Data(limit: Int?, offset: Int?, filename: String? = null): PriceTableDataResponse {
+        return repository.getPrices3Data(limit, offset, filename)
     }
 }
 

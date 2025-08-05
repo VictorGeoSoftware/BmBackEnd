@@ -5,8 +5,7 @@ import com.bm.backend.routes.priceTableRoutes
 import com.bm.backend.services.PriceTableService
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
-import io.ktor.server.engine.*
-import io.ktor.server.netty.*
+import io.ktor.server.netty.EngineMain
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.ratelimit.*
 import io.ktor.server.plugins.statuspages.*
@@ -15,14 +14,7 @@ import io.ktor.server.routing.*
 import kotlinx.serialization.json.Json
 import kotlin.time.Duration.Companion.seconds
 
-fun main() {
-    embeddedServer(
-        factory = Netty,
-        port = 8081,
-        host = "0.0.0.0",
-        module = Application::module
-    ).start(wait = true)
-}
+fun main(args: Array<String>): Unit = EngineMain.main(args)
 
 fun Application.configurePlugins() {
     // Install plugins

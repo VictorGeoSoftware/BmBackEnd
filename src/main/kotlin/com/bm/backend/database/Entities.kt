@@ -32,6 +32,7 @@ object TerminoEnergiaClasicaUnica : IntIdTable("termino_energia_clasica_unica") 
 
 // New transposed price tables
 object Prices1 : IntIdTable("prices_1") {
+    val fileName = varchar("file_name", 255)
     val tarifa = varchar("tarifa", 50).nullable()
     val potenciaContratada = varchar("potencia_contratada", 100).nullable()
     val p1 = double("p1").nullable()
@@ -43,6 +44,7 @@ object Prices1 : IntIdTable("prices_1") {
 }
 
 object Prices2 : IntIdTable("prices_2") {
+    val fileName = varchar("file_name", 255)
     val tarifa = varchar("tarifa", 50).nullable()
     val potenciaContratada = varchar("potencia_contratada", 100).nullable()
     val p1 = double("p1").nullable()
@@ -54,6 +56,7 @@ object Prices2 : IntIdTable("prices_2") {
 }
 
 object Prices3 : IntIdTable("prices_3") {
+    val fileName = varchar("file_name", 255)
     val tarifa = varchar("tarifa", 50).nullable()
     val potenciaContratada = varchar("potencia_contratada", 100).nullable()
     val p1 = double("p1").nullable()
