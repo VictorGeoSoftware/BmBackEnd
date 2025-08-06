@@ -29,6 +29,24 @@ fun Route.priceTableRoutes(priceTableService: PriceTableService) {
         }
     }
 
+    post("/batch-process-price-tables") {
+        try {
+            val request = call.receive<BatchPriceTablesRequest>()
+            val response = priceTableService.processBatchPriceTables(request)
+            call.respond(HttpStatusCode.Created, response)
+        } catch (e: ValidationException) {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ErrorResponse(message = "Validation failed", details = e.message)
+            )
+        } catch (e: Exception) {
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error", details = e.message)
+            )
+        }
+    }
+
     get("/price-tables") {
         try {
             val limit = call.parameters["limit"]?.toIntOrNull()
@@ -84,6 +102,55 @@ fun Route.priceTableRoutes(priceTableService: PriceTableService) {
                     ErrorResponse(message = "Record not found")
                 )
             }
+        } catch (e: Exception) {
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error", details = e.message)
+            )
+        }
+    }
+
+    // New endpoints to fetch transposed table data
+    get("/prices-1") {
+        try {
+            val limit = call.parameters["limit"]?.toIntOrNull()
+            val offset = call.parameters["offset"]?.toIntOrNull()
+            val filename = call.parameters["filename"]
+            
+            val response = priceTableService.getPrices1Data(limit, offset, filename)
+            call.respond(HttpStatusCode.OK, response)
+        } catch (e: Exception) {
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error", details = e.message)
+            )
+        }
+    }
+
+    get("/prices-2") {
+        try {
+            val limit = call.parameters["limit"]?.toIntOrNull()
+            val offset = call.parameters["offset"]?.toIntOrNull()
+            val filename = call.parameters["filename"]
+            
+            val response = priceTableService.getPrices2Data(limit, offset, filename)
+            call.respond(HttpStatusCode.OK, response)
+        } catch (e: Exception) {
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error", details = e.message)
+            )
+        }
+    }
+
+    get("/prices-3") {
+        try {
+            val limit = call.parameters["limit"]?.toIntOrNull()
+            val offset = call.parameters["offset"]?.toIntOrNull()
+            val filename = call.parameters["filename"]
+            
+            val response = priceTableService.getPrices3Data(limit, offset, filename)
+            call.respond(HttpStatusCode.OK, response)
         } catch (e: Exception) {
             call.respond(
                 HttpStatusCode.InternalServerError,
