@@ -1,0 +1,23 @@
+ktor:
+  deployment:
+    port: 8081
+    host: 0.0.0.0
+  application:
+    modules:
+      - com.bm.backend.ApplicationKt.module
+
+# Database configuration
+database:
+  url: "jdbc:sqlite:price_tables.db"
+  driver: "org.sqlite.JDBC"
+  
+# Rate limiting
+rate_limit:
+  enabled: true
+  global_limit: 100
+  window_seconds: 60
+
+# Logging
+logging:
+  level: INFO
+  org.jetbrains.exposed: DEBUG
