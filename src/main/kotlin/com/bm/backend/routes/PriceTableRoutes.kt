@@ -158,4 +158,16 @@ fun Route.priceTableRoutes(priceTableService: PriceTableService) {
             )
         }
     }
+
+    get("/tarifas") {
+        try {
+            val response = priceTableService.getTarifasStructure()
+            call.respond(HttpStatusCode.OK, response)
+        } catch (e: Exception) {
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error", details = e.message)
+            )
+        }
+    }
 }

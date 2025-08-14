@@ -295,4 +295,59 @@ class PriceTableRepository {
             )
         }
     }
+
+    // New methods for retrieving prices in the new structure
+    fun getAllPricesFromTable1(): List<PriceRow> {
+        return transaction {
+            Prices1.selectAll().map { row ->
+                PriceRow(
+                    fileName = row[Prices1.fileName],
+                    tarifa = row[Prices1.tarifa],
+                    potencia_contratada = row[Prices1.potenciaContratada],
+                    p1 = row[Prices1.p1],
+                    p2 = row[Prices1.p2],
+                    p3 = row[Prices1.p3],
+                    p4 = row[Prices1.p4],
+                    p5 = row[Prices1.p5],
+                    p6 = row[Prices1.p6]
+                )
+            }
+        }
+    }
+
+    fun getAllPricesFromTable2(): List<PriceRow> {
+        return transaction {
+            Prices2.selectAll().map { row ->
+                PriceRow(
+                    fileName = row[Prices2.fileName],
+                    tarifa = row[Prices2.tarifa],
+                    potencia_contratada = row[Prices2.potenciaContratada],
+                    p1 = row[Prices2.p1],
+                    p2 = row[Prices2.p2],
+                    p3 = row[Prices2.p3],
+                    p4 = row[Prices2.p4],
+                    p5 = row[Prices2.p5],
+                    p6 = row[Prices2.p6]
+                )
+            }
+        }
+    }
+
+    fun getAllPricesFromTable3(): List<PriceRow> {
+        return transaction {
+            Prices3.selectAll().map { row ->
+                PriceRow(
+                    fileName = row[Prices3.fileName],
+                    tarifa = row[Prices3.tarifa],
+                    potencia_contratada = row[Prices3.potenciaContratada],
+                    p1 = row[Prices3.p1],
+                    p2 = row[Prices3.p2],
+                    p3 = row[Prices3.p3],
+                    p4 = row[Prices3.p4],
+                    p5 = row[Prices3.p5],
+                    p6 = row[Prices3.p6]
+                )
+            }
+        }
+    }
 }

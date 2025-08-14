@@ -184,6 +184,104 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
     fun getPrices3Data(limit: Int?, offset: Int?, filename: String? = null): PriceTableDataResponse {
         return repository.getPrices3Data(limit, offset, filename)
     }
+
+    fun getTarifasStructure(): TarifasResponse {
+        // Get prices from all three tables
+        val terminoEnergia = repository.getAllPricesFromTable1()
+        val terminoEnergiaUnica = repository.getAllPricesFromTable2()
+        val terminoPotencia = repository.getAllPricesFromTable3()
+
+        // Group prices by tarifa name to create Tarifa objects
+        val tarifaMap = mutableMapOf<String, MutableMap<String, MutableList<Price>>>()
+
+        // Process termino energia (table 1)
+        terminoEnergia.forEach { priceRow ->
+            val tarifaName = priceRow.tarifa ?: "Unknown"
+            if (!tarifaMap.containsKey(tarifaName)) {
+                tarifaMap[tarifaName] = mutableMapOf(
+                    "terminoEnergia" to mutableListOf(),
+                    "terminoEnergiaUnica" to mutableListOf(),
+                    "terminoPotencia" to mutableListOf()
+                )
+            }
+            tarifaMap[tarifaName]?.get("terminoEnergia")?.add(
+                Price(
+                    tarifa = priceRow.tarifa ?: "",
+                    potenciaContratada = priceRow.potencia_contratada ?: "",
+                    p1 = priceRow.p1,
+                    p2 = priceRow.p2,
+                    p3 = priceRow.p3,
+                    p4 = priceRow.p4,
+                    p5 = priceRow.p5,
+                    p6 = priceRow.p6
+                )
+            )
+        }
+
+        // Process termino energia unica (table 2)
+        terminoEnergiaUnica.forEach { priceRow ->
+            val tarifaName = priceRow.tarifa ?: "Unknown"
+            if (!tarifaMap.containsKey(tarifaName)) {
+                tarifaMap[tarifaName] = mutableMapOf(
+                    "terminoEnergia" to mutableListOf(),
+                    "terminoEnergiaUnica" to mutableListOf(),
+                    "terminoPotencia" to mutableListOf()
+                )
+            }
+            tarifaMap[tarifaName]?.get("terminoEnergiaUnica")?.add(
+                Price(
+                    tarifa = priceRow.tarifa ?: "",
+                    potenciaContratada = priceRow.potencia_contratada ?: "",
+                    p1 = priceRow.p1,
+                    p2 = priceRow.p2,
+                    p3 = priceRow.p3,
+                    p4 = priceRow.p4,
+                    p5 = priceRow.p5,
+                    p6 = priceRow.p6
+                )
+            )
+        }
+
+        // Process termino potencia (table 3)
+        terminoPotencia.forEach { priceRow ->
+            val tarifaName = priceRow.tarifa ?: "Unknown"
+            if (!tarifaMap.containsKey(tarifaName)) {
+                tarifaMap[tarifaName] = mutableMapOf(
+                    "terminoEnergia" to mutableListOf(),
+                    "terminoEnergiaUnica" to mutableListOf(),
+                    "terminoPotencia" to mutableListOf()
+                )
+            }
+            tarifaMap[tarifaName]?.get("terminoPotencia")?.add(
+                Price(
+                    tarifa = priceRow.tarifa ?: "",
+                    potenciaContratada = priceRow.potencia_contratada ?: "",
+                    p1 = priceRow.p1,
+                    p2 = priceRow.p2,
+                    p3 = priceRow.p3,
+                    p4 = priceRow.p4,
+                    p5 = priceRow.p5,
+                    p6 = priceRow.p6
+                )
+            )
+        }
+
+        // Convert to Tarifa objects
+        val tarifas = tarifaMap.map { (tarifaName, priceCategories) ->
+            Tarifa(
+                name = tarifaName,
+                terminoEnergia = priceCategories["terminoEnergia"] ?: emptyList(),
+                terminoEnergiaUnica = priceCategories["terminoEnergiaUnica"] ?: emptyList(),
+                terminoPotencia = priceCategories["terminoPotencia"] ?: emptyList()
+            )
+        }
+
+        return TarifasResponse(
+            success = true,
+            data = tarifas,
+            total = tarifas.size
+        )
+    }
 }
 
 class ValidationException(message: String) : RuntimeException(message)

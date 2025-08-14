@@ -101,3 +101,32 @@ data class PriceTableDataResponse(
     val limit: Int? = null,
     val offset: Int? = null
 )
+
+// New data classes for refactored price structure
+@Serializable
+data class Price(
+    val tarifa: String, // ENUM
+    val potenciaContratada: String, // ENUM
+    val p1: Double? = null,
+    val p2: Double? = null,
+    val p3: Double? = null,
+    val p4: Double? = null,
+    val p5: Double? = null,
+    val p6: Double? = null,
+)
+
+@Serializable
+data class Tarifa(
+    val name: String, // TE1, TE2, etc.
+    val terminoEnergia: List<Price>,
+    val terminoEnergiaUnica: List<Price>,
+    val terminoPotencia: List<Price>,
+)
+
+// Response model for the new structure
+@Serializable
+data class TarifasResponse(
+    val success: Boolean,
+    val data: List<Tarifa>,
+    val total: Int
+)
