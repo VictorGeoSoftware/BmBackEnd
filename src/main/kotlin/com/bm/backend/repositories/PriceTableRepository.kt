@@ -1,353 +1,194 @@
 package com.bm.backend.repositories
 
-import com.bm.backend.database.PriceTableRecords
-import com.bm.backend.database.TerminoEnergiaClasicaBase
-import com.bm.backend.database.TerminoEnergiaClasicaUnica
-import com.bm.backend.database.TerminoPotencia
-import com.bm.backend.database.Prices1
-import com.bm.backend.database.Prices2
-import com.bm.backend.database.Prices3
-import com.bm.backend.models.ExtractedTables
-import com.bm.backend.models.PriceTableRecord
-import com.bm.backend.models.PriceTablesResponse
-import com.bm.backend.models.PriceRow
-import com.bm.backend.models.PriceTableDataResponse
-import kotlinx.serialization.encodeToString
-import kotlinx.serialization.json.Json
-import org.jetbrains.exposed.sql.*
+import com.bm.backend.database.*
+import com.bm.backend.models.*
+import org.jetbrains.exposed.sql.deleteAll
+import org.jetbrains.exposed.sql.insert
+import org.jetbrains.exposed.sql.insertAndGetId
+import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 
 class PriceTableRepository {
-    private val json = Json { ignoreUnknownKeys = true }
 
-    fun storePriceTables(
-        filename: String,
-        extractedTables: ExtractedTables,
-        source: String,
-        timestamp: String?
-    ): Int {
+    fun storePriceTableResults(priceTableResponse: PriceTableResponse): Int {
         return transaction {
-            val extractedTablesJson = json.encodeToString(extractedTables)
+            var totalRowsInserted = 0
             
-            val recordId = PriceTableRecords.insertAndGetId {
-                it[PriceTableRecords.filename] = filename
-                it[PriceTableRecords.sourceType] = source
-                it[PriceTableRecords.timestampValue] = timestamp ?: java.time.Instant.now().toString()
-                it[PriceTableRecords.extractedTables] = extractedTablesJson
-            }.value
-
-            // Store individual table data for better querying
-            extractedTables.termino_potencia?.let { data ->
-                TerminoPotencia.insert {
-                    it[TerminoPotencia.recordId] = recordId
-                    it[TerminoPotencia.data] = json.encodeToString(data)
+            priceTableResponse.results.forEach { result ->
+                // Insert main result record
+                val resultId = PriceTableResultsDb.insertAndGetId {
+                    it[PriceTableResultsDb.fileName] = result.fileName
+                }.value
+                
+                // Insert termino de potencia
+                val terminoPotenciaId = TerminoDePotenciaDb.insertAndGetId {
+                    it[TerminoDePotenciaDb.resultId] = resultId
+                    it[TerminoDePotenciaDb.titulo] = result.extracted_tables.termino_de_potencia.titulo
+                    it[TerminoDePotenciaDb.tablaTitulo] = result.extracted_tables.termino_de_potencia.tabla_precio_potencia.titulo
+                }.value
+                
+                // Insert tarifa rows for potencia
+                result.extracted_tables.termino_de_potencia.tabla_precio_potencia.tarifas.forEach { tarifa ->
+                    TarifasPotenciaDb.insert {
+                        it[TarifasPotenciaDb.terminoId] = terminoPotenciaId
+                        it[TarifasPotenciaDb.tarifa] = tarifa.tarifa
+                        it[TarifasPotenciaDb.potenciaContratada] = tarifa.potencia_contratada
+                        it[TarifasPotenciaDb.p1] = tarifa.P1
+                        it[TarifasPotenciaDb.p2] = tarifa.P2
+                        it[TarifasPotenciaDb.p3] = tarifa.P3
+                        it[TarifasPotenciaDb.p4] = tarifa.P4
+                        it[TarifasPotenciaDb.p5] = tarifa.P5
+                        it[TarifasPotenciaDb.p6] = tarifa.P6
+                    }
+                    totalRowsInserted++
+                }
+                
+                // Insert termino de energia
+                val terminoEnergiaId = TerminoDeEnergiaDb.insertAndGetId {
+                    it[TerminoDeEnergiaDb.resultId] = resultId
+                    it[TerminoDeEnergiaDb.titulo] = result.extracted_tables.termino_de_energia.titulo
+                    it[TerminoDeEnergiaDb.tablaBaseTitulo] = result.extracted_tables.termino_de_energia.tabla_precio_clasica_base.titulo
+                    it[TerminoDeEnergiaDb.tablaUnicaTitulo] = result.extracted_tables.termino_de_energia.tabla_precio_clasica_unica.titulo
+                }.value
+                
+                // Insert tarifa rows for energia base
+                result.extracted_tables.termino_de_energia.tabla_precio_clasica_base.tarifas.forEach { tarifa ->
+                    TarifasEnergiaBaseDb.insert {
+                        it[TarifasEnergiaBaseDb.terminoId] = terminoEnergiaId
+                        it[TarifasEnergiaBaseDb.tarifa] = tarifa.tarifa
+                        it[TarifasEnergiaBaseDb.potenciaContratada] = tarifa.potencia_contratada
+                        it[TarifasEnergiaBaseDb.p1] = tarifa.P1
+                        it[TarifasEnergiaBaseDb.p2] = tarifa.P2
+                        it[TarifasEnergiaBaseDb.p3] = tarifa.P3
+                        it[TarifasEnergiaBaseDb.p4] = tarifa.P4
+                        it[TarifasEnergiaBaseDb.p5] = tarifa.P5
+                        it[TarifasEnergiaBaseDb.p6] = tarifa.P6
+                    }
+                    totalRowsInserted++
+                }
+                
+                // Insert tarifa rows for energia unica
+                result.extracted_tables.termino_de_energia.tabla_precio_clasica_unica.tarifas.forEach { tarifa ->
+                    TarifasEnergiaUnicaDb.insert {
+                        it[TarifasEnergiaUnicaDb.terminoId] = terminoEnergiaId
+                        it[TarifasEnergiaUnicaDb.tarifa] = tarifa.tarifa
+                        it[TarifasEnergiaUnicaDb.potenciaContratada] = tarifa.potencia_contratada
+                        it[TarifasEnergiaUnicaDb.p1] = tarifa.P1
+                        it[TarifasEnergiaUnicaDb.p2] = tarifa.P2
+                        it[TarifasEnergiaUnicaDb.p3] = tarifa.P3
+                        it[TarifasEnergiaUnicaDb.p4] = tarifa.P4
+                        it[TarifasEnergiaUnicaDb.p5] = tarifa.P5
+                        it[TarifasEnergiaUnicaDb.p6] = tarifa.P6
+                    }
+                    totalRowsInserted++
                 }
             }
-
-            extractedTables.termino_energia_clasica_base?.let { data ->
-                TerminoEnergiaClasicaBase.insert {
-                    it[TerminoEnergiaClasicaBase.recordId] = recordId
-                    it[TerminoEnergiaClasicaBase.data] = json.encodeToString(data)
-                }
-            }
-
-            extractedTables.termino_energia_clasica_unica?.let { data ->
-                TerminoEnergiaClasicaUnica.insert {
-                    it[TerminoEnergiaClasicaUnica.recordId] = recordId
-                    it[TerminoEnergiaClasicaUnica.data] = json.encodeToString(data)
-                }
-            }
-
-            recordId
-        }
-    }
-
-    fun getAllPriceTables(
-        limit: Int? = null,
-        offset: Int? = null,
-        filename: String? = null,
-        source: String? = null
-    ): PriceTablesResponse {
-        return transaction {
-            var query = PriceTableRecords.selectAll()
-
-            filename?.let {
-                query = query.andWhere { PriceTableRecords.filename like "%$it%" }
-            }
-
-            source?.let {
-                query = query.andWhere { PriceTableRecords.sourceType eq it }
-            }
-
-            val total = query.count()
-
-            limit?.let { lim ->
-                query = query.limit(lim, offset?.toLong() ?: 0)
-            }
-
-            val data = query.orderBy(PriceTableRecords.id, SortOrder.DESC)
-                .map { row ->
-                    mapRowToPriceTableRecord(row)
-                }
-
-            PriceTablesResponse(
-                success = true,
-                data = data,
-                total = total.toInt(),
-                limit = limit,
-                offset = offset
-            )
-        }
-    }
-
-    fun getPriceTableById(id: Int): PriceTableRecord? {
-        return transaction {
-            PriceTableRecords.selectAll().where { PriceTableRecords.id eq id }
-                .singleOrNull()
-                ?.let { row -> mapRowToPriceTableRecord(row) }
-        }
-    }
-
-    private fun mapRowToPriceTableRecord(row: ResultRow): PriceTableRecord {
-        val extractedTables = json.decodeFromString<ExtractedTables>(row[PriceTableRecords.extractedTables])
-        
-        return PriceTableRecord(
-            id = row[PriceTableRecords.id].value,
-            filename = row[PriceTableRecords.filename],
-            extracted_tables = extractedTables,
-            source = row[PriceTableRecords.sourceType],
-            timestamp = row[PriceTableRecords.timestampValue],
-            created_at = row[PriceTableRecords.createdAt].toString()
-        )
-    }
-
-    fun insertIntoPrices1(rows: List<PriceRow>, fileName: String) {
-        transaction {
-            Prices1.batchInsert(rows) { row ->
-                this[Prices1.fileName] = fileName
-                this[Prices1.tarifa] = row.tarifa
-                this[Prices1.potenciaContratada] = row.potencia_contratada
-                this[Prices1.p1] = row.p1
-                this[Prices1.p2] = row.p2
-                this[Prices1.p3] = row.p3
-                this[Prices1.p4] = row.p4
-                this[Prices1.p5] = row.p5
-                this[Prices1.p6] = row.p6
-            }
-        }
-    }
-
-    fun insertIntoPrices2(rows: List<PriceRow>, fileName: String) {
-        transaction {
-            Prices2.batchInsert(rows) { row ->
-                this[Prices2.fileName] = fileName
-                this[Prices2.tarifa] = row.tarifa
-                this[Prices2.potenciaContratada] = row.potencia_contratada
-                this[Prices2.p1] = row.p1
-                this[Prices2.p2] = row.p2
-                this[Prices2.p3] = row.p3
-                this[Prices2.p4] = row.p4
-                this[Prices2.p5] = row.p5
-                this[Prices2.p6] = row.p6
-            }
-        }
-    }
-
-    fun insertIntoPrices3(rows: List<PriceRow>, fileName: String) {
-        transaction {
-            Prices3.batchInsert(rows) { row ->
-                this[Prices3.fileName] = fileName
-                this[Prices3.tarifa] = row.tarifa
-                this[Prices3.potenciaContratada] = row.potencia_contratada
-                this[Prices3.p1] = row.p1
-                this[Prices3.p2] = row.p2
-                this[Prices3.p3] = row.p3
-                this[Prices3.p4] = row.p4
-                this[Prices3.p5] = row.p5
-                this[Prices3.p6] = row.p6
-            }
-        }
-    }
-
-    // New methods to fetch transposed table data
-    fun getPrices1Data(limit: Int?, offset: Int?, fileName: String? = null): PriceTableDataResponse {
-        return transaction {
-            var query = Prices1.selectAll()
-
-            fileName?.let {
-                query = query.andWhere { Prices1.fileName eq it }
-            }
-
-            val total = query.count().toInt()
             
-            val limitedQuery = if (limit != null && offset != null) {
-                query.limit(limit, offset.toLong())
-            } else if (limit != null) {
-                query.limit(limit)
-            } else {
-                query
-            }
+            totalRowsInserted
+        }
+    }
+    
+    fun getAllPriceTableResults(): PriceTableResponse {
+        return transaction {
+            val results = mutableListOf<PriceTableResult>()
             
-            val rows = limitedQuery.map { row ->
-                PriceRow(
-                    fileName = row[Prices1.fileName],
-                    tarifa = row[Prices1.tarifa],
-                    potencia_contratada = row[Prices1.potenciaContratada],
-                    p1 = row[Prices1.p1],
-                    p2 = row[Prices1.p2],
-                    p3 = row[Prices1.p3],
-                    p4 = row[Prices1.p4],
-                    p5 = row[Prices1.p5],
-                    p6 = row[Prices1.p6]
+            // Get all main results
+            PriceTableResultsDb.selectAll().forEach { resultRow ->
+                val resultId = resultRow[PriceTableResultsDb.id].value
+                val fileName = resultRow[PriceTableResultsDb.fileName]
+                
+                // Get termino de potencia data
+                val terminoPotenciaRow = TerminoDePotenciaDb.selectAll().where { TerminoDePotenciaDb.resultId eq resultId }.single()
+                val terminoPotenciaId = terminoPotenciaRow[TerminoDePotenciaDb.id].value
+                
+                val tarifasPotencia = TarifasPotenciaDb.selectAll().where { TarifasPotenciaDb.terminoId eq terminoPotenciaId }
+                    .map { row ->
+                        TarifaRow(
+                            tarifa = row[TarifasPotenciaDb.tarifa],
+                            potencia_contratada = row[TarifasPotenciaDb.potenciaContratada],
+                            P1 = row[TarifasPotenciaDb.p1],
+                            P2 = row[TarifasPotenciaDb.p2],
+                            P3 = row[TarifasPotenciaDb.p3],
+                            P4 = row[TarifasPotenciaDb.p4],
+                            P5 = row[TarifasPotenciaDb.p5],
+                            P6 = row[TarifasPotenciaDb.p6]
+                        )
+                    }
+                
+                // Get termino de energia data
+                val terminoEnergiaRow = TerminoDeEnergiaDb.selectAll().where { TerminoDeEnergiaDb.resultId eq resultId }.single()
+                val terminoEnergiaId = terminoEnergiaRow[TerminoDeEnergiaDb.id].value
+                
+                val tarifasEnergiaBase = TarifasEnergiaBaseDb.selectAll().where { TarifasEnergiaBaseDb.terminoId eq terminoEnergiaId }
+                    .map { row ->
+                        TarifaRow(
+                            tarifa = row[TarifasEnergiaBaseDb.tarifa],
+                            potencia_contratada = row[TarifasEnergiaBaseDb.potenciaContratada],
+                            P1 = row[TarifasEnergiaBaseDb.p1],
+                            P2 = row[TarifasEnergiaBaseDb.p2],
+                            P3 = row[TarifasEnergiaBaseDb.p3],
+                            P4 = row[TarifasEnergiaBaseDb.p4],
+                            P5 = row[TarifasEnergiaBaseDb.p5],
+                            P6 = row[TarifasEnergiaBaseDb.p6]
+                        )
+                    }
+                
+                val tarifasEnergiaUnica = TarifasEnergiaUnicaDb.selectAll().where { TarifasEnergiaUnicaDb.terminoId eq terminoEnergiaId }
+                    .map { row ->
+                        TarifaRow(
+                            tarifa = row[TarifasEnergiaUnicaDb.tarifa],
+                            potencia_contratada = row[TarifasEnergiaUnicaDb.potenciaContratada],
+                            P1 = row[TarifasEnergiaUnicaDb.p1],
+                            P2 = row[TarifasEnergiaUnicaDb.p2],
+                            P3 = row[TarifasEnergiaUnicaDb.p3],
+                            P4 = row[TarifasEnergiaUnicaDb.p4],
+                            P5 = row[TarifasEnergiaUnicaDb.p5],
+                            P6 = row[TarifasEnergiaUnicaDb.p6]
+                        )
+                    }
+                
+                // Build the result structure
+                val extractedTables = ExtractedTables(
+                    termino_de_potencia = TerminoDePotencia(
+                        titulo = terminoPotenciaRow[TerminoDePotenciaDb.titulo],
+                        tabla_precio_potencia = TablaPrecioPotencia(
+                            titulo = terminoPotenciaRow[TerminoDePotenciaDb.tablaTitulo],
+                            tarifas = tarifasPotencia
+                        )
+                    ),
+                    termino_de_energia = TerminoDeEnergia(
+                        titulo = terminoEnergiaRow[TerminoDeEnergiaDb.titulo],
+                        tabla_precio_clasica_base = TablaPrecioClasicaBase(
+                            titulo = terminoEnergiaRow[TerminoDeEnergiaDb.tablaBaseTitulo],
+                            tarifas = tarifasEnergiaBase
+                        ),
+                        tabla_precio_clasica_unica = TablaPrecioClasicaUnica(
+                            titulo = terminoEnergiaRow[TerminoDeEnergiaDb.tablaUnicaTitulo],
+                            tarifas = tarifasEnergiaUnica
+                        )
+                    )
                 )
+                
+                results.add(PriceTableResult(fileName = fileName, extracted_tables = extractedTables))
             }
             
-            PriceTableDataResponse(
-                success = true,
-                data = rows,
-                total = total,
-                limit = limit,
-                offset = offset
-            )
+            PriceTableResponse(success = true, results = results)
         }
     }
-
-    fun getPrices2Data(limit: Int?, offset: Int?, fileName: String? = null): PriceTableDataResponse {
+    
+    fun clearAllData(): Int {
         return transaction {
-            var query = Prices2.selectAll()
-
-            fileName?.let {
-                query = query.andWhere { Prices2.fileName eq it }
-            }
-
-            val total = query.count().toInt()
+            // Delete in reverse order of dependencies to avoid foreign key constraint violations
+            val tarifasPotenciaDeleted = TarifasPotenciaDb.deleteAll()
+            val tarifasEnergiaBaseDeleted = TarifasEnergiaBaseDb.deleteAll()
+            val tarifasEnergiaUnicaDeleted = TarifasEnergiaUnicaDb.deleteAll()
+            val terminoPotenciaDeleted = TerminoDePotenciaDb.deleteAll()
+            val terminoEnergiaDeleted = TerminoDeEnergiaDb.deleteAll()
+            val priceTableResultsDeleted = PriceTableResultsDb.deleteAll()
             
-            val limitedQuery = if (limit != null && offset != null) {
-                query.limit(limit, offset.toLong())
-            } else if (limit != null) {
-                query.limit(limit)
-            } else {
-                query
-            }
-            
-            val rows = limitedQuery.map { row ->
-                PriceRow(
-                    fileName = row[Prices2.fileName],
-                    tarifa = row[Prices2.tarifa],
-                    potencia_contratada = row[Prices2.potenciaContratada],
-                    p1 = row[Prices2.p1],
-                    p2 = row[Prices2.p2],
-                    p3 = row[Prices2.p3],
-                    p4 = row[Prices2.p4],
-                    p5 = row[Prices2.p5],
-                    p6 = row[Prices2.p6]
-                )
-            }
-            
-            PriceTableDataResponse(
-                success = true,
-                data = rows,
-                total = total,
-                limit = limit,
-                offset = offset
-            )
-        }
-    }
-
-    fun getPrices3Data(limit: Int?, offset: Int?, fileName: String? = null): PriceTableDataResponse {
-        return transaction {
-            var query = Prices3.selectAll()
-
-            fileName?.let {
-                query = query.andWhere { Prices3.fileName eq it }
-            }
-
-            val total = query.count().toInt()
-            
-            val limitedQuery = if (limit != null && offset != null) {
-                query.limit(limit, offset.toLong())
-            } else if (limit != null) {
-                query.limit(limit)
-            } else {
-                query
-            }
-            
-            val rows = limitedQuery.map { row ->
-                PriceRow(
-                    fileName = row[Prices3.fileName],
-                    tarifa = row[Prices3.tarifa],
-                    potencia_contratada = row[Prices3.potenciaContratada],
-                    p1 = row[Prices3.p1],
-                    p2 = row[Prices3.p2],
-                    p3 = row[Prices3.p3],
-                    p4 = row[Prices3.p4],
-                    p5 = row[Prices3.p5],
-                    p6 = row[Prices3.p6]
-                )
-            }
-            
-            PriceTableDataResponse(
-                success = true,
-                data = rows,
-                total = total,
-                limit = limit,
-                offset = offset
-            )
-        }
-    }
-
-    // New methods for retrieving prices in the new structure
-    fun getAllPricesFromTable1(): List<PriceRow> {
-        return transaction {
-            Prices1.selectAll().map { row ->
-                PriceRow(
-                    fileName = row[Prices1.fileName],
-                    tarifa = row[Prices1.tarifa],
-                    potencia_contratada = row[Prices1.potenciaContratada],
-                    p1 = row[Prices1.p1],
-                    p2 = row[Prices1.p2],
-                    p3 = row[Prices1.p3],
-                    p4 = row[Prices1.p4],
-                    p5 = row[Prices1.p5],
-                    p6 = row[Prices1.p6]
-                )
-            }
-        }
-    }
-
-    fun getAllPricesFromTable2(): List<PriceRow> {
-        return transaction {
-            Prices2.selectAll().map { row ->
-                PriceRow(
-                    fileName = row[Prices2.fileName],
-                    tarifa = row[Prices2.tarifa],
-                    potencia_contratada = row[Prices2.potenciaContratada],
-                    p1 = row[Prices2.p1],
-                    p2 = row[Prices2.p2],
-                    p3 = row[Prices2.p3],
-                    p4 = row[Prices2.p4],
-                    p5 = row[Prices2.p5],
-                    p6 = row[Prices2.p6]
-                )
-            }
-        }
-    }
-
-    fun getAllPricesFromTable3(): List<PriceRow> {
-        return transaction {
-            Prices3.selectAll().map { row ->
-                PriceRow(
-                    fileName = row[Prices3.fileName],
-                    tarifa = row[Prices3.tarifa],
-                    potencia_contratada = row[Prices3.potenciaContratada],
-                    p1 = row[Prices3.p1],
-                    p2 = row[Prices3.p2],
-                    p3 = row[Prices3.p3],
-                    p4 = row[Prices3.p4],
-                    p5 = row[Prices3.p5],
-                    p6 = row[Prices3.p6]
-                )
-            }
+            // Return total number of rows deleted
+            tarifasPotenciaDeleted + tarifasEnergiaBaseDeleted + tarifasEnergiaUnicaDeleted + 
+            terminoPotenciaDeleted + terminoEnergiaDeleted + priceTableResultsDeleted
         }
     }
 }

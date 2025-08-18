@@ -1,89 +1,73 @@
 package com.bm.backend.models
 
 import kotlinx.serialization.Serializable
-import kotlinx.serialization.json.JsonObject
-import java.time.Instant
 
+// Main response structure
 @Serializable
-data class StorePriceTablesRequest(
-    val filename: String,
-    val extracted_tables: ExtractedTables,
-    val source: String,
-    val timestamp: String? = null
-)
-
-@Serializable
-data class ExtractedTables(
-    val termino_potencia: JsonObject? = null,
-    val termino_energia_clasica_base: JsonObject? = null,
-    val termino_energia_clasica_unica: JsonObject? = null
-)
-
-@Serializable
-data class StorePriceTablesResponse(
+data class PriceTableResponse(
     val success: Boolean,
-    val message: String,
-    val record_id: Int
+    val results: List<PriceTableResult>
 )
 
 @Serializable
-data class PriceTableRecord(
-    val id: Int,
-    val filename: String,
-    val extracted_tables: ExtractedTables,
-    val source: String,
-    val timestamp: String,
-    val created_at: String
-)
-
-@Serializable
-data class PriceTablesResponse(
-    val success: Boolean,
-    val data: List<PriceTableRecord>,
-    val total: Int,
-    val limit: Int? = null,
-    val offset: Int? = null
-)
-
-@Serializable
-data class PriceTableDetailResponse(
-    val success: Boolean,
-    val data: PriceTableRecord
-)
-
-@Serializable
-data class ErrorResponse(
-    val message: String,
-    val details: String? = null
-)
-
-// New models for batch processing and transposed tables
-@Serializable
-data class BatchPriceTablesRequest(
-    val success: Boolean,
-    val results: List<BatchFileResult>
-)
-
-@Serializable
-data class BatchFileResult(
+data class PriceTableResult(
     val fileName: String,
     val extracted_tables: ExtractedTables
 )
 
-// Models for the three transposed price tables
 @Serializable
-data class PriceRow(
-    val fileName: String? = null,
-    val tarifa: String?,
-    val potencia_contratada: String?,
-    val p1: Double?,
-    val p2: Double?,
-    val p3: Double?,
-    val p4: Double?,
-    val p5: Double?,
-    val p6: Double?
+data class ExtractedTables(
+    val termino_de_potencia: TerminoDePotencia,
+    val termino_de_energia: TerminoDeEnergia
 )
 
+@Serializable
+data class TerminoDePotencia(
+    val titulo: String,
+    val tabla_precio_potencia: TablaPrecioPotencia
+)
+
+@Serializable
+data class TablaPrecioPotencia(
+    val titulo: String,
+    val tarifas: List<TarifaRow>
+)
+
+@Serializable
+data class TerminoDeEnergia(
+    val titulo: String,
+    val tabla_precio_clasica_base: TablaPrecioClasicaBase,
+    val tabla_precio_clasica_unica: TablaPrecioClasicaUnica
+)
+
+@Serializable
+data class TablaPrecioClasicaBase(
+    val titulo: String,
+    val tarifas: List<TarifaRow>
+)
+
+@Serializable
+data class TablaPrecioClasicaUnica(
+    val titulo: String,
+    val tarifas: List<TarifaRow>
+)
+
+@Serializable
+data class TarifaRow(
+    val tarifa: String,
+    val potencia_contratada: String?,
+    val P1: Double?,
+    val P2: Double?,
+    val P3: Double?,
+    val P4: Double?,
+    val P5: Double?,
+    val P6: Double?
+)
+
+// Request models for batch processing - accepts array directly
+typealias BatchPriceTablesRequest = List<PriceTableResponse>
+
+// Response models
 @Serializable
 data class BatchProcessResponse(
     val success: Boolean,
@@ -92,41 +76,15 @@ data class BatchProcessResponse(
     val total_rows_inserted: Int
 )
 
-// Response models for transposed price table data
 @Serializable
-data class PriceTableDataResponse(
+data class ErrorResponse(
+    val success: Boolean = false,
+    val message: String
+)
+
+@Serializable
+data class ClearDataResponse(
     val success: Boolean,
-    val data: List<PriceRow>,
-    val total: Int,
-    val limit: Int? = null,
-    val offset: Int? = null
-)
-
-// New data classes for refactored price structure
-@Serializable
-data class Price(
-    val tarifa: String, // ENUM
-    val potenciaContratada: String, // ENUM
-    val p1: Double? = null,
-    val p2: Double? = null,
-    val p3: Double? = null,
-    val p4: Double? = null,
-    val p5: Double? = null,
-    val p6: Double? = null,
-)
-
-@Serializable
-data class Tarifa(
-    val name: String, // TE1, TE2, etc.
-    val terminoEnergia: List<Price>,
-    val terminoEnergiaUnica: List<Price>,
-    val terminoPotencia: List<Price>,
-)
-
-// Response model for the new structure
-@Serializable
-data class TarifasResponse(
-    val success: Boolean,
-    val data: List<Tarifa>,
-    val total: Int
+    val message: String,
+    val deleted_rows: Int
 )
