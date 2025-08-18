@@ -14,13 +14,12 @@ object DatabaseFactory {
 
         transaction(database) {
             SchemaUtils.create(
-                PriceTableRecords,
-                TerminoPotencia,
-                TerminoEnergiaClasicaBase,
-                TerminoEnergiaClasicaUnica,
-                Prices1,
-                Prices2,
-                Prices3
+                PriceTableResultsDb,
+                TerminoDePotenciaDb,
+                TerminoDeEnergiaDb,
+                TarifasPotenciaDb,
+                TarifasEnergiaBaseDb,
+                TarifasEnergiaUnicaDb
             )
         }
     }
@@ -38,13 +37,12 @@ object DatabaseFactory {
 
         transaction(database) {
             SchemaUtils.create(
-                PriceTableRecords,
-                TerminoPotencia,
-                TerminoEnergiaClasicaBase,
-                TerminoEnergiaClasicaUnica,
-                Prices1,
-                Prices2,
-                Prices3
+                PriceTableResultsDb,
+                TerminoDePotenciaDb,
+                TerminoDeEnergiaDb,
+                TarifasPotenciaDb,
+                TarifasEnergiaBaseDb,
+                TarifasEnergiaUnicaDb
             )
         }
     }
