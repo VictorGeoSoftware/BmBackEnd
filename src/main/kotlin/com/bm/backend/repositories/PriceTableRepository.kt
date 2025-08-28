@@ -149,6 +149,7 @@ class PriceTableRepository {
                 
                 // Build the result structure
                 val extractedTables = ExtractedTables(
+                    filename = fileName, // Use the fileName from the result
                     termino_de_potencia = TerminoDePotencia(
                         titulo = terminoPotenciaRow[TerminoDePotenciaDb.titulo],
                         tabla_precio_potencia = TablaPrecioPotencia(
