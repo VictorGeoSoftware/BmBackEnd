@@ -65,11 +65,14 @@ class ApplicationTest {
         application {
             testApplicationModule()
         }
+
+        val createdEntries = 16
+
         client.get("/api/v1/price-table-results").apply {
             assertEquals(HttpStatusCode.OK, status)
             val response = Json.decodeFromString<PriceTableResponse>(bodyAsText())
             assertEquals(true, response.success)
-            assertEquals(0, response.results.size)
+            assertEquals(createdEntries, response.results.size)
         }
     }
 

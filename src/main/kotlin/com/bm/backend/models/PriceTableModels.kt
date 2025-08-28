@@ -17,6 +17,7 @@ data class PriceTableResult(
 
 @Serializable
 data class ExtractedTables(
+    val filename: String,
     val termino_de_potencia: TerminoDePotencia,
     val termino_de_energia: TerminoDeEnergia
 )
