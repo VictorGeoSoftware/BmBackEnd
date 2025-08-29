@@ -18,6 +18,7 @@ class PriceTableRepository {
                 // Insert main result record
                 val resultId = PriceTableResultsDb.insertAndGetId {
                     it[PriceTableResultsDb.fileName] = result.fileName
+                    it[PriceTableResultsDb.companyName] = result.extracted_tables.companyName
                 }.value
                 
                 // Insert termino de potencia
@@ -96,6 +97,7 @@ class PriceTableRepository {
             PriceTableResultsDb.selectAll().forEach { resultRow ->
                 val resultId = resultRow[PriceTableResultsDb.id].value
                 val fileName = resultRow[PriceTableResultsDb.fileName]
+                val companyName = resultRow[PriceTableResultsDb.companyName]
                 
                 // Get termino de potencia data
                 val terminoPotenciaRow = TerminoDePotenciaDb.selectAll().where { TerminoDePotenciaDb.resultId eq resultId }.single()
@@ -149,7 +151,7 @@ class PriceTableRepository {
                 
                 // Build the result structure
                 val extractedTables = ExtractedTables(
-                    filename = fileName, // Use the fileName from the result
+                    companyName = companyName, // Use the company name from the result
                     termino_de_potencia = TerminoDePotencia(
                         titulo = terminoPotenciaRow[TerminoDePotenciaDb.titulo],
                         tabla_precio_potencia = TablaPrecioPotencia(

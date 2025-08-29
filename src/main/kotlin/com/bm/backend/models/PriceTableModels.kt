@@ -1,5 +1,6 @@
 package com.bm.backend.models
 
+import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 // Main response structure
@@ -17,7 +18,7 @@ data class PriceTableResult(
 
 @Serializable
 data class ExtractedTables(
-    val filename: String,
+    @SerialName("filename") val companyName: String,
     val termino_de_potencia: TerminoDePotencia,
     val termino_de_energia: TerminoDeEnergia
 )

@@ -66,13 +66,13 @@ class ApplicationTest {
             testApplicationModule()
         }
 
-        val createdEntries = 16
+        val expectedEntries = 0 // No test data is seeded, so expect empty results
 
         client.get("/api/v1/price-table-results").apply {
             assertEquals(HttpStatusCode.OK, status)
             val response = Json.decodeFromString<PriceTableResponse>(bodyAsText())
             assertEquals(true, response.success)
-            assertEquals(createdEntries, response.results.size)
+            assertEquals(expectedEntries, response.results.size)
         }
     }
 

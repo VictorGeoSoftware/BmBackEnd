@@ -1,13 +1,11 @@
 package com.bm.backend.database
 
 import org.jetbrains.exposed.dao.id.IntIdTable
-import org.jetbrains.exposed.sql.javatime.timestamp
-import java.time.Instant
 
 // Main table for storing file results
 object PriceTableResultsDb : IntIdTable("price_table_results") {
     val fileName = varchar("file_name", 255)
-    val createdAt = timestamp("created_at").default(Instant.now())
+    val companyName = varchar("company_name", 255)
 }
 
 // Table for termino de potencia data
@@ -15,7 +13,6 @@ object TerminoDePotenciaDb : IntIdTable("termino_de_potencia") {
     val resultId = reference("result_id", PriceTableResultsDb)
     val titulo = text("titulo")
     val tablaTitulo = text("tabla_titulo")
-    val createdAt = timestamp("created_at").default(Instant.now())
 }
 
 // Table for termino de energia data
@@ -24,7 +21,6 @@ object TerminoDeEnergiaDb : IntIdTable("termino_de_energia") {
     val titulo = text("titulo")
     val tablaBaseTitulo = text("tabla_base_titulo")
     val tablaUnicaTitulo = text("tabla_unica_titulo")
-    val createdAt = timestamp("created_at").default(Instant.now())
 }
 
 // Table for tarifa rows from termino de potencia
@@ -38,7 +34,6 @@ object TarifasPotenciaDb : IntIdTable("tarifas_potencia") {
     val p4 = double("p4").nullable()
     val p5 = double("p5").nullable()
     val p6 = double("p6").nullable()
-    val createdAt = timestamp("created_at").default(Instant.now())
 }
 
 // Table for tarifa rows from termino de energia base
@@ -52,7 +47,6 @@ object TarifasEnergiaBaseDb : IntIdTable("tarifas_energia_base") {
     val p4 = double("p4").nullable()
     val p5 = double("p5").nullable()
     val p6 = double("p6").nullable()
-    val createdAt = timestamp("created_at").default(Instant.now())
 }
 
 // Table for tarifa rows from termino de energia unica
@@ -66,5 +60,4 @@ object TarifasEnergiaUnicaDb : IntIdTable("tarifas_energia_unica") {
     val p4 = double("p4").nullable()
     val p5 = double("p5").nullable()
     val p6 = double("p6").nullable()
-    val createdAt = timestamp("created_at").default(Instant.now())
 }

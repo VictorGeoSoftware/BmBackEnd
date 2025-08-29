@@ -66,6 +66,10 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
             if (result.fileName.isBlank()) {
                 throw ValidationException("File name cannot be blank")
             }
+            
+            if (result.extracted_tables.companyName.isBlank()) {
+                throw ValidationException("Company name cannot be blank")
+            }
 
             // Validate termino de potencia structure
             val terminoPotencia = result.extracted_tables.termino_de_potencia
