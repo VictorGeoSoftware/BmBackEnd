@@ -1,8 +1,11 @@
 package com.bm.backend
 
 import com.bm.backend.database.DatabaseFactory
+import com.bm.backend.repositories.UserConsumptionRepository
 import com.bm.backend.routes.priceTableRoutes
+import com.bm.backend.routes.userConsumptionRoutes
 import com.bm.backend.services.PriceTableService
+import com.bm.backend.services.UserConsumptionService
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.netty.*
@@ -53,6 +56,7 @@ fun Application.configureRouting() {
 
         route("/api/v1") {
             priceTableRoutes(PriceTableService())
+            userConsumptionRoutes(UserConsumptionService(UserConsumptionRepository()))
         }
     }
 }

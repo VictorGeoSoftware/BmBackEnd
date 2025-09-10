@@ -18,6 +18,7 @@ dependencies {
     implementation("io.ktor:ktor-serialization-kotlinx-json:2.3.12")
     implementation("io.ktor:ktor-server-status-pages:2.3.12")
     implementation("io.ktor:ktor-server-rate-limit:2.3.12")
+    implementation("io.ktor:ktor-server-call-logging:2.3.12")
     
     // Database - Updated to latest stable versions
     implementation("org.jetbrains.exposed:exposed-core:0.55.0")
@@ -38,6 +39,7 @@ dependencies {
     testImplementation(kotlin("test"))
     testImplementation("io.ktor:ktor-server-test-host:2.3.12")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:2.0.21")
+    testImplementation("io.mockk:mockk:1.13.8")
 }
 
 tasks.test {
