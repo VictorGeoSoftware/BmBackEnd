@@ -5,6 +5,7 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class UserConsumption(
+    val feeType: String,
     @SerialName("data")
     val data: List<ConsumptionPeriod>
 )
