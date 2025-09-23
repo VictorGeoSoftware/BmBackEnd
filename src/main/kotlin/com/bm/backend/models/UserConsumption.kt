@@ -3,11 +3,43 @@ package com.bm.backend.models
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
+/*
+
+      "cups":"ES0021000003721408CM",
+      "annualConsumption":11600,
+      "annualConsumptionP1":2171,
+      "annualConsumptionP2":2627,
+      "annualConsumptionP3":1770,
+      "annualConsumptionP4":1870,
+      "annualConsumptionP5":746,
+      "annualConsumptionP6":2416,
+      "subscribedPowerP1":45,
+      "subscribedPowerP2":45,
+      "subscribedPowerP3":45,
+      "subscribedPowerP4":45,
+      "subscribedPowerP5":45,
+      "subscribedPowerP6":45,
+ */
+
 @Serializable
 data class UserConsumption(
     val feeType: String,
     @SerialName("data")
-    val data: List<ConsumptionPeriod>
+    val data: List<ConsumptionPeriod>,
+    val cups: String,
+    val annualConsumption: Double,
+    val annualConsumptionP1: Double,
+    val annualConsumptionP2: Double,
+    val annualConsumptionP3: Double,
+    val annualConsumptionP4: Double,
+    val annualConsumptionP5: Double,
+    val annualConsumptionP6: Double,
+    val subscribedPowerP1: Double,
+    val subscribedPowerP2: Double,
+    val subscribedPowerP6: Double,
+    val subscribedPowerP3: Double,
+    val subscribedPowerP4: Double,
+    val subscribedPowerP5: Double,
 )
 
 @Serializable
