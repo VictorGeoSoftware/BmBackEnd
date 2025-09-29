@@ -2,6 +2,8 @@ package com.bm.backend.services
 
 import com.bm.backend.database.DatabaseFactory
 import com.bm.backend.models.BatchPriceTablesRequest
+import com.bm.backend.models.IMPUESTO_ELECTRICO
+import com.bm.backend.models.IVA
 import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -43,5 +45,13 @@ class PriceTableServiceTest {
         assertThrows<ValidationException> {
             service.processBatchPriceTables(request)
         }
+    }
+
+    @Test
+    fun `test getAllPriceTableResults includes tax constants`() {
+        val result = service.getAllPriceTableResults()
+
+        assertEquals(IVA, result.iva)
+        assertEquals(IMPUESTO_ELECTRICO, result.impuestoElectrico)
     }
 }

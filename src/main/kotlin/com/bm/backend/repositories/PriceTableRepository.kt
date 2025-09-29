@@ -2,6 +2,20 @@ package com.bm.backend.repositories
 
 import com.bm.backend.database.*
 import com.bm.backend.models.*
+import com.bm.backend.models.BatchPriceTablesRequest
+import com.bm.backend.models.BatchProcessResponse
+import com.bm.backend.models.ClearDataResponse
+import com.bm.backend.models.ExtractedTables
+import com.bm.backend.models.PriceTableResponse
+import com.bm.backend.models.PriceTableResult
+import com.bm.backend.models.TablaPrecioClasicaBase
+import com.bm.backend.models.TablaPrecioClasicaUnica
+import com.bm.backend.models.TablaPrecioPotencia
+import com.bm.backend.models.TarifaRow
+import com.bm.backend.models.TerminoDeEnergia
+import com.bm.backend.models.TerminoDePotencia
+import com.bm.backend.models.IMPUESTO_ELECTRICO
+import com.bm.backend.models.IVA
 import org.jetbrains.exposed.sql.deleteAll
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.insertAndGetId
@@ -175,7 +189,12 @@ class PriceTableRepository {
                 results.add(PriceTableResult(fileName = fileName, extracted_tables = extractedTables))
             }
             
-            PriceTableResponse(success = true, results = results)
+            PriceTableResponse(
+                success = true,
+                results = results,
+                iva = IVA,
+                impuestoElectrico = IMPUESTO_ELECTRICO
+            )
         }
     }
     
