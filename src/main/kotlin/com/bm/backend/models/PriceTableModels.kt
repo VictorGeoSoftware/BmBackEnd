@@ -8,8 +8,8 @@ import kotlinx.serialization.Serializable
 data class PriceTableResponse(
     val success: Boolean,
     val results: List<PriceTableResult>,
-    val iva: Int,
-    val impuestoElectrico: Double,
+    val iva: Int = IVA,
+    val impuestoElectrico: Double = IMPUESTO_ELECTRICO,
 )
 
 @Serializable
