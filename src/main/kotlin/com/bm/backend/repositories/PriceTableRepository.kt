@@ -192,8 +192,6 @@ class PriceTableRepository {
             PriceTableResponse(
                 success = true,
                 results = results,
-                iva = IVA,
-                impuestoElectrico = IMPUESTO_ELECTRICO
             )
         }
     }
