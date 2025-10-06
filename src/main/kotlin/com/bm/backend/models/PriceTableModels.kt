@@ -1,5 +1,7 @@
 package com.bm.backend.models
 
+import kotlinx.serialization.EncodeDefault
+import kotlinx.serialization.ExperimentalSerializationApi
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -8,8 +10,12 @@ import kotlinx.serialization.Serializable
 data class PriceTableResponse(
     val success: Boolean,
     val results: List<PriceTableResult>,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault
     val iva: Int = IVA,
-    val impuestoElectrico: Double = IMPUESTO_ELECTRICO,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault
+    val impuestoElectrico: Double = IMPUESTO_ELECTRICO
 )
 
 @Serializable
