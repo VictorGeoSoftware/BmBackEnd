@@ -26,4 +26,24 @@ fun Route.userConsumptionRoutes(userConsumptionService: UserConsumptionService) 
             )
         }
     }
+    
+    get("/fetch-user-consumption-report") {
+        try {
+            val report = userConsumptionService.getConsumptionReport()
+            if (report != null) {
+                call.respond(HttpStatusCode.OK, report)
+            } else {
+                call.respond(
+                    HttpStatusCode.NotFound,
+                    ErrorResponse(message = "No consumption report available")
+                )
+            }
+        } catch (e: Exception) {
+            call.application.log.error("Error fetching consumption report: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
 }

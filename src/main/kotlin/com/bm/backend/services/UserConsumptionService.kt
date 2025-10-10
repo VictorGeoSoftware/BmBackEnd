@@ -6,7 +6,11 @@ import com.bm.backend.repositories.UserConsumptionRepository
 class UserConsumptionService(private val userConsumptionRepository: UserConsumptionRepository) {
     
     fun processConsumptionReport(consumptionReport: UserConsumption) {
-        // Store the consumption data in the database
-        userConsumptionRepository.storeConsumptionData(consumptionReport.data)
+        // Store the consumption data
+        userConsumptionRepository.storeConsumptionData(consumptionReport)
+    }
+    
+    fun getConsumptionReport(): UserConsumption? {
+        return userConsumptionRepository.getConsumptionReport()
     }
 }

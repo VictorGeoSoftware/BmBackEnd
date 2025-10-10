@@ -26,14 +26,9 @@ data class UserConsumption(
 
 @Serializable
 data class ConsumptionPeriod(
-    @SerialName("Fecha Lectura Inicial")
     val fechaLecturaInicial: String,
-    @SerialName("Fecha Lectura Final")
     val fechaLecturaFinal: String,
-    @SerialName("Activa")
     val activa: List<Double>,
-    @SerialName("Reactiva")
     val reactiva: List<Double>,
-    @SerialName("Maximetro")
     val maximetro: List<Double>
 )
