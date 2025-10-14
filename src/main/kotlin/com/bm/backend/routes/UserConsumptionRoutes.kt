@@ -2,6 +2,8 @@ package com.bm.backend.routes
 
 import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.UserConsumption
+import com.bm.backend.models.UserConsumptionRequest
+import com.bm.backend.models.toDomainModel
 import com.bm.backend.services.UserConsumptionService
 import io.ktor.http.*
 import io.ktor.server.application.*
@@ -13,7 +15,8 @@ import io.ktor.utils.io.*
 fun Route.userConsumptionRoutes(userConsumptionService: UserConsumptionService) {
     post("/consumption-report") {
         try {
-            val consumptionReport = call.receive<UserConsumption>()
+            val consumptionRequest = call.receive<UserConsumptionRequest>()
+            val consumptionReport = consumptionRequest.toDomainModel()
             userConsumptionService.processConsumptionReport(consumptionReport)
 
             call.respond(HttpStatusCode.OK)
