@@ -103,7 +103,7 @@ class PriceTableRepository {
         }
     }
     
-    fun getAllPriceTableResults(): PriceTableResponse {
+    fun getAllPriceTableResults(tarifaType: String? = null): PriceTableResponse {
         return transaction {
             val results = mutableListOf<PriceTableResult>()
             
@@ -130,6 +130,13 @@ class PriceTableRepository {
                             P6 = row[TarifasPotenciaDb.p6]
                         )
                     }
+                    .let { tarifas ->
+                        if (tarifaType != null) {
+                            tarifas.filter { it.tarifa.equals(tarifaType, ignoreCase = true) }
+                        } else {
+                            tarifas
+                        }
+                    }
                 
                 // Get termino de energia data
                 val terminoEnergiaRow = TerminoDeEnergiaDb.selectAll().where { TerminoDeEnergiaDb.resultId eq resultId }.single()
@@ -148,6 +155,13 @@ class PriceTableRepository {
                             P6 = row[TarifasEnergiaBaseDb.p6]
                         )
                     }
+                    .let { tarifas ->
+                        if (tarifaType != null) {
+                            tarifas.filter { it.tarifa.equals(tarifaType, ignoreCase = true) }
+                        } else {
+                            tarifas
+                        }
+                    }
                 
                 val tarifasEnergiaUnica = TarifasEnergiaUnicaDb.selectAll().where { TarifasEnergiaUnicaDb.terminoId eq terminoEnergiaId }
                     .map { row ->
@@ -161,6 +175,13 @@ class PriceTableRepository {
                             P5 = row[TarifasEnergiaUnicaDb.p5],
                             P6 = row[TarifasEnergiaUnicaDb.p6]
                         )
+                    }
+                    .let { tarifas ->
+                        if (tarifaType != null) {
+                            tarifas.filter { it.tarifa.equals(tarifaType, ignoreCase = true) }
+                        } else {
+                            tarifas
+                        }
                     }
                 
                 // Build the result structure

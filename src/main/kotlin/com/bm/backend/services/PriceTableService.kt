@@ -40,8 +40,8 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
         }
     }
 
-    fun getAllPriceTableResults(): PriceTableResponse {
-        return repository.getAllPriceTableResults()
+    fun getAllPriceTableResults(tarifaType: String? = null): PriceTableResponse {
+        return repository.getAllPriceTableResults(tarifaType)
     }
     
     fun clearAllData(): ClearDataResponse {

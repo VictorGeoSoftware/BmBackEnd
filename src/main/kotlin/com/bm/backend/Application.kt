@@ -4,6 +4,7 @@ import com.bm.backend.database.DatabaseFactory
 import com.bm.backend.repositories.UserConsumptionRepository
 import com.bm.backend.routes.priceTableRoutes
 import com.bm.backend.routes.userConsumptionRoutes
+import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.UserConsumptionService
 import io.ktor.serialization.kotlinx.json.*
@@ -45,6 +46,16 @@ fun Application.configurePlugins() {
 }
 
 fun Application.configureRouting() {
+    // Initialize services
+    val priceTableService = PriceTableService()
+    val externalApiService = ExternalApiService()
+    val userConsumptionRepository = UserConsumptionRepository()
+    val userConsumptionService = UserConsumptionService(
+        userConsumptionRepository,
+        externalApiService,
+        priceTableService
+    )
+    
     routing {
         get("/") {
             call.respond(mapOf("message" to "Price Table Backend Service is running"))
@@ -55,8 +66,8 @@ fun Application.configureRouting() {
         }
 
         route("/api/v1") {
-            priceTableRoutes(PriceTableService())
-            userConsumptionRoutes(UserConsumptionService(UserConsumptionRepository()))
+            priceTableRoutes(priceTableService)
+            userConsumptionRoutes(userConsumptionService)
         }
     }
 }

@@ -54,7 +54,8 @@ fun Route.priceTableRoutes(priceTableService: PriceTableService) {
 
     get("/price-table-results") {
         try {
-            val response = priceTableService.getAllPriceTableResults()
+            val tarifaType = call.request.queryParameters["tarifaType"]
+            val response = priceTableService.getAllPriceTableResults(tarifaType)
             call.respond(HttpStatusCode.OK, response)
         } catch (e: Exception) {
             call.respond(
