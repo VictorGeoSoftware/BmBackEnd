@@ -20,6 +20,11 @@ dependencies {
     implementation("io.ktor:ktor-server-rate-limit:2.3.12")
     implementation("io.ktor:ktor-server-call-logging:2.3.12")
     
+    // HTTP Client for external API calls
+    implementation("io.ktor:ktor-client-core:2.3.12")
+    implementation("io.ktor:ktor-client-cio:2.3.12")
+    implementation("io.ktor:ktor-client-content-negotiation:2.3.12")
+    
     // Database - Updated to latest stable versions
     implementation("org.jetbrains.exposed:exposed-core:0.55.0")
     implementation("org.jetbrains.exposed:exposed-dao:0.55.0")
