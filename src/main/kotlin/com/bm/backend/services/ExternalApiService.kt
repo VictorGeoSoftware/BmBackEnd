@@ -24,25 +24,23 @@ class ExternalApiService {
     }
     
     private val client = HttpClient(CIO) {
-        // Configure timeouts for long-running processes (up to 10 minutes)
+        // Configure reasonable timeouts for external API calls
         install(HttpTimeout) {
-            requestTimeoutMillis = 600_000 // 10 minutes
-            connectTimeoutMillis = 60_000  // 1 minute for connection
-            socketTimeoutMillis = 600_000  // 10 minutes for socket
+            requestTimeoutMillis = 120_000 // 2 minutes (sufficient for Docling + N8N)
+            connectTimeoutMillis = 30_000  // 30 seconds for connection
+            socketTimeoutMillis = 120_000  // 2 minutes for socket
         }
         
         install(ContentNegotiation) {
             json(json)
         }
         
-        // Configure CIO engine for long-running requests
+        // Configure CIO engine
         engine {
-            requestTimeout = 600_000 // 10 minutes
-            // Increase endpoint connection timeout to prevent connection resets
+            requestTimeout = 120_000 // 2 minutes
             endpoint {
-                connectTimeout = 60_000 // 1 minute
-                socketTimeout = 600_000 // 10 minutes
-                keepAliveTime = 600_000 // 10 minutes keep-alive
+                connectTimeout = 30_000 // 30 seconds
+                socketTimeout = 120_000 // 2 minutes
             }
         }
     }

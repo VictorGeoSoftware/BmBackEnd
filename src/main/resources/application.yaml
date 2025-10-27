@@ -2,9 +2,6 @@ ktor:
   deployment:
     port: 8081
     host: 0.0.0.0
-    # Netty connector configuration
-    connector:
-      idleTimeout: 600
   application:
     modules:
       - com.bm.backend.ApplicationKt.module
