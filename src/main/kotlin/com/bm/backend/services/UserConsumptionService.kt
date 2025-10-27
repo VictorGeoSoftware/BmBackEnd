@@ -24,23 +24,29 @@ class UserConsumptionService(
     suspend fun processConsumptionReportFromPdf(pdfFile: File): ConsumptionReportResponse {
         try {
             // Step 1: Extract data from PDF via Docling API
+            println("Step 1: Starting Docling API extraction...")
             val doclingData = try {
                 externalApiService.extractDataFromPdf(pdfFile)
             } catch (e: Exception) {
                 throw Exception("Failed at Docling API extraction step: ${e.message}", e)
             }
+            println("Step 1: Docling API extraction completed successfully")
             
             // Step 2: Process with N8N webhook
+            println("Step 2: Starting N8N webhook processing (this may take 5+ minutes)...")
             val n8nResponse = try {
                 externalApiService.processWithN8nWebhook(doclingData)
             } catch (e: Exception) {
                 throw Exception("Failed at N8N webhook processing step: ${e.message}", e)
             }
+            println("Step 2: N8N webhook processing completed successfully")
             
             // Step 3: Clean the consumption data
+            println("Step 3: Cleaning consumption data...")
             val cleanedConsumptionData = n8nResponse.data.toCleanedData(n8nResponse.processedAt)
             
             // Step 4: Get filtered price table results based on tarifa
+            println("Step 4: Getting filtered price tables for tarifa: ${cleanedConsumptionData.tarifa}")
             val filteredPrices = try {
                 priceTableService.getAllPriceTableResults(cleanedConsumptionData.tarifa)
             } catch (e: Exception) {
@@ -48,6 +54,7 @@ class UserConsumptionService(
             }
             
             // Step 5: Build consolidated response
+            println("Step 5: Building consolidated response...")
             return ConsumptionReportResponse(
                 success = true,
                 doclingData = doclingData,
@@ -55,6 +62,7 @@ class UserConsumptionService(
                 filteredPrices = filteredPrices
             )
         } catch (e: Exception) {
+            println("Error in processConsumptionReportFromPdf: ${e.message}")
             throw Exception("Error processing consumption report from PDF: ${e.message}", e)
         }
     }
