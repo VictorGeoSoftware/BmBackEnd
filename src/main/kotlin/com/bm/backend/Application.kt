@@ -9,7 +9,6 @@ import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.UserConsumptionService
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
-import io.ktor.server.netty.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.ratelimit.*
 import io.ktor.server.plugins.statuspages.*
@@ -18,7 +17,9 @@ import io.ktor.server.routing.*
 import kotlinx.serialization.json.Json
 import kotlin.time.Duration.Companion.seconds
 
-fun main(args: Array<String>): Unit = EngineMain.main(args)
+fun main(args: Array<String>) {
+    io.ktor.server.netty.EngineMain.main(args)
+}
 
 fun Application.configurePlugins() {
     // Install plugins
@@ -50,6 +51,7 @@ fun Application.configureRouting() {
     val priceTableService = PriceTableService()
     val externalApiService = ExternalApiService()
     val userConsumptionRepository = UserConsumptionRepository()
+    val jobService = com.bm.backend.services.JobService()
     val userConsumptionService = UserConsumptionService(
         userConsumptionRepository,
         externalApiService,
@@ -67,7 +69,7 @@ fun Application.configureRouting() {
 
         route("/api/v1") {
             priceTableRoutes(priceTableService)
-            userConsumptionRoutes(userConsumptionService)
+            userConsumptionRoutes(userConsumptionService, jobService)
         }
     }
 }

@@ -24,20 +24,24 @@ class ExternalApiService {
     }
     
     private val client = HttpClient(CIO) {
-        // Configure timeouts for long-running processes (up to 10 minutes)
+        // Configure reasonable timeouts for external API calls
         install(HttpTimeout) {
-            requestTimeoutMillis = 600_000 // 10 minutes
-            connectTimeoutMillis = 60_000  // 1 minute for connection
-            socketTimeoutMillis = 600_000  // 10 minutes for socket
+            requestTimeoutMillis = 120_000 // 2 minutes (sufficient for Docling + N8N)
+            connectTimeoutMillis = 30_000  // 30 seconds for connection
+            socketTimeoutMillis = 120_000  // 2 minutes for socket
         }
         
         install(ContentNegotiation) {
             json(json)
         }
         
-        // Configure CIO engine for long-running requests
+        // Configure CIO engine
         engine {
-            requestTimeout = 600_000 // 10 minutes
+            requestTimeout = 120_000 // 2 minutes
+            endpoint {
+                connectTimeout = 30_000 // 30 seconds
+                socketTimeout = 120_000 // 2 minutes
+            }
         }
     }
     
@@ -49,6 +53,8 @@ class ExternalApiService {
      */
     suspend fun extractDataFromPdf(pdfFile: File): DoclingExtractedData {
         return try {
+            println("Sending PDF to Docling API: ${pdfFile.name}, size: ${pdfFile.length()} bytes")
+            
             val httpResponse = client.submitFormWithBinaryData(
                 url = "$doclingApiUrl/extract-all",
                 formData = formData {
@@ -59,8 +65,25 @@ class ExternalApiService {
                 }
             )
             
+            // Check HTTP status code
+            if (!httpResponse.status.isSuccess()) {
+                val errorBody = try {
+                    httpResponse.body<String>()
+                } catch (e: Exception) {
+                    "Unable to read error response body"
+                }
+                throw Exception("Docling API returned error status ${httpResponse.status.value}: $errorBody")
+            }
+            
             // Get raw response text
             val responseText: String = httpResponse.body()
+            
+            // Validate response is not empty
+            if (responseText.isBlank()) {
+                throw Exception("Docling API returned empty response body")
+            }
+            
+            println("Docling API response received, length: ${responseText.length} chars")
             
             // Parse based on response format (single object vs array)
             val responseList: List<DoclingApiResponse> = if (responseText.trimStart().startsWith('[')) {
@@ -80,6 +103,7 @@ class ExternalApiService {
                 throw Exception("Docling API extraction failed for file: ${firstResult.fileName}")
             }
             
+            println("Docling API extraction successful")
             firstResult.extractedData
         } catch (e: Exception) {
             throw Exception("Failed to extract data from PDF via Docling API: ${e.message}", e)
@@ -96,11 +120,33 @@ class ExternalApiService {
                 setBody(doclingData)
             }
             
+            // Check HTTP status code
+            if (!httpResponse.status.isSuccess()) {
+                val errorBody = try {
+                    httpResponse.body<String>()
+                } catch (e: Exception) {
+                    "Unable to read error response body"
+                }
+                throw Exception("N8N webhook returned error status ${httpResponse.status.value}: $errorBody")
+            }
+            
             // Get raw response text for debugging
             val responseText: String = httpResponse.body()
+            
+            // Validate response is not empty
+            if (responseText.isBlank()) {
+                throw Exception("N8N webhook returned empty response body. This usually indicates the N8N workflow failed or timed out.")
+            }
+            
+            // Log response for debugging (first 500 chars)
+            println("N8N Response (first 500 chars): ${responseText.take(500)}")
 
             // Parse the response
-            val response = json.decodeFromString<N8nWebhookResponse>(responseText)
+            val response = try {
+                json.decodeFromString<N8nWebhookResponse>(responseText)
+            } catch (e: Exception) {
+                throw Exception("Failed to parse N8N response as JSON. Response: ${responseText.take(200)}. Error: ${e.message}", e)
+            }
             
             if (!response.success) {
                 throw Exception("N8N webhook processing failed")

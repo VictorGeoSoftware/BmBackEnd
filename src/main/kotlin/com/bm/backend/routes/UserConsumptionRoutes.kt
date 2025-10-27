@@ -1,9 +1,7 @@
 package com.bm.backend.routes
 
-import com.bm.backend.models.ErrorResponse
-import com.bm.backend.models.UserConsumption
-import com.bm.backend.models.UserConsumptionRequest
-import com.bm.backend.models.toDomainModel
+import com.bm.backend.models.*
+import com.bm.backend.services.JobService
 import com.bm.backend.services.UserConsumptionService
 import io.ktor.http.*
 import io.ktor.http.content.*
@@ -12,10 +10,16 @@ import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.ktor.utils.io.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
 import java.io.File
 import java.nio.file.Files
 
-fun Route.userConsumptionRoutes(userConsumptionService: UserConsumptionService) {
+fun Route.userConsumptionRoutes(
+    userConsumptionService: UserConsumptionService,
+    jobService: JobService
+) {
     post("/consumption-report") {
         try {
             val consumptionRequest = call.receive<UserConsumptionRequest>()
@@ -68,6 +72,7 @@ fun Route.userConsumptionRoutes(userConsumptionService: UserConsumptionService) 
             // Check for validation errors
             if (errorResponse != null) {
                 call.respond(errorResponse!!.first, errorResponse!!.second)
+                tempFile?.delete()
                 return@post
             }
             
@@ -79,40 +84,135 @@ fun Route.userConsumptionRoutes(userConsumptionService: UserConsumptionService) 
                 return@post
             }
             
-            // Process the PDF through the orchestration flow
-            val response = userConsumptionService.processConsumptionReportFromPdf(tempFile!!)
+            // Create a job and return immediately
+            val jobId = jobService.createJob()
+            val pdfFile = tempFile!!
             
-            call.respond(HttpStatusCode.OK, response)
+            // Process asynchronously in background
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    call.application.log.info("Starting background processing for job: $jobId")
+                    jobService.updateJobStatus(jobId, JobStatus.PROCESSING, progress = 0)
+                    
+                    // Process the PDF through the orchestration flow
+                    val response = userConsumptionService.processConsumptionReportFromPdf(pdfFile)
+                    
+                    // Mark job as completed
+                    jobService.completeJob(jobId, response)
+                    call.application.log.info("Job $jobId completed successfully")
+                    
+                } catch (e: Exception) {
+                    call.application.log.error("Job $jobId failed: ${e.message}", e)
+                    jobService.failJob(jobId, e.message ?: "Unknown error")
+                } finally {
+                    // Clean up temp file
+                    pdfFile.delete()
+                }
+            }
+            
+            // Return 202 Accepted with job ID immediately
+            call.respond(
+                HttpStatusCode.Accepted,
+                JobResponse(
+                    jobId = jobId,
+                    status = "accepted",
+                    message = "Your request is being processed. Use the jobId to check status."
+                )
+            )
             
         } catch (e: Exception) {
             call.application.log.error("Error processing consumption report from PDF: ${e.message}", e)
+            tempFile?.delete()
             call.respond(
                 HttpStatusCode.InternalServerError,
                 ErrorResponse(message = "Internal server error: ${e.message}")
             )
-        } finally {
-            // Clean up temp file
-            tempFile?.delete()
         }
     }
     
-    get("/get-user-consumption-report") {
-        try {
-            val report = userConsumptionService.getConsumptionReport()
-            if (report != null) {
-                call.respond(HttpStatusCode.OK, report)
-            } else {
+    get("/consumption-report-status/{jobId}") {
+        val jobId = call.parameters["jobId"]
+        
+        if (jobId == null) {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ErrorResponse(message = "Job ID is required")
+            )
+            return@get
+        }
+        
+        val job = jobService.getJob(jobId)
+        
+        if (job == null) {
+            call.respond(
+                HttpStatusCode.NotFound,
+                ErrorResponse(message = "Job not found")
+            )
+            return@get
+        }
+        
+        call.respond(
+            HttpStatusCode.OK,
+            JobStatusResponse(
+                jobId = job.jobId,
+                status = job.status,
+                message = when (job.status) {
+                    JobStatus.PENDING -> "Job is pending"
+                    JobStatus.PROCESSING -> "Job is being processed"
+                    JobStatus.COMPLETED -> "Job completed successfully"
+                    JobStatus.FAILED -> "Job failed"
+                },
+                progress = job.progress,
+                result = job.result,
+                error = job.error
+            )
+        )
+    }
+    
+    get("/consumption-report-result/{jobId}") {
+        val jobId = call.parameters["jobId"]
+        
+        if (jobId == null) {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ErrorResponse(message = "Job ID is required")
+            )
+            return@get
+        }
+        
+        val job = jobService.getJob(jobId)
+        
+        if (job == null) {
+            call.respond(
+                HttpStatusCode.NotFound,
+                ErrorResponse(message = "Job not found")
+            )
+            return@get
+        }
+        
+        when (job.status) {
+            JobStatus.COMPLETED -> {
+                if (job.result != null) {
+                    call.respond(HttpStatusCode.OK, job.result!!)
+                } else {
+                    call.respond(
+                        HttpStatusCode.InternalServerError,
+                        ErrorResponse(message = "Job completed but result is missing")
+                    )
+                }
+            }
+            JobStatus.FAILED -> {
                 call.respond(
-                    HttpStatusCode.NotFound,
-                    ErrorResponse(message = "No consumption report available")
+                    HttpStatusCode.InternalServerError,
+                    ErrorResponse(message = job.error ?: "Job failed")
                 )
             }
-        } catch (e: Exception) {
-            call.application.log.error("Error fetching consumption report: ${e.message}", e)
-            call.respond(
-                HttpStatusCode.InternalServerError,
-                ErrorResponse(message = "Internal server error: ${e.message}")
-            )
+            JobStatus.PROCESSING, JobStatus.PENDING -> {
+                call.respond(
+                    HttpStatusCode.Accepted,
+                    ErrorResponse(message = "Job is still processing")
+                )
+            }
         }
     }
 }
