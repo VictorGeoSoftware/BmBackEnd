@@ -26,9 +26,9 @@ class ExternalApiService {
     private val client = HttpClient(CIO) {
         // Configure reasonable timeouts for external API calls
         install(HttpTimeout) {
-            requestTimeoutMillis = 120_000 // 2 minutes (sufficient for Docling + N8N)
-            connectTimeoutMillis = 30_000  // 30 seconds for connection
-            socketTimeoutMillis = 120_000  // 2 minutes for socket
+            requestTimeoutMillis = 600_000 // 2 minutes (sufficient for Docling + N8N)
+            connectTimeoutMillis = 60_000  // 30 seconds for connection
+            socketTimeoutMillis = 600_000  // 2 minutes for socket
         }
         
         install(ContentNegotiation) {
