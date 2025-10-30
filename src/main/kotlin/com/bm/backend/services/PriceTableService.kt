@@ -3,6 +3,7 @@ package com.bm.backend.services
 import com.bm.backend.models.BatchPriceTablesRequest
 import com.bm.backend.models.BatchProcessResponse
 import com.bm.backend.models.ClearDataResponse
+import com.bm.backend.models.FilteredPriceTableResponse
 import com.bm.backend.models.PriceTableResponse
 import com.bm.backend.repositories.PriceTableRepository
 
@@ -47,6 +48,10 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
 
     fun getAllPriceTableResults(tarifaType: String? = null): PriceTableResponse {
         return repository.getAllPriceTableResults(tarifaType)
+    }
+    
+    fun getFilteredPriceTableResults(tarifaType: String? = null): FilteredPriceTableResponse {
+        return repository.getFilteredPriceTableResults(tarifaType)
     }
     
     fun clearAllData(): ClearDataResponse {

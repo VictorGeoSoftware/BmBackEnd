@@ -224,6 +224,135 @@ class PriceTableRepository {
         }
     }
     
+    fun getFilteredPriceTableResults(tarifaType: String? = null): FilteredPriceTableResponse {
+        return transaction {
+            val results = mutableListOf<FilteredPriceTableResult>()
+            
+            // Get all main results
+            PriceTableResultsDb.selectAll().forEach { resultRow ->
+                val resultId = resultRow[PriceTableResultsDb.id].value
+                val fileName = resultRow[PriceTableResultsDb.fileName]
+                val companyName = resultRow[PriceTableResultsDb.companyName]
+                
+                // Get termino de potencia data
+                val terminoPotenciaRow = TerminoDePotenciaDb.selectAll().where { TerminoDePotenciaDb.resultId eq resultId }.single()
+                val terminoPotenciaId = terminoPotenciaRow[TerminoDePotenciaDb.id].value
+                
+                val tarifaPotencia = TarifasPotenciaDb.selectAll().where { TarifasPotenciaDb.terminoId eq terminoPotenciaId }
+                    .map { row ->
+                        TarifaRow(
+                            tarifa = row[TarifasPotenciaDb.tarifa],
+                            potencia_contratada = row[TarifasPotenciaDb.potenciaContratada],
+                            P1 = row[TarifasPotenciaDb.p1],
+                            P2 = row[TarifasPotenciaDb.p2],
+                            P3 = row[TarifasPotenciaDb.p3],
+                            P4 = row[TarifasPotenciaDb.p4],
+                            P5 = row[TarifasPotenciaDb.p5],
+                            P6 = row[TarifasPotenciaDb.p6]
+                        )
+                    }
+                    .let { tarifas ->
+                        if (tarifaType != null) {
+                            tarifas.filter { it.tarifa.equals(tarifaType, ignoreCase = true) }
+                        } else {
+                            tarifas
+                        }
+                    }
+                    .firstOrNull()
+                
+                // Get termino de energia data
+                val terminoEnergiaRow = TerminoDeEnergiaDb.selectAll().where { TerminoDeEnergiaDb.resultId eq resultId }.single()
+                val terminoEnergiaId = terminoEnergiaRow[TerminoDeEnergiaDb.id].value
+                
+                val tarifaEnergiaBase = TarifasEnergiaBaseDb.selectAll().where { TarifasEnergiaBaseDb.terminoId eq terminoEnergiaId }
+                    .map { row ->
+                        TarifaRow(
+                            tarifa = row[TarifasEnergiaBaseDb.tarifa],
+                            potencia_contratada = row[TarifasEnergiaBaseDb.potenciaContratada],
+                            P1 = row[TarifasEnergiaBaseDb.p1],
+                            P2 = row[TarifasEnergiaBaseDb.p2],
+                            P3 = row[TarifasEnergiaBaseDb.p3],
+                            P4 = row[TarifasEnergiaBaseDb.p4],
+                            P5 = row[TarifasEnergiaBaseDb.p5],
+                            P6 = row[TarifasEnergiaBaseDb.p6]
+                        )
+                    }
+                    .let { tarifas ->
+                        if (tarifaType != null) {
+                            tarifas.filter { it.tarifa.equals(tarifaType, ignoreCase = true) }
+                        } else {
+                            tarifas
+                        }
+                    }
+                    .firstOrNull()
+                
+                val tarifaEnergiaUnica = TarifasEnergiaUnicaDb.selectAll().where { TarifasEnergiaUnicaDb.terminoId eq terminoEnergiaId }
+                    .map { row ->
+                        TarifaRow(
+                            tarifa = row[TarifasEnergiaUnicaDb.tarifa],
+                            potencia_contratada = row[TarifasEnergiaUnicaDb.potenciaContratada],
+                            P1 = row[TarifasEnergiaUnicaDb.p1],
+                            P2 = row[TarifasEnergiaUnicaDb.p2],
+                            P3 = row[TarifasEnergiaUnicaDb.p3],
+                            P4 = row[TarifasEnergiaUnicaDb.p4],
+                            P5 = row[TarifasEnergiaUnicaDb.p5],
+                            P6 = row[TarifasEnergiaUnicaDb.p6]
+                        )
+                    }
+                    .let { tarifas ->
+                        if (tarifaType != null) {
+                            tarifas.filter { it.tarifa.equals(tarifaType, ignoreCase = true) }
+                        } else {
+                            tarifas
+                        }
+                    }
+                    .firstOrNull()
+                
+                // Skip this result if all tarifa objects are null after filtering
+                if (tarifaPotencia == null && tarifaEnergiaBase == null && tarifaEnergiaUnica == null) {
+                    return@forEach
+                }
+                
+                // Skip if any required tarifa is missing (all three should exist)
+                if (tarifaPotencia == null || tarifaEnergiaBase == null || tarifaEnergiaUnica == null) {
+                    return@forEach
+                }
+                
+                // Build the result structure with single tarifa objects
+                val extractedTables = FilteredExtractedTables(
+                    companyName = companyName,
+                    termino_de_potencia = FilteredTerminoDePotencia(
+                        titulo = terminoPotenciaRow[TerminoDePotenciaDb.titulo],
+                        tabla_precio_potencia = FilteredTablaPrecioPotencia(
+                            titulo = terminoPotenciaRow[TerminoDePotenciaDb.tablaTitulo],
+                            tarifa = tarifaPotencia
+                        )
+                    ),
+                    termino_de_energia = FilteredTerminoDeEnergia(
+                        titulo = terminoEnergiaRow[TerminoDeEnergiaDb.titulo],
+                        tabla_precio_clasica_base = FilteredTablaPrecioClasicaBase(
+                            titulo = terminoEnergiaRow[TerminoDeEnergiaDb.tablaBaseTitulo],
+                            tarifa = tarifaEnergiaBase
+                        ),
+                        tabla_precio_clasica_unica = FilteredTablaPrecioClasicaUnica(
+                            titulo = terminoEnergiaRow[TerminoDeEnergiaDb.tablaUnicaTitulo],
+                            tarifa = tarifaEnergiaUnica
+                        )
+                    )
+                )
+                
+                results.add(FilteredPriceTableResult(fileName = fileName, extracted_tables = extractedTables))
+            }
+            
+            FilteredPriceTableResponse(
+                success = true,
+                results = results,
+                iva = IVA,
+                impuestoElectrico = IMPUESTO_ELECTRICO,
+            )
+        }
+    }
+    
     fun clearAllData(): Int {
         return transaction {
             // Delete in reverse order of dependencies to avoid foreign key constraint violations

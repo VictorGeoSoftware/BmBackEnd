@@ -98,3 +98,60 @@ data class ClearDataResponse(
     val message: String,
     val deleted_rows: Int
 )
+
+// Filtered response models (for consumption report - single tarifa instead of array)
+@Serializable
+data class FilteredPriceTableResponse(
+    val success: Boolean,
+    val results: List<FilteredPriceTableResult>,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault
+    val iva: Int = IVA,
+    @OptIn(ExperimentalSerializationApi::class)
+    @EncodeDefault
+    val impuestoElectrico: Double = IMPUESTO_ELECTRICO
+)
+
+@Serializable
+data class FilteredPriceTableResult(
+    val fileName: String,
+    val extracted_tables: FilteredExtractedTables
+)
+
+@Serializable
+data class FilteredExtractedTables(
+    @SerialName("filename") val companyName: String,
+    val termino_de_potencia: FilteredTerminoDePotencia,
+    val termino_de_energia: FilteredTerminoDeEnergia
+)
+
+@Serializable
+data class FilteredTerminoDePotencia(
+    val titulo: String,
+    val tabla_precio_potencia: FilteredTablaPrecioPotencia
+)
+
+@Serializable
+data class FilteredTablaPrecioPotencia(
+    val titulo: String,
+    val tarifa: TarifaRow  // Single object instead of list
+)
+
+@Serializable
+data class FilteredTerminoDeEnergia(
+    val titulo: String,
+    val tabla_precio_clasica_base: FilteredTablaPrecioClasicaBase,
+    val tabla_precio_clasica_unica: FilteredTablaPrecioClasicaUnica
+)
+
+@Serializable
+data class FilteredTablaPrecioClasicaBase(
+    val titulo: String,
+    val tarifa: TarifaRow  // Single object instead of list
+)
+
+@Serializable
+data class FilteredTablaPrecioClasicaUnica(
+    val titulo: String,
+    val tarifa: TarifaRow  // Single object instead of list
+)

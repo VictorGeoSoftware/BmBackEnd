@@ -68,7 +68,7 @@ data class ConsumptionReportResponse(
     val success: Boolean,
     val doclingData: DoclingExtractedData,
     val consumptionData: CleanedConsumptionData,
-    val filteredPrices: PriceTableResponse
+    val filteredPrices: FilteredPriceTableResponse
 )
 
 @Serializable
