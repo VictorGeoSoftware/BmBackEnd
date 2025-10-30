@@ -13,7 +13,6 @@ import io.ktor.server.routing.*
 import kotlinx.serialization.json.Json
 
 fun Route.priceTableRoutes(priceTableService: PriceTableService) {
-    
     post("/batch-process-price-tables") {
         try {
             // Get raw request body for debugging

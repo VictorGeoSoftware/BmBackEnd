@@ -3,6 +3,7 @@ package com.bm.backend.services
 import com.bm.backend.models.BatchPriceTablesRequest
 import com.bm.backend.models.BatchProcessResponse
 import com.bm.backend.models.ClearDataResponse
+import com.bm.backend.models.FilteredPriceTableResponse
 import com.bm.backend.models.PriceTableResponse
 import com.bm.backend.repositories.PriceTableRepository
 
@@ -15,13 +16,18 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
                 throw ValidationException("Request cannot be empty")
             }
 
+            // Validate all responses before processing
+            for (priceTableResponse in request) {
+                validatePriceTableResponse(priceTableResponse)
+            }
+
+            // Clear existing data after validation passes
+            repository.clearAllData()
+
             var totalRowsInserted = 0
             var processedFiles = 0
 
             for (priceTableResponse in request) {
-                // Validate each response before processing
-                validatePriceTableResponse(priceTableResponse)
-                
                 val rowsInserted = repository.storePriceTableResults(priceTableResponse)
                 totalRowsInserted += rowsInserted
                 processedFiles += priceTableResponse.results.size
@@ -42,6 +48,10 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
 
     fun getAllPriceTableResults(tarifaType: String? = null): PriceTableResponse {
         return repository.getAllPriceTableResults(tarifaType)
+    }
+    
+    fun getFilteredPriceTableResults(tarifaType: String? = null): FilteredPriceTableResponse {
+        return repository.getFilteredPriceTableResults(tarifaType)
     }
     
     fun clearAllData(): ClearDataResponse {
