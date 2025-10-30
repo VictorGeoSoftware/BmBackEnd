@@ -15,13 +15,18 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
                 throw ValidationException("Request cannot be empty")
             }
 
+            // Validate all responses before processing
+            for (priceTableResponse in request) {
+                validatePriceTableResponse(priceTableResponse)
+            }
+
+            // Clear existing data after validation passes
+            repository.clearAllData()
+
             var totalRowsInserted = 0
             var processedFiles = 0
 
             for (priceTableResponse in request) {
-                // Validate each response before processing
-                validatePriceTableResponse(priceTableResponse)
-                
                 val rowsInserted = repository.storePriceTableResults(priceTableResponse)
                 totalRowsInserted += rowsInserted
                 processedFiles += priceTableResponse.results.size

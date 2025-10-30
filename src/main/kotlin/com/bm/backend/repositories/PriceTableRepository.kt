@@ -184,6 +184,11 @@ class PriceTableRepository {
                         }
                     }
                 
+                // Skip this result if all tarifa lists are empty after filtering
+                if (tarifasPotencia.isEmpty() && tarifasEnergiaBase.isEmpty() && tarifasEnergiaUnica.isEmpty()) {
+                    return@forEach
+                }
+                
                 // Build the result structure
                 val extractedTables = ExtractedTables(
                     companyName = companyName, // Use the company name from the result
