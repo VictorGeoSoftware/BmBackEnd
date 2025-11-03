@@ -1,9 +1,9 @@
 package com.bm.backend.services
 
+import com.bm.backend.models.ConsumptionReportResponse
 import com.bm.backend.models.Job
 import com.bm.backend.models.JobStatus
-import com.bm.backend.models.ConsumptionReportResponse
-import java.util.UUID
+import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
 class JobService {
@@ -54,6 +54,4 @@ class JobService {
             now - job.createdAt > JOB_EXPIRY_MS
         }
     }
-    
-    fun getAllJobs(): Map<String, Job> = jobs.toMap()
 }

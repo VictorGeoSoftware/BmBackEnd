@@ -1,6 +1,5 @@
 package com.bm.backend.models
 
-import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
 // Docling API Response Models
@@ -66,9 +65,9 @@ data class N8nConsumptionData(
 @Serializable
 data class ConsumptionReportResponse(
     val success: Boolean,
-    val doclingData: DoclingExtractedData,
+    val userData: DoclingExtractedData,
     val consumptionData: CleanedConsumptionData,
-    val filteredPrices: FilteredPriceTableResponse
+    val proposals: List<ProposalPriceModel>
 )
 
 @Serializable
@@ -92,4 +91,18 @@ data class CleanedConsumptionData(
     val feeType: String,
     val fileName: String,
     val processedAt: String
+)
+
+// Proposal Price Model
+@Serializable
+data class ProposalPriceModel(
+    val proposalTitle: String,
+    val powerTermItems: List<Double>,
+    val annualPowerTermCost: Double,
+    val consumedEnergyItems: List<Double>,
+    val annualEnergyCost: Double,
+    val extraServices: Double,
+    val iva: Double,
+    val electricalTax: Double,
+    val totalAnnualPrice: Double
 )

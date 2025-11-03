@@ -3,6 +3,7 @@ package com.bm.backend.services
 import com.bm.backend.models.ConsumptionReportResponse
 import com.bm.backend.models.UserConsumption
 import com.bm.backend.repositories.UserConsumptionRepository
+import com.bm.backend.utils.calculateProposals
 import com.bm.backend.utils.toCleanedData
 import java.io.File
 
@@ -15,10 +16,6 @@ class UserConsumptionService(
     fun processConsumptionReport(consumptionReport: UserConsumption) {
         // Store the consumption data
         userConsumptionRepository.storeConsumptionData(consumptionReport)
-    }
-    
-    fun getConsumptionReport(): UserConsumption? {
-        return userConsumptionRepository.getConsumptionReport()
     }
     
     suspend fun processConsumptionReportFromPdf(pdfFile: File): ConsumptionReportResponse {
@@ -46,12 +43,18 @@ class UserConsumptionService(
             throw Exception("Failed at price table filtering step: ${e.message}", e)
         }
         
-        // Step 5: Build consolidated response
+        // Step 5: Calculate proposals
+        val proposals = calculateProposals(
+            cleanedConsumptionData,
+            filteredPrices
+        )
+        
+        // Step 6: Build consolidated response
         return ConsumptionReportResponse(
             success = true,
-            doclingData = doclingData,
+            userData = doclingData,
             consumptionData = cleanedConsumptionData,
-            filteredPrices = filteredPrices
+            proposals = proposals
         )
     }
 }
