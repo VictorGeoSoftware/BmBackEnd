@@ -42,73 +42,74 @@ fun calculateProposals(
             powerPrices.P4, powerPrices.P5, powerPrices.P6
         )
         
-        // Process both energy price tables (base and unica)
+        // Process energy price table (base)
         val baseTable = extractedTables.termino_de_energia.tabla_precio_clasica_base
-        val unicaTable = extractedTables.termino_de_energia.tabla_precio_clasica_unica
-        
-        val energyTables = listOf(
-            baseTable.tarifa to baseTable.titulo,
-            unicaTable.tarifa to unicaTable.titulo
+        val energyPrices = baseTable.tarifa
+        val energyPricesList: List<Double?> = listOf(
+            energyPrices.P1, energyPrices.P2, energyPrices.P3,
+            energyPrices.P4, energyPrices.P5, energyPrices.P6
         )
         
-        for ((energyPrices, energyTitle) in energyTables) {
-            val energyPricesList: List<Double?> = listOf(
-                energyPrices.P1, energyPrices.P2, energyPrices.P3,
-                energyPrices.P4, energyPrices.P5, energyPrices.P6
-            )
-            
-            // Calculate power term items (non-zero subscribed powers)
-            val powerTermItems = subscribedPowers.filter { it > 0.0 }
-            
-            // Calculate annual power term cost
-            val annualPowerTermCost = subscribedPowers.zip(powerPricesList)
-                .sumOf { (power, price) ->
-                    if (price != null && power > 0.0) {
-                        power * price * 365
-                    } else {
-                        0.0
-                    }
+        // Get power term prices from table (only for non-zero subscribed powers)
+        val powerTermItems = subscribedPowers.zip(powerPricesList)
+            .filter { (power, price) -> power > 0.0 && price != null }
+            .map { (_, price) -> price!! }
+        
+        // Calculate annual power term cost
+        val annualPowerTermCost = subscribedPowers.zip(powerPricesList)
+            .sumOf { (power, price) ->
+                if (price != null && power > 0.0) {
+                    power * price * 365
+                } else {
+                    0.0
                 }
-            
-            // Calculate consumed energy items (non-zero consumptions)
-            val consumedEnergyItems = annualConsumptions.filter { it > 0.0 }
-            
-            // Calculate annual energy cost (convert from c€/kWh to €/kWh by dividing by 100)
-            val annualEnergyCost: Double = annualConsumptions.zip(energyPricesList)
-                .sumOf { (consumption: Double, price: Double?) ->
-                    if (price != null && consumption > 0.0) {
-                        consumption * (price / 100.0)  // Convert c€/kWh to €/kWh
-                    } else {
-                        0.0
-                    }
+            }
+        
+        // Get energy prices from table (only for non-zero consumptions)
+        val consumedEnergyItems = annualConsumptions.zip(energyPricesList)
+            .filter { (consumption, price) -> consumption > 0.0 && price != null }
+            .map { (_, price) -> price!! / 100.0 }  // Convert c€/kWh to €/kWh
+        
+        // Calculate annual energy cost (convert from c€/kWh to €/kWh by dividing by 100)
+        val annualEnergyCost: Double = annualConsumptions.zip(energyPricesList)
+            .sumOf { (consumption: Double, price: Double?) ->
+                if (price != null && consumption > 0.0) {
+                    consumption * (price / 100.0)  // Convert c€/kWh to €/kWh
+                } else {
+                    0.0
                 }
-            
-            // Extra services (currently 0.0)
-            val extraServices = 0.0
-            
-            // Calculate electrical tax
-            val electricalTax = (annualPowerTermCost + annualEnergyCost) * (filteredPrices.impuestoElectrico / 100.0)
-            
-            // Calculate IVA multiplier
-            val ivaMultiplier = 1.0 + (filteredPrices.iva / 100.0)
-            
-            // Calculate total annual price
-            val totalAnnualPrice = (annualPowerTermCost + annualEnergyCost + extraServices + electricalTax) * ivaMultiplier
-            
-            proposals.add(
-                ProposalPriceModel(
-                    proposalTitle = energyTitle,
-                    powerTermItems = powerTermItems,
-                    annualPowerTermCost = annualPowerTermCost,
-                    consumedEnergyItems = consumedEnergyItems,
-                    annualEnergyCost = annualEnergyCost,
-                    extraServices = extraServices,
-                    iva = filteredPrices.iva.toDouble(),
-                    electricalTax = electricalTax,
-                    totalAnnualPrice = totalAnnualPrice
-                )
+            }
+        
+        // Extra services (currently 0.0)
+        val extraServices = 0.0
+        
+        // Calculate electrical tax
+        val electricalTax = (annualPowerTermCost + annualEnergyCost) * (filteredPrices.impuestoElectrico / 100.0)
+        
+        // Calculate IVA multiplier
+        val ivaMultiplier = 1.0 + (filteredPrices.iva / 100.0)
+        
+        // Calculate total annual price
+        val totalAnnualPrice = (annualPowerTermCost + annualEnergyCost + extraServices) * ivaMultiplier
+
+        val cleanedTitle = baseTable.titulo
+            .replace("PRECIO", "", ignoreCase = true)
+            .replace("(c€/kWh)", "")
+            .trim()
+
+        proposals.add(
+            ProposalPriceModel(
+                proposalTitle = cleanedTitle,
+                powerTermItems = powerTermItems,
+                annualPowerTermCost = annualPowerTermCost,
+                consumedEnergyItems = consumedEnergyItems,
+                annualEnergyCost = annualEnergyCost,
+                extraServices = extraServices,
+                iva = filteredPrices.iva.toDouble(),
+                electricalTax = electricalTax,
+                totalAnnualPrice = totalAnnualPrice
             )
-        }
+        )
     }
     
     return proposals
