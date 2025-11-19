@@ -45,8 +45,11 @@ jobs:
       
       - name: Deploy to Server
         run: |
-          # Copy JAR to server
-          scp build/libs/bm-backend-1.0-all.jar root@217.154.181.175:/root/BmBackEnd/
+          # Create build/libs directory on server
+          ssh root@217.154.181.175 "mkdir -p /root/BmBackEnd/build/libs"
+          
+          # Copy JAR to correct location
+          scp build/libs/bm-backend-1.0-all.jar root@217.154.181.175:/root/BmBackEnd/build/libs/
           
           # Copy resources
           scp -r src/main/resources root@217.154.181.175:/root/BmBackEnd/
