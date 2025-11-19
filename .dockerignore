@@ -1,0 +1,29 @@
+# Build artifacts
+build/
+.gradle/
+.kotlin/
+
+# IDE
+.idea/
+*.iml
+*.iws
+*.ipr
+
+# Git
+.git/
+.gitignore
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+logs/
+
+# Database journals
+*.db-journal
+
+# Temporary files
+temp/
+tmp/
