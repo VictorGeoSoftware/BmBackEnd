@@ -20,7 +20,7 @@ data class DoclingExtractedData(
 @Serializable
 data class CustomerDetails(
     val address: String,
-    val name: String
+    val name: String? = null
 )
 
 @Serializable
