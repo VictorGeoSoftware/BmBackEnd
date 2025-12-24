@@ -83,14 +83,14 @@ fun calculateProposals(
         // Extra services (currently 0.0)
         val extraServices = 0.0
         
+        // Calculate IVA multiplier
+        val ivaAmount = (annualPowerTermCost + annualEnergyCost) * (filteredPrices.iva.toDouble() / 100.0)
+
         // Calculate electrical tax
         val electricalTax = (annualPowerTermCost + annualEnergyCost) * (filteredPrices.impuestoElectrico / 100.0)
-        
-        // Calculate IVA multiplier
-        val ivaMultiplier = 1.0 + (filteredPrices.iva / 100.0)
-        
+
         // Calculate total annual price
-        val totalAnnualPrice = (annualPowerTermCost + annualEnergyCost + extraServices) * ivaMultiplier
+        val totalAnnualPrice = annualPowerTermCost + annualEnergyCost + extraServices + ivaAmount + electricalTax
 
         val cleanedTitle = baseTable.titulo
             .replace("PRECIO", "", ignoreCase = true)
@@ -105,7 +105,7 @@ fun calculateProposals(
                 consumedEnergyItems = consumedEnergyItems,
                 annualEnergyCost = annualEnergyCost,
                 extraServices = extraServices,
-                iva = filteredPrices.iva.toDouble(),
+                iva = ivaAmount,
                 electricalTax = electricalTax,
                 totalAnnualPrice = totalAnnualPrice
             )
