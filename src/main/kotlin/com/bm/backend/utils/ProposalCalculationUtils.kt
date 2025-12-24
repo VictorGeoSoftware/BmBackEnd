@@ -1,6 +1,8 @@
 package com.bm.backend.utils
 
-import com.bm.backend.models.*
+import com.bm.backend.models.CleanedConsumptionData
+import com.bm.backend.models.FilteredPriceTableResponse
+import com.bm.backend.models.ProposalPriceModel
 
 /**
  * Calculates proposal prices from consumption data and filtered price table results
