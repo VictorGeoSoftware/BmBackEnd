@@ -45,8 +45,9 @@ class ExternalApiService {
         }
     }
     
-    private val doclingApiUrl = "http://localhost:5000"
-    private val n8nWebhookUrl = "http://localhost:5678/webhook/fetch-user-consumption"
+    private val doclingApiUrl = System.getenv("DOCLING_API_URL") ?: "http://localhost:5000"
+    private val n8nWebhookUrl = System.getenv("N8N_WEBHOOK_URL")
+        ?: "http://localhost:5678/webhook/fetch-user-consumption"
     
     /**
      * Calls Docling API to extract data from PDF
