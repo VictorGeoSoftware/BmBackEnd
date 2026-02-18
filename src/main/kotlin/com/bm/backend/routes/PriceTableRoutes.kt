@@ -3,16 +3,24 @@ package com.bm.backend.routes
 import com.bm.backend.models.BatchPriceTablesRequest
 import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.PriceTableResponse
+import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.ValidationException
 import io.ktor.http.*
+import io.ktor.http.content.*
 import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.encodeToString
+import java.io.File
+import java.nio.file.Files
 
-fun Route.priceTableRoutes(priceTableService: PriceTableService) {
+fun Route.priceTableRoutes(
+    priceTableService: PriceTableService,
+    externalApiService: ExternalApiService
+) {
     post("/batch-process-price-tables") {
         try {
             // Get raw request body for debugging
@@ -74,6 +82,77 @@ fun Route.priceTableRoutes(priceTableService: PriceTableService) {
                 HttpStatusCode.InternalServerError,
                 ErrorResponse(message = "Internal server error: ${e.message}")
             )
+        }
+    }
+
+    post("/upload-price-proposal") {
+        var tempFile: File? = null
+        var uploadedFileName: String? = null
+
+        try {
+            val multipartData = call.receiveMultipart()
+
+            multipartData.forEachPart { part ->
+                when (part) {
+                    is PartData.FileItem -> {
+                        if (tempFile != null) {
+                            part.dispose()
+                            return@forEachPart
+                        }
+
+                        val originalFileName = part.originalFileName ?: "uploaded.pdf"
+                        if (!originalFileName.endsWith(".pdf", ignoreCase = true)) {
+                            throw ValidationException("Only PDF files are accepted")
+                        }
+
+                        uploadedFileName = originalFileName
+                        tempFile = Files.createTempFile("price_proposal_", ".pdf").toFile()
+
+                        part.streamProvider().use { input ->
+                            tempFile!!.outputStream().use { output ->
+                                input.copyTo(output)
+                            }
+                        }
+                    }
+
+                    else -> {}
+                }
+                part.dispose()
+            }
+
+            if (tempFile == null) {
+                throw ValidationException("No PDF file provided")
+            }
+
+            val extractedResponse = externalApiService.extractPriceTablesFromPdf(tempFile!!)
+            call.application.log.info(
+                "Extracted price tables response for file ${uploadedFileName ?: tempFile!!.name}: ${Json.encodeToString(extractedResponse)}"
+            )
+
+            val storageResponse = priceTableService.processBatchPriceTables(listOf(extractedResponse))
+
+            call.respond(
+                HttpStatusCode.Created,
+                mapOf(
+                    "success" to true,
+                    "message" to "Price proposal processed successfully",
+                    "extracted" to extractedResponse,
+                    "storage" to storageResponse
+                )
+            )
+        } catch (e: ValidationException) {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ErrorResponse(message = "Validation failed: ${e.message}")
+            )
+        } catch (e: Exception) {
+            call.application.log.error("Error uploading price proposal: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        } finally {
+            tempFile?.delete()
         }
     }
 }

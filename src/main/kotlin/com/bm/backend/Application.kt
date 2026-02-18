@@ -68,7 +68,7 @@ fun Application.configureRouting() {
         }
 
         route("/api/v1") {
-            priceTableRoutes(priceTableService)
+            priceTableRoutes(priceTableService, externalApiService)
             userConsumptionRoutes(userConsumptionService, jobService)
         }
     }
