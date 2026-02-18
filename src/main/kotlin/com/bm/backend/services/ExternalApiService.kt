@@ -2,6 +2,15 @@ package com.bm.backend.services
 
 import com.bm.backend.models.DoclingApiResponse
 import com.bm.backend.models.DoclingExtractedData
+import com.bm.backend.models.ExtractedTables
+import com.bm.backend.models.PriceTableResponse
+import com.bm.backend.models.PriceTableResult
+import com.bm.backend.models.TablaPrecioClasicaBase
+import com.bm.backend.models.TablaPrecioClasicaUnica
+import com.bm.backend.models.TablaPrecioPotencia
+import com.bm.backend.models.TarifaRow
+import com.bm.backend.models.TerminoDeEnergia
+import com.bm.backend.models.TerminoDePotencia
 import com.bm.backend.models.N8nWebhookResponse
 import io.ktor.client.*
 import io.ktor.client.call.*
@@ -12,7 +21,16 @@ import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
+import kotlinx.serialization.json.JsonArray
+import kotlinx.serialization.json.JsonElement
+import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.booleanOrNull
+import kotlinx.serialization.json.contentOrNull
+import kotlinx.serialization.json.doubleOrNull
+import kotlinx.serialization.json.jsonArray
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
 
 class ExternalApiService {
@@ -47,6 +65,155 @@ class ExternalApiService {
     
     private val doclingApiUrl = "http://localhost:5000"
     private val n8nWebhookUrl = "http://localhost:5678/webhook/fetch-user-consumption"
+
+    /**
+     * Calls Docling price tables API and normalizes the response to backend price table schema.
+     */
+    suspend fun extractPriceTablesFromPdf(pdfFile: File): PriceTableResponse {
+        return try {
+            println("Sending PDF to Docling Price Tables API: ${pdfFile.name}, size: ${pdfFile.length()} bytes")
+
+            val httpResponse = client.submitFormWithBinaryData(
+                url = "$doclingApiUrl/extract-price-tables",
+                formData = formData {
+                    append("file", pdfFile.readBytes(), Headers.build {
+                        append(HttpHeaders.ContentType, "application/pdf")
+                        append(HttpHeaders.ContentDisposition, "filename=\"${pdfFile.name}\"")
+                    })
+                }
+            )
+
+            if (!httpResponse.status.isSuccess()) {
+                val errorBody = try {
+                    httpResponse.body<String>()
+                } catch (e: Exception) {
+                    "Unable to read error response body"
+                }
+                throw Exception("Docling Price Tables API returned error status ${httpResponse.status.value}: $errorBody")
+            }
+
+            val responseText: String = httpResponse.body()
+            if (responseText.isBlank()) {
+                throw Exception("Docling Price Tables API returned empty response body")
+            }
+
+            println("Docling Price Tables API response received, length: ${responseText.length} chars")
+
+            parseOrNormalizePriceTableResponse(responseText, pdfFile.name)
+        } catch (e: Exception) {
+            throw Exception("Failed to extract price tables from PDF via Docling API: ${e.message}", e)
+        }
+    }
+
+    private fun parseOrNormalizePriceTableResponse(responseText: String, fallbackFileName: String): PriceTableResponse {
+        return runCatching {
+            json.decodeFromString<PriceTableResponse>(responseText)
+        }.getOrElse {
+            normalizeDoclingPriceTablesResponse(responseText, fallbackFileName)
+        }
+    }
+
+    private fun normalizeDoclingPriceTablesResponse(responseText: String, fallbackFileName: String): PriceTableResponse {
+        val root = json.parseToJsonElement(responseText).jsonObject
+        val success = root["success"]?.jsonPrimitive?.booleanOrNull ?: true
+        val results = root["results"]?.jsonArray ?: JsonArray(emptyList())
+
+        val normalizedResults = results.flatMap { resultElement ->
+            normalizeResult(resultElement, fallbackFileName)
+        }
+
+        if (normalizedResults.isEmpty()) {
+            throw Exception("Docling response did not contain extractable price tables")
+        }
+
+        return PriceTableResponse(
+            success = success,
+            results = normalizedResults
+        )
+    }
+
+    private fun normalizeResult(resultElement: JsonElement, fallbackFileName: String): List<PriceTableResult> {
+        val resultObject = resultElement.jsonObject
+
+        runCatching {
+            return listOf(json.decodeFromJsonElement(PriceTableResult.serializer(), resultObject))
+        }
+
+        val fileName = resultObject["fileName"]?.jsonPrimitive?.contentOrNull ?: fallbackFileName
+        val extractedTables = resultObject["extracted_tables"]?.jsonObject ?: return emptyList()
+
+        val companyName = extractedTables["filename"]?.jsonPrimitive?.contentOrNull ?: "Unknown"
+        val products = extractedTables["producto"]?.jsonArray ?: return emptyList()
+
+        val hasMultipleProducts = products.size > 1
+
+        return products.mapNotNull { productElement ->
+            val productObject = productElement.jsonObject
+            val productName = productObject["name"]?.jsonPrimitive?.contentOrNull ?: "Producto"
+
+            val potenciaTarifas = extractTarifas(productObject, "preciosPotencia")
+            val energiaTarifas = extractTarifas(productObject, "preciosEnergia")
+
+            val normalizedPotenciaTarifas = if (potenciaTarifas.isNotEmpty()) potenciaTarifas else energiaTarifas
+            val normalizedEnergiaTarifas = if (energiaTarifas.isNotEmpty()) energiaTarifas else potenciaTarifas
+
+            if (normalizedPotenciaTarifas.isEmpty() || normalizedEnergiaTarifas.isEmpty()) {
+                return@mapNotNull null
+            }
+
+            PriceTableResult(
+                fileName = if (hasMultipleProducts) "$fileName - $productName" else fileName,
+                extracted_tables = ExtractedTables(
+                    companyName = companyName,
+                    termino_de_potencia = TerminoDePotencia(
+                        titulo = "Termino de potencia - $productName",
+                        tabla_precio_potencia = TablaPrecioPotencia(
+                            titulo = "Tabla precio potencia",
+                            tarifas = normalizedPotenciaTarifas
+                        )
+                    ),
+                    termino_de_energia = TerminoDeEnergia(
+                        titulo = "Termino de energia - $productName",
+                        tabla_precio_clasica_base = TablaPrecioClasicaBase(
+                            titulo = "Tabla precio clasica base",
+                            tarifas = normalizedEnergiaTarifas
+                        ),
+                        tabla_precio_clasica_unica = TablaPrecioClasicaUnica(
+                            titulo = "Tabla precio clasica unica",
+                            tarifas = normalizedEnergiaTarifas
+                        )
+                    )
+                )
+            )
+        }
+    }
+
+    private fun extractTarifas(productObject: JsonObject, tableKey: String): List<TarifaRow> {
+        val tarifas = productObject[tableKey]
+            ?.jsonObject
+            ?.get("tarifa")
+            ?.jsonArray
+            ?: return emptyList()
+
+        return tarifas.mapNotNull { tarifaElement ->
+            val tarifaObject = tarifaElement.jsonObject
+            val tarifaName = tarifaObject["name"]?.jsonPrimitive?.contentOrNull
+                ?.trim()
+                ?.takeIf { it.isNotBlank() }
+                ?: return@mapNotNull null
+
+            TarifaRow(
+                tarifa = tarifaName,
+                potencia_contratada = null,
+                P1 = tarifaObject["p1"]?.jsonPrimitive?.doubleOrNull,
+                P2 = tarifaObject["p2"]?.jsonPrimitive?.doubleOrNull,
+                P3 = tarifaObject["p3"]?.jsonPrimitive?.doubleOrNull,
+                P4 = tarifaObject["p4"]?.jsonPrimitive?.doubleOrNull,
+                P5 = tarifaObject["p5"]?.jsonPrimitive?.doubleOrNull,
+                P6 = tarifaObject["p6"]?.jsonPrimitive?.doubleOrNull
+            )
+        }
+    }
     
     /**
      * Calls Docling API to extract data from PDF
