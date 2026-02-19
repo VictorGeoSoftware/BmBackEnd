@@ -3,6 +3,7 @@ package com.bm.backend.routes
 import com.bm.backend.models.BatchPriceTablesRequest
 import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.PriceTableResponse
+import com.bm.backend.models.UploadPriceProposalResponse
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.ValidationException
@@ -133,11 +134,11 @@ fun Route.priceTableRoutes(
 
             call.respond(
                 HttpStatusCode.Created,
-                mapOf(
-                    "success" to true,
-                    "message" to "Price proposal processed successfully",
-                    "extracted" to extractedResponse,
-                    "storage" to storageResponse
+                UploadPriceProposalResponse(
+                    success = true,
+                    message = "Price proposal processed successfully",
+                    extracted = extractedResponse,
+                    storage = storageResponse
                 )
             )
         } catch (e: ValidationException) {

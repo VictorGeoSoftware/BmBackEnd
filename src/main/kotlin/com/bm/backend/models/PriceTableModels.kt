@@ -77,6 +77,14 @@ data class TarifaRow(
 // Request models for batch processing - accepts array directly
 typealias BatchPriceTablesRequest = List<PriceTableResponse>
 
+@Serializable
+data class UploadPriceProposalResponse(
+    val success: Boolean,
+    val message: String,
+    val extracted: PriceTableResponse,
+    val storage: BatchProcessResponse
+)
+
 // Response models
 @Serializable
 data class BatchProcessResponse(
