@@ -63,7 +63,14 @@ class ExternalApiService {
         }
     }
     
-    private val doclingApiUrl = "http://localhost:5000"
+    private val doclingCustomerApiUrl =
+        System.getenv("DOCLING_CUSTOMER_API_URL")
+            ?: System.getenv("DOCLING_API_URL")
+            ?: "http://localhost:5000"
+    private val doclingPriceTablesApiUrl =
+        System.getenv("DOCLING_PRICE_TABLES_API_URL")
+            ?: System.getenv("DOCLING_API_URL")
+            ?: "http://localhost:5001"
     private val n8nWebhookUrl = "http://localhost:5678/webhook/fetch-user-consumption"
 
     /**
@@ -74,7 +81,7 @@ class ExternalApiService {
             println("Sending PDF to Docling Price Tables API: ${pdfFile.name}, size: ${pdfFile.length()} bytes")
 
             val httpResponse = client.submitFormWithBinaryData(
-                url = "$doclingApiUrl/extract-price-tables",
+                url = "$doclingPriceTablesApiUrl/extract-price-tables",
                 formData = formData {
                     append("file", pdfFile.readBytes(), Headers.build {
                         append(HttpHeaders.ContentType, "application/pdf")
@@ -223,7 +230,7 @@ class ExternalApiService {
             println("Sending PDF to Docling API: ${pdfFile.name}, size: ${pdfFile.length()} bytes")
             
             val httpResponse = client.submitFormWithBinaryData(
-                url = "$doclingApiUrl/extract-all",
+                url = "$doclingCustomerApiUrl/extract-all",
                 formData = formData {
                     append("file", pdfFile.readBytes(), Headers.build {
                         append(HttpHeaders.ContentType, "application/pdf")
