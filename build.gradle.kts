@@ -41,6 +41,9 @@ dependencies {
     
     // Configuration
     implementation("io.ktor:ktor-server-config-yaml:2.3.12")
+
+    // Firebase Admin
+    implementation("com.google.firebase:firebase-admin:9.4.3")
     
     testImplementation(kotlin("test"))
     testImplementation("io.ktor:ktor-server-test-host:2.3.12")

@@ -61,3 +61,17 @@ object TarifasEnergiaUnicaDb : IntIdTable("tarifas_energia_unica") {
     val p5 = double("p5").nullable()
     val p6 = double("p6").nullable()
 }
+
+// Table for authenticated Firebase user data synced from web login
+object UserDataDb : IntIdTable("user_data") {
+    val uid = varchar("uid", 128).uniqueIndex()
+    val email = varchar("email", 255).nullable()
+    val displayName = varchar("display_name", 255).nullable()
+    val photoURL = text("photo_url").nullable()
+    val providerIds = text("provider_ids")
+    val tokenIssuedAt = long("token_issued_at")
+    val tokenExpiresAt = long("token_expires_at")
+    val lastLoginAt = long("last_login_at")
+    val createdAt = long("created_at")
+    val updatedAt = long("updated_at")
+}
