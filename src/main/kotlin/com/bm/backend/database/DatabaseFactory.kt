@@ -19,7 +19,8 @@ object DatabaseFactory {
                 TerminoDeEnergiaDb,
                 TarifasPotenciaDb,
                 TarifasEnergiaBaseDb,
-                TarifasEnergiaUnicaDb
+                TarifasEnergiaUnicaDb,
+                UserDataDb
             )
         }
     }
@@ -42,7 +43,8 @@ object DatabaseFactory {
                 TerminoDeEnergiaDb,
                 TarifasPotenciaDb,
                 TarifasEnergiaBaseDb,
-                TarifasEnergiaUnicaDb
+                TarifasEnergiaUnicaDb,
+                UserDataDb
             )
         }
     }

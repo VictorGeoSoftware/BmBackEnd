@@ -2,11 +2,14 @@ package com.bm.backend
 
 import com.bm.backend.database.DatabaseFactory
 import com.bm.backend.repositories.UserConsumptionRepository
+import com.bm.backend.repositories.UserDataRepository
 import com.bm.backend.routes.priceTableRoutes
 import com.bm.backend.routes.userConsumptionRoutes
+import com.bm.backend.routes.userDataRoutes
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.UserConsumptionService
+import com.bm.backend.services.UserDataService
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.plugins.contentnegotiation.*
@@ -51,12 +54,14 @@ fun Application.configureRouting() {
     val priceTableService = PriceTableService()
     val externalApiService = ExternalApiService()
     val userConsumptionRepository = UserConsumptionRepository()
+    val userDataRepository = UserDataRepository()
     val jobService = com.bm.backend.services.JobService()
     val userConsumptionService = UserConsumptionService(
         userConsumptionRepository,
         externalApiService,
         priceTableService
     )
+    val userDataService = UserDataService(userDataRepository)
     
     routing {
         get("/") {
@@ -70,6 +75,7 @@ fun Application.configureRouting() {
         route("/api/v1") {
             priceTableRoutes(priceTableService, externalApiService)
             userConsumptionRoutes(userConsumptionService, jobService)
+            userDataRoutes(userDataService)
         }
     }
 }
