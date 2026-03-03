@@ -16,11 +16,14 @@ import com.bm.backend.models.TerminoDeEnergia
 import com.bm.backend.models.TerminoDePotencia
 import com.bm.backend.models.IMPUESTO_ELECTRICO
 import com.bm.backend.models.IVA
+import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.deleteAll
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.insertAndGetId
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.jetbrains.exposed.sql.update
 
 class PriceTableRepository {
 
@@ -29,6 +32,22 @@ class PriceTableRepository {
             var totalRowsInserted = 0
             
             priceTableResponse.results.forEach { result ->
+                val duplicateResultIds = findDuplicateResultIds(result)
+                if (duplicateResultIds.isNotEmpty()) {
+                    val keepResultId = duplicateResultIds.first()
+
+                    PriceTableResultsDb.update({ PriceTableResultsDb.id eq keepResultId }) {
+                        it[fileName] = result.fileName
+                        it[companyName] = result.extracted_tables.companyName
+                    }
+
+                    duplicateResultIds.drop(1).forEach { duplicateId ->
+                        deleteResultById(duplicateId)
+                    }
+
+                    return@forEach
+                }
+
                 // Insert main result record
                 val resultId = PriceTableResultsDb.insertAndGetId {
                     it[PriceTableResultsDb.fileName] = result.fileName
@@ -101,6 +120,174 @@ class PriceTableRepository {
             
             totalRowsInserted
         }
+    }
+
+    private fun findDuplicateResultIds(incomingResult: PriceTableResult): List<Int> {
+        val incomingFingerprint = buildFingerprint(
+            companyName = incomingResult.extracted_tables.companyName,
+            potenciaTitulo = incomingResult.extracted_tables.termino_de_potencia.titulo,
+            potenciaTablaTitulo = incomingResult.extracted_tables.termino_de_potencia.tabla_precio_potencia.titulo,
+            potenciaTarifas = incomingResult.extracted_tables.termino_de_potencia.tabla_precio_potencia.tarifas,
+            energiaTitulo = incomingResult.extracted_tables.termino_de_energia.titulo,
+            energiaBaseTablaTitulo = incomingResult.extracted_tables.termino_de_energia.tabla_precio_clasica_base.titulo,
+            energiaBaseTarifas = incomingResult.extracted_tables.termino_de_energia.tabla_precio_clasica_base.tarifas,
+            energiaUnicaTablaTitulo = incomingResult.extracted_tables.termino_de_energia.tabla_precio_clasica_unica.titulo,
+            energiaUnicaTarifas = incomingResult.extracted_tables.termino_de_energia.tabla_precio_clasica_unica.tarifas
+        )
+
+        return PriceTableResultsDb
+            .selectAll()
+            .where { PriceTableResultsDb.companyName eq incomingResult.extracted_tables.companyName }
+            .mapNotNull { resultRow ->
+                val resultId = resultRow[PriceTableResultsDb.id].value
+                val persistedFingerprint = buildPersistedFingerprint(resultId, resultRow[PriceTableResultsDb.companyName])
+
+                if (persistedFingerprint == incomingFingerprint) resultId else null
+            }
+    }
+
+    private fun buildPersistedFingerprint(resultId: Int, companyName: String): String {
+        val terminoPotenciaRow = TerminoDePotenciaDb
+            .selectAll()
+            .where { TerminoDePotenciaDb.resultId eq resultId }
+            .single()
+
+        val terminoEnergiaRow = TerminoDeEnergiaDb
+            .selectAll()
+            .where { TerminoDeEnergiaDb.resultId eq resultId }
+            .single()
+
+        val potenciaTarifas = TarifasPotenciaDb
+            .selectAll()
+            .where { TarifasPotenciaDb.terminoId eq terminoPotenciaRow[TerminoDePotenciaDb.id].value }
+            .map(::toTarifaRowFromPotencia)
+
+        val energiaBaseTarifas = TarifasEnergiaBaseDb
+            .selectAll()
+            .where { TarifasEnergiaBaseDb.terminoId eq terminoEnergiaRow[TerminoDeEnergiaDb.id].value }
+            .map(::toTarifaRowFromEnergiaBase)
+
+        val energiaUnicaTarifas = TarifasEnergiaUnicaDb
+            .selectAll()
+            .where { TarifasEnergiaUnicaDb.terminoId eq terminoEnergiaRow[TerminoDeEnergiaDb.id].value }
+            .map(::toTarifaRowFromEnergiaUnica)
+
+        return buildFingerprint(
+            companyName = companyName,
+            potenciaTitulo = terminoPotenciaRow[TerminoDePotenciaDb.titulo],
+            potenciaTablaTitulo = terminoPotenciaRow[TerminoDePotenciaDb.tablaTitulo],
+            potenciaTarifas = potenciaTarifas,
+            energiaTitulo = terminoEnergiaRow[TerminoDeEnergiaDb.titulo],
+            energiaBaseTablaTitulo = terminoEnergiaRow[TerminoDeEnergiaDb.tablaBaseTitulo],
+            energiaBaseTarifas = energiaBaseTarifas,
+            energiaUnicaTablaTitulo = terminoEnergiaRow[TerminoDeEnergiaDb.tablaUnicaTitulo],
+            energiaUnicaTarifas = energiaUnicaTarifas
+        )
+    }
+
+    private fun buildFingerprint(
+        companyName: String,
+        potenciaTitulo: String,
+        potenciaTablaTitulo: String,
+        potenciaTarifas: List<TarifaRow>,
+        energiaTitulo: String,
+        energiaBaseTablaTitulo: String,
+        energiaBaseTarifas: List<TarifaRow>,
+        energiaUnicaTablaTitulo: String,
+        energiaUnicaTarifas: List<TarifaRow>
+    ): String {
+        return listOf(
+            companyName.trim().lowercase(),
+            potenciaTitulo.trim().lowercase(),
+            potenciaTablaTitulo.trim().lowercase(),
+            serializeTarifas(potenciaTarifas),
+            energiaTitulo.trim().lowercase(),
+            energiaBaseTablaTitulo.trim().lowercase(),
+            serializeTarifas(energiaBaseTarifas),
+            energiaUnicaTablaTitulo.trim().lowercase(),
+            serializeTarifas(energiaUnicaTarifas)
+        ).joinToString("||")
+    }
+
+    private fun serializeTarifas(tarifas: List<TarifaRow>): String {
+        return tarifas
+            .sortedBy { it.tarifa.lowercase() }
+            .joinToString(";;") { tarifa ->
+                listOf(
+                    tarifa.tarifa.trim().lowercase(),
+                    tarifa.potencia_contratada?.trim()?.lowercase() ?: "null",
+                    tarifa.P1?.toString() ?: "null",
+                    tarifa.P2?.toString() ?: "null",
+                    tarifa.P3?.toString() ?: "null",
+                    tarifa.P4?.toString() ?: "null",
+                    tarifa.P5?.toString() ?: "null",
+                    tarifa.P6?.toString() ?: "null"
+                ).joinToString("|")
+            }
+    }
+
+    private fun toTarifaRowFromPotencia(row: org.jetbrains.exposed.sql.ResultRow): TarifaRow {
+        return TarifaRow(
+            tarifa = row[TarifasPotenciaDb.tarifa],
+            potencia_contratada = row[TarifasPotenciaDb.potenciaContratada],
+            P1 = row[TarifasPotenciaDb.p1],
+            P2 = row[TarifasPotenciaDb.p2],
+            P3 = row[TarifasPotenciaDb.p3],
+            P4 = row[TarifasPotenciaDb.p4],
+            P5 = row[TarifasPotenciaDb.p5],
+            P6 = row[TarifasPotenciaDb.p6]
+        )
+    }
+
+    private fun toTarifaRowFromEnergiaBase(row: org.jetbrains.exposed.sql.ResultRow): TarifaRow {
+        return TarifaRow(
+            tarifa = row[TarifasEnergiaBaseDb.tarifa],
+            potencia_contratada = row[TarifasEnergiaBaseDb.potenciaContratada],
+            P1 = row[TarifasEnergiaBaseDb.p1],
+            P2 = row[TarifasEnergiaBaseDb.p2],
+            P3 = row[TarifasEnergiaBaseDb.p3],
+            P4 = row[TarifasEnergiaBaseDb.p4],
+            P5 = row[TarifasEnergiaBaseDb.p5],
+            P6 = row[TarifasEnergiaBaseDb.p6]
+        )
+    }
+
+    private fun toTarifaRowFromEnergiaUnica(row: org.jetbrains.exposed.sql.ResultRow): TarifaRow {
+        return TarifaRow(
+            tarifa = row[TarifasEnergiaUnicaDb.tarifa],
+            potencia_contratada = row[TarifasEnergiaUnicaDb.potenciaContratada],
+            P1 = row[TarifasEnergiaUnicaDb.p1],
+            P2 = row[TarifasEnergiaUnicaDb.p2],
+            P3 = row[TarifasEnergiaUnicaDb.p3],
+            P4 = row[TarifasEnergiaUnicaDb.p4],
+            P5 = row[TarifasEnergiaUnicaDb.p5],
+            P6 = row[TarifasEnergiaUnicaDb.p6]
+        )
+    }
+
+    private fun deleteResultById(resultId: Int) {
+        val potenciaIds = TerminoDePotenciaDb
+            .selectAll()
+            .where { TerminoDePotenciaDb.resultId eq resultId }
+            .map { it[TerminoDePotenciaDb.id].value }
+
+        potenciaIds.forEach { terminoId ->
+            TarifasPotenciaDb.deleteWhere { TarifasPotenciaDb.terminoId eq terminoId }
+        }
+        TerminoDePotenciaDb.deleteWhere { TerminoDePotenciaDb.resultId eq resultId }
+
+        val energiaIds = TerminoDeEnergiaDb
+            .selectAll()
+            .where { TerminoDeEnergiaDb.resultId eq resultId }
+            .map { it[TerminoDeEnergiaDb.id].value }
+
+        energiaIds.forEach { terminoId ->
+            TarifasEnergiaBaseDb.deleteWhere { TarifasEnergiaBaseDb.terminoId eq terminoId }
+            TarifasEnergiaUnicaDb.deleteWhere { TarifasEnergiaUnicaDb.terminoId eq terminoId }
+        }
+        TerminoDeEnergiaDb.deleteWhere { TerminoDeEnergiaDb.resultId eq resultId }
+
+        PriceTableResultsDb.deleteWhere { PriceTableResultsDb.id eq resultId }
     }
     
     fun getAllPriceTableResults(tarifaType: String? = null): PriceTableResponse {
