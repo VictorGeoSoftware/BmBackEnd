@@ -21,9 +21,6 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
                 validatePriceTableResponse(priceTableResponse)
             }
 
-            // Clear existing data after validation passes
-            repository.clearAllData()
-
             var totalRowsInserted = 0
             var processedFiles = 0
 
