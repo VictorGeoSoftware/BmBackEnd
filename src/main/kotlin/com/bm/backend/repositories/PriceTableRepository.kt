@@ -163,29 +163,8 @@ class PriceTableRepository {
                         }
                     }
                 
-                val tarifasEnergiaUnica = TarifasEnergiaUnicaDb.selectAll().where { TarifasEnergiaUnicaDb.terminoId eq terminoEnergiaId }
-                    .map { row ->
-                        TarifaRow(
-                            tarifa = row[TarifasEnergiaUnicaDb.tarifa],
-                            potencia_contratada = row[TarifasEnergiaUnicaDb.potenciaContratada],
-                            P1 = row[TarifasEnergiaUnicaDb.p1],
-                            P2 = row[TarifasEnergiaUnicaDb.p2],
-                            P3 = row[TarifasEnergiaUnicaDb.p3],
-                            P4 = row[TarifasEnergiaUnicaDb.p4],
-                            P5 = row[TarifasEnergiaUnicaDb.p5],
-                            P6 = row[TarifasEnergiaUnicaDb.p6]
-                        )
-                    }
-                    .let { tarifas ->
-                        if (tarifaType != null) {
-                            tarifas.filter { it.tarifa.equals(tarifaType, ignoreCase = true) }
-                        } else {
-                            tarifas
-                        }
-                    }
-                
                 // Skip this result if all tarifa lists are empty after filtering
-                if (tarifasPotencia.isEmpty() && tarifasEnergiaBase.isEmpty() && tarifasEnergiaUnica.isEmpty()) {
+                if (tarifasPotencia.isEmpty() && tarifasEnergiaBase.isEmpty()) {
                     return@forEach
                 }
                 
@@ -207,7 +186,7 @@ class PriceTableRepository {
                         ),
                         tabla_precio_clasica_unica = TablaPrecioClasicaUnica(
                             titulo = terminoEnergiaRow[TerminoDeEnergiaDb.tablaUnicaTitulo],
-                            tarifas = tarifasEnergiaUnica
+                            tarifas = emptyList()
                         )
                     )
                 )
