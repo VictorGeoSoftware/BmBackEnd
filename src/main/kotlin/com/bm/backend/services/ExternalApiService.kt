@@ -112,6 +112,33 @@ class ExternalApiService {
         }
     }
 
+    /**
+     * Parses a batch payload that may contain backend-formatted PriceTableResponse JSON,
+     * Docling raw extraction JSON, or arrays mixing both formats.
+     */
+    fun parseBatchPriceTablesPayload(rawBody: String): List<PriceTableResponse> {
+        val trimmedBody = rawBody.trim()
+        if (trimmedBody.isBlank()) {
+            throw Exception("Request body is empty")
+        }
+
+        val rootElement = try {
+            json.parseToJsonElement(trimmedBody)
+        } catch (e: Exception) {
+            throw Exception("Request body is not valid JSON: ${e.message}", e)
+        }
+
+        return when (rootElement) {
+            is JsonArray -> rootElement.mapIndexed { index, element ->
+                parseOrNormalizePriceTableResponse(element.toString(), "batch_file_${index + 1}.pdf")
+            }
+            is JsonObject -> listOf(
+                parseOrNormalizePriceTableResponse(rootElement.toString(), "batch_file_1.pdf")
+            )
+            else -> throw Exception("Invalid request format. Expected a JSON object or array")
+        }
+    }
+
     private fun parseOrNormalizePriceTableResponse(responseText: String, fallbackFileName: String): PriceTableResponse {
         return runCatching {
             json.decodeFromString<PriceTableResponse>(responseText)

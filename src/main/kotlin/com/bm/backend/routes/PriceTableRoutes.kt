@@ -2,7 +2,6 @@ package com.bm.backend.routes
 
 import com.bm.backend.models.BatchPriceTablesRequest
 import com.bm.backend.models.ErrorResponse
-import com.bm.backend.models.PriceTableResponse
 import com.bm.backend.models.UploadPriceProposalResponse
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.PriceTableService
@@ -13,8 +12,8 @@ import io.ktor.server.application.*
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
-import kotlinx.serialization.json.Json
 import kotlinx.serialization.encodeToString
+import kotlinx.serialization.json.Json
 import java.io.File
 import java.nio.file.Files
 
@@ -27,22 +26,10 @@ fun Route.priceTableRoutes(
             // Get raw request body for debugging
             val rawBody = call.receiveText()
             call.application.log.info("Received request body: $rawBody")
-            
-            // Try to parse as different possible structures
-            val request: BatchPriceTablesRequest = try {
-                // First try: direct list of PriceTableResponse
-                Json.decodeFromString<List<PriceTableResponse>>(rawBody)
-            } catch (e: Exception) {
-                call.application.log.info("Failed to parse as List<PriceTableResponse>, trying single object: ${e.message}")
-                try {
-                    // Second try: single PriceTableResponse wrapped in list
-                    val singleResponse = Json.decodeFromString<PriceTableResponse>(rawBody)
-                    listOf(singleResponse)
-                } catch (e2: Exception) {
-                    call.application.log.error("Failed to parse request body as any expected format: ${e2.message}")
-                    throw Exception("Invalid request format. Expected List<PriceTableResponse> or single PriceTableResponse. Original error: ${e.message}")
-                }
-            }
+
+            // Parse with the same normalization strategy used by upload-price-proposal flow.
+            // Accepts either backend PriceTableResponse JSON or raw Docling extraction JSON.
+            val request: BatchPriceTablesRequest = externalApiService.parseBatchPriceTablesPayload(rawBody)
             
             val response = priceTableService.processBatchPriceTables(request)
             call.respond(HttpStatusCode.Created, response)
