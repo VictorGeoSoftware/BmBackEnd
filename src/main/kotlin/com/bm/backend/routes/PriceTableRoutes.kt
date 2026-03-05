@@ -75,6 +75,23 @@ fun Route.priceTableRoutes(
         }
     }
 
+    post("/fetch-total-prices") {
+        try {
+            val response = externalApiService.triggerFetchTotalPricesWorkflow()
+            call.respond(HttpStatusCode.OK, response)
+        } catch (e: Exception) {
+            call.application.log.error("Error triggering Total prices workflow: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                TriggerWorkflowResponse(
+                    success = false,
+                    message = "Failed to trigger Total prices workflow",
+                    details = e.message
+                )
+            )
+        }
+    }
+
     delete("/price-table-results") {
         try {
             val request = call.receive<DeleteSelectedPriceTablesRequest>()
