@@ -1,6 +1,7 @@
 package com.bm.backend.routes
 
 import com.bm.backend.models.BatchPriceTablesRequest
+import com.bm.backend.models.DeleteSelectedPriceTablesRequest
 import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.TriggerWorkflowResponse
 import com.bm.backend.models.UploadPriceProposalResponse
@@ -67,6 +68,42 @@ fun Route.priceTableRoutes(
             call.respond(HttpStatusCode.OK, response)
         } catch (e: Exception) {
             call.application.log.error("Error clearing all data: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
+
+    post("/fetch-total-prices") {
+        try {
+            val response = externalApiService.triggerFetchTotalPricesWorkflow()
+            call.respond(HttpStatusCode.OK, response)
+        } catch (e: Exception) {
+            call.application.log.error("Error triggering Total prices workflow: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                TriggerWorkflowResponse(
+                    success = false,
+                    message = "Failed to trigger Total prices workflow",
+                    details = e.message
+                )
+            )
+        }
+    }
+
+    delete("/price-table-results") {
+        try {
+            val request = call.receive<DeleteSelectedPriceTablesRequest>()
+            val response = priceTableService.deleteSelectedPriceTables(request.ids)
+            call.respond(HttpStatusCode.OK, response)
+        } catch (e: ValidationException) {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ErrorResponse(message = "Validation failed: ${e.message}")
+            )
+        } catch (e: Exception) {
+            call.application.log.error("Error deleting selected price proposals: ${e.message}", e)
             call.respond(
                 HttpStatusCode.InternalServerError,
                 ErrorResponse(message = "Internal server error: ${e.message}")

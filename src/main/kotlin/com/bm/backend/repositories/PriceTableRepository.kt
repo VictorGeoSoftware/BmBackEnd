@@ -2,28 +2,9 @@ package com.bm.backend.repositories
 
 import com.bm.backend.database.*
 import com.bm.backend.models.*
-import com.bm.backend.models.BatchPriceTablesRequest
-import com.bm.backend.models.BatchProcessResponse
-import com.bm.backend.models.ClearDataResponse
-import com.bm.backend.models.ExtractedTables
-import com.bm.backend.models.PriceTableResponse
-import com.bm.backend.models.PriceTableResult
-import com.bm.backend.models.TablaPrecioClasicaBase
-import com.bm.backend.models.TablaPrecioClasicaUnica
-import com.bm.backend.models.TablaPrecioPotencia
-import com.bm.backend.models.TarifaRow
-import com.bm.backend.models.TerminoDeEnergia
-import com.bm.backend.models.TerminoDePotencia
-import com.bm.backend.models.IMPUESTO_ELECTRICO
-import com.bm.backend.models.IVA
+import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
-import org.jetbrains.exposed.sql.deleteAll
-import org.jetbrains.exposed.sql.deleteWhere
-import org.jetbrains.exposed.sql.insert
-import org.jetbrains.exposed.sql.insertAndGetId
-import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
-import org.jetbrains.exposed.sql.update
 
 class PriceTableRepository {
 
@@ -32,19 +13,25 @@ class PriceTableRepository {
             var totalRowsInserted = 0
             
             priceTableResponse.results.forEach { result ->
-                val duplicateResultIds = findDuplicateResultIds(result)
-                if (duplicateResultIds.isNotEmpty()) {
-                    val keepResultId = duplicateResultIds.first()
+                val existingResultIds = findResultIdsByNaturalKey(
+                    fileName = result.fileName,
+                    companyName = result.extracted_tables.companyName
+                )
+
+                if (existingResultIds.isNotEmpty()) {
+                    val keepResultId = existingResultIds.first()
 
                     PriceTableResultsDb.update({ PriceTableResultsDb.id eq keepResultId }) {
                         it[fileName] = result.fileName
                         it[companyName] = result.extracted_tables.companyName
                     }
 
-                    duplicateResultIds.drop(1).forEach { duplicateId ->
+                    existingResultIds.drop(1).forEach { duplicateId ->
                         deleteResultById(duplicateId)
                     }
 
+                    deleteChildrenByResultId(keepResultId)
+                    totalRowsInserted += insertPriceTableDetails(keepResultId, result)
                     return@forEach
                 }
 
@@ -53,219 +40,94 @@ class PriceTableRepository {
                     it[PriceTableResultsDb.fileName] = result.fileName
                     it[PriceTableResultsDb.companyName] = result.extracted_tables.companyName
                 }.value
-                
-                // Insert termino de potencia
-                val terminoPotenciaId = TerminoDePotenciaDb.insertAndGetId {
-                    it[TerminoDePotenciaDb.resultId] = resultId
-                    it[TerminoDePotenciaDb.titulo] = result.extracted_tables.termino_de_potencia.titulo
-                    it[TerminoDePotenciaDb.tablaTitulo] = result.extracted_tables.termino_de_potencia.tabla_precio_potencia.titulo
-                }.value
-                
-                // Insert tarifa rows for potencia
-                result.extracted_tables.termino_de_potencia.tabla_precio_potencia.tarifas.forEach { tarifa ->
-                    TarifasPotenciaDb.insert {
-                        it[TarifasPotenciaDb.terminoId] = terminoPotenciaId
-                        it[TarifasPotenciaDb.tarifa] = tarifa.tarifa
-                        it[TarifasPotenciaDb.potenciaContratada] = tarifa.potencia_contratada
-                        it[TarifasPotenciaDb.p1] = tarifa.P1
-                        it[TarifasPotenciaDb.p2] = tarifa.P2
-                        it[TarifasPotenciaDb.p3] = tarifa.P3
-                        it[TarifasPotenciaDb.p4] = tarifa.P4
-                        it[TarifasPotenciaDb.p5] = tarifa.P5
-                        it[TarifasPotenciaDb.p6] = tarifa.P6
-                    }
-                    totalRowsInserted++
-                }
-                
-                // Insert termino de energia
-                val terminoEnergiaId = TerminoDeEnergiaDb.insertAndGetId {
-                    it[TerminoDeEnergiaDb.resultId] = resultId
-                    it[TerminoDeEnergiaDb.titulo] = result.extracted_tables.termino_de_energia.titulo
-                    it[TerminoDeEnergiaDb.tablaBaseTitulo] = result.extracted_tables.termino_de_energia.tabla_precio_clasica_base.titulo
-                    it[TerminoDeEnergiaDb.tablaUnicaTitulo] = result.extracted_tables.termino_de_energia.tabla_precio_clasica_unica.titulo
-                }.value
-                
-                // Insert tarifa rows for energia base
-                result.extracted_tables.termino_de_energia.tabla_precio_clasica_base.tarifas.forEach { tarifa ->
-                    TarifasEnergiaBaseDb.insert {
-                        it[TarifasEnergiaBaseDb.terminoId] = terminoEnergiaId
-                        it[TarifasEnergiaBaseDb.tarifa] = tarifa.tarifa
-                        it[TarifasEnergiaBaseDb.potenciaContratada] = tarifa.potencia_contratada
-                        it[TarifasEnergiaBaseDb.p1] = tarifa.P1
-                        it[TarifasEnergiaBaseDb.p2] = tarifa.P2
-                        it[TarifasEnergiaBaseDb.p3] = tarifa.P3
-                        it[TarifasEnergiaBaseDb.p4] = tarifa.P4
-                        it[TarifasEnergiaBaseDb.p5] = tarifa.P5
-                        it[TarifasEnergiaBaseDb.p6] = tarifa.P6
-                    }
-                    totalRowsInserted++
-                }
-                
-                // Insert tarifa rows for energia unica
-                result.extracted_tables.termino_de_energia.tabla_precio_clasica_unica.tarifas.forEach { tarifa ->
-                    TarifasEnergiaUnicaDb.insert {
-                        it[TarifasEnergiaUnicaDb.terminoId] = terminoEnergiaId
-                        it[TarifasEnergiaUnicaDb.tarifa] = tarifa.tarifa
-                        it[TarifasEnergiaUnicaDb.potenciaContratada] = tarifa.potencia_contratada
-                        it[TarifasEnergiaUnicaDb.p1] = tarifa.P1
-                        it[TarifasEnergiaUnicaDb.p2] = tarifa.P2
-                        it[TarifasEnergiaUnicaDb.p3] = tarifa.P3
-                        it[TarifasEnergiaUnicaDb.p4] = tarifa.P4
-                        it[TarifasEnergiaUnicaDb.p5] = tarifa.P5
-                        it[TarifasEnergiaUnicaDb.p6] = tarifa.P6
-                    }
-                    totalRowsInserted++
-                }
+
+                totalRowsInserted += insertPriceTableDetails(resultId, result)
             }
             
             totalRowsInserted
         }
     }
 
-    private fun findDuplicateResultIds(incomingResult: PriceTableResult): List<Int> {
-        val incomingFingerprint = buildFingerprint(
-            companyName = incomingResult.extracted_tables.companyName,
-            potenciaTitulo = incomingResult.extracted_tables.termino_de_potencia.titulo,
-            potenciaTablaTitulo = incomingResult.extracted_tables.termino_de_potencia.tabla_precio_potencia.titulo,
-            potenciaTarifas = incomingResult.extracted_tables.termino_de_potencia.tabla_precio_potencia.tarifas,
-            energiaTitulo = incomingResult.extracted_tables.termino_de_energia.titulo,
-            energiaBaseTablaTitulo = incomingResult.extracted_tables.termino_de_energia.tabla_precio_clasica_base.titulo,
-            energiaBaseTarifas = incomingResult.extracted_tables.termino_de_energia.tabla_precio_clasica_base.tarifas,
-            energiaUnicaTablaTitulo = incomingResult.extracted_tables.termino_de_energia.tabla_precio_clasica_unica.titulo,
-            energiaUnicaTarifas = incomingResult.extracted_tables.termino_de_energia.tabla_precio_clasica_unica.tarifas
-        )
+    private fun insertPriceTableDetails(resultId: Int, result: PriceTableResult): Int {
+        var insertedRows = 0
 
+        // Insert termino de potencia
+        val terminoPotenciaId = TerminoDePotenciaDb.insertAndGetId {
+            it[TerminoDePotenciaDb.resultId] = resultId
+            it[TerminoDePotenciaDb.titulo] = result.extracted_tables.termino_de_potencia.titulo
+            it[TerminoDePotenciaDb.tablaTitulo] = result.extracted_tables.termino_de_potencia.tabla_precio_potencia.titulo
+        }.value
+
+        // Insert tarifa rows for potencia
+        result.extracted_tables.termino_de_potencia.tabla_precio_potencia.tarifas.forEach { tarifa ->
+            TarifasPotenciaDb.insert {
+                it[TarifasPotenciaDb.terminoId] = terminoPotenciaId
+                it[TarifasPotenciaDb.tarifa] = tarifa.tarifa
+                it[TarifasPotenciaDb.potenciaContratada] = tarifa.potencia_contratada
+                it[TarifasPotenciaDb.p1] = tarifa.P1
+                it[TarifasPotenciaDb.p2] = tarifa.P2
+                it[TarifasPotenciaDb.p3] = tarifa.P3
+                it[TarifasPotenciaDb.p4] = tarifa.P4
+                it[TarifasPotenciaDb.p5] = tarifa.P5
+                it[TarifasPotenciaDb.p6] = tarifa.P6
+            }
+            insertedRows++
+        }
+
+        // Insert termino de energia
+        val terminoEnergiaId = TerminoDeEnergiaDb.insertAndGetId {
+            it[TerminoDeEnergiaDb.resultId] = resultId
+            it[TerminoDeEnergiaDb.titulo] = result.extracted_tables.termino_de_energia.titulo
+            it[TerminoDeEnergiaDb.tablaBaseTitulo] = result.extracted_tables.termino_de_energia.tabla_precio_clasica_base.titulo
+            it[TerminoDeEnergiaDb.tablaUnicaTitulo] = result.extracted_tables.termino_de_energia.tabla_precio_clasica_unica.titulo
+        }.value
+
+        // Insert tarifa rows for energia base
+        result.extracted_tables.termino_de_energia.tabla_precio_clasica_base.tarifas.forEach { tarifa ->
+            TarifasEnergiaBaseDb.insert {
+                it[TarifasEnergiaBaseDb.terminoId] = terminoEnergiaId
+                it[TarifasEnergiaBaseDb.tarifa] = tarifa.tarifa
+                it[TarifasEnergiaBaseDb.potenciaContratada] = tarifa.potencia_contratada
+                it[TarifasEnergiaBaseDb.p1] = tarifa.P1
+                it[TarifasEnergiaBaseDb.p2] = tarifa.P2
+                it[TarifasEnergiaBaseDb.p3] = tarifa.P3
+                it[TarifasEnergiaBaseDb.p4] = tarifa.P4
+                it[TarifasEnergiaBaseDb.p5] = tarifa.P5
+                it[TarifasEnergiaBaseDb.p6] = tarifa.P6
+            }
+            insertedRows++
+        }
+
+        // Insert tarifa rows for energia unica
+        result.extracted_tables.termino_de_energia.tabla_precio_clasica_unica.tarifas.forEach { tarifa ->
+            TarifasEnergiaUnicaDb.insert {
+                it[TarifasEnergiaUnicaDb.terminoId] = terminoEnergiaId
+                it[TarifasEnergiaUnicaDb.tarifa] = tarifa.tarifa
+                it[TarifasEnergiaUnicaDb.potenciaContratada] = tarifa.potencia_contratada
+                it[TarifasEnergiaUnicaDb.p1] = tarifa.P1
+                it[TarifasEnergiaUnicaDb.p2] = tarifa.P2
+                it[TarifasEnergiaUnicaDb.p3] = tarifa.P3
+                it[TarifasEnergiaUnicaDb.p4] = tarifa.P4
+                it[TarifasEnergiaUnicaDb.p5] = tarifa.P5
+                it[TarifasEnergiaUnicaDb.p6] = tarifa.P6
+            }
+            insertedRows++
+        }
+
+        return insertedRows
+    }
+
+    private fun findResultIdsByNaturalKey(fileName: String, companyName: String): List<Int> {
         return PriceTableResultsDb
             .selectAll()
-            .where { PriceTableResultsDb.companyName eq incomingResult.extracted_tables.companyName }
-            .mapNotNull { resultRow ->
-                val resultId = resultRow[PriceTableResultsDb.id].value
-                val persistedFingerprint = buildPersistedFingerprint(resultId, resultRow[PriceTableResultsDb.companyName])
-
-                if (persistedFingerprint == incomingFingerprint) resultId else null
+            .where {
+                (PriceTableResultsDb.fileName eq fileName) and
+                    (PriceTableResultsDb.companyName eq companyName)
             }
+            .map { it[PriceTableResultsDb.id].value }
     }
 
-    private fun buildPersistedFingerprint(resultId: Int, companyName: String): String {
-        val terminoPotenciaRow = TerminoDePotenciaDb
-            .selectAll()
-            .where { TerminoDePotenciaDb.resultId eq resultId }
-            .single()
-
-        val terminoEnergiaRow = TerminoDeEnergiaDb
-            .selectAll()
-            .where { TerminoDeEnergiaDb.resultId eq resultId }
-            .single()
-
-        val potenciaTarifas = TarifasPotenciaDb
-            .selectAll()
-            .where { TarifasPotenciaDb.terminoId eq terminoPotenciaRow[TerminoDePotenciaDb.id].value }
-            .map(::toTarifaRowFromPotencia)
-
-        val energiaBaseTarifas = TarifasEnergiaBaseDb
-            .selectAll()
-            .where { TarifasEnergiaBaseDb.terminoId eq terminoEnergiaRow[TerminoDeEnergiaDb.id].value }
-            .map(::toTarifaRowFromEnergiaBase)
-
-        val energiaUnicaTarifas = TarifasEnergiaUnicaDb
-            .selectAll()
-            .where { TarifasEnergiaUnicaDb.terminoId eq terminoEnergiaRow[TerminoDeEnergiaDb.id].value }
-            .map(::toTarifaRowFromEnergiaUnica)
-
-        return buildFingerprint(
-            companyName = companyName,
-            potenciaTitulo = terminoPotenciaRow[TerminoDePotenciaDb.titulo],
-            potenciaTablaTitulo = terminoPotenciaRow[TerminoDePotenciaDb.tablaTitulo],
-            potenciaTarifas = potenciaTarifas,
-            energiaTitulo = terminoEnergiaRow[TerminoDeEnergiaDb.titulo],
-            energiaBaseTablaTitulo = terminoEnergiaRow[TerminoDeEnergiaDb.tablaBaseTitulo],
-            energiaBaseTarifas = energiaBaseTarifas,
-            energiaUnicaTablaTitulo = terminoEnergiaRow[TerminoDeEnergiaDb.tablaUnicaTitulo],
-            energiaUnicaTarifas = energiaUnicaTarifas
-        )
-    }
-
-    private fun buildFingerprint(
-        companyName: String,
-        potenciaTitulo: String,
-        potenciaTablaTitulo: String,
-        potenciaTarifas: List<TarifaRow>,
-        energiaTitulo: String,
-        energiaBaseTablaTitulo: String,
-        energiaBaseTarifas: List<TarifaRow>,
-        energiaUnicaTablaTitulo: String,
-        energiaUnicaTarifas: List<TarifaRow>
-    ): String {
-        return listOf(
-            companyName.trim().lowercase(),
-            potenciaTitulo.trim().lowercase(),
-            potenciaTablaTitulo.trim().lowercase(),
-            serializeTarifas(potenciaTarifas),
-            energiaTitulo.trim().lowercase(),
-            energiaBaseTablaTitulo.trim().lowercase(),
-            serializeTarifas(energiaBaseTarifas),
-            energiaUnicaTablaTitulo.trim().lowercase(),
-            serializeTarifas(energiaUnicaTarifas)
-        ).joinToString("||")
-    }
-
-    private fun serializeTarifas(tarifas: List<TarifaRow>): String {
-        return tarifas
-            .sortedBy { it.tarifa.lowercase() }
-            .joinToString(";;") { tarifa ->
-                listOf(
-                    tarifa.tarifa.trim().lowercase(),
-                    tarifa.potencia_contratada?.trim()?.lowercase() ?: "null",
-                    tarifa.P1?.toString() ?: "null",
-                    tarifa.P2?.toString() ?: "null",
-                    tarifa.P3?.toString() ?: "null",
-                    tarifa.P4?.toString() ?: "null",
-                    tarifa.P5?.toString() ?: "null",
-                    tarifa.P6?.toString() ?: "null"
-                ).joinToString("|")
-            }
-    }
-
-    private fun toTarifaRowFromPotencia(row: org.jetbrains.exposed.sql.ResultRow): TarifaRow {
-        return TarifaRow(
-            tarifa = row[TarifasPotenciaDb.tarifa],
-            potencia_contratada = row[TarifasPotenciaDb.potenciaContratada],
-            P1 = row[TarifasPotenciaDb.p1],
-            P2 = row[TarifasPotenciaDb.p2],
-            P3 = row[TarifasPotenciaDb.p3],
-            P4 = row[TarifasPotenciaDb.p4],
-            P5 = row[TarifasPotenciaDb.p5],
-            P6 = row[TarifasPotenciaDb.p6]
-        )
-    }
-
-    private fun toTarifaRowFromEnergiaBase(row: org.jetbrains.exposed.sql.ResultRow): TarifaRow {
-        return TarifaRow(
-            tarifa = row[TarifasEnergiaBaseDb.tarifa],
-            potencia_contratada = row[TarifasEnergiaBaseDb.potenciaContratada],
-            P1 = row[TarifasEnergiaBaseDb.p1],
-            P2 = row[TarifasEnergiaBaseDb.p2],
-            P3 = row[TarifasEnergiaBaseDb.p3],
-            P4 = row[TarifasEnergiaBaseDb.p4],
-            P5 = row[TarifasEnergiaBaseDb.p5],
-            P6 = row[TarifasEnergiaBaseDb.p6]
-        )
-    }
-
-    private fun toTarifaRowFromEnergiaUnica(row: org.jetbrains.exposed.sql.ResultRow): TarifaRow {
-        return TarifaRow(
-            tarifa = row[TarifasEnergiaUnicaDb.tarifa],
-            potencia_contratada = row[TarifasEnergiaUnicaDb.potenciaContratada],
-            P1 = row[TarifasEnergiaUnicaDb.p1],
-            P2 = row[TarifasEnergiaUnicaDb.p2],
-            P3 = row[TarifasEnergiaUnicaDb.p3],
-            P4 = row[TarifasEnergiaUnicaDb.p4],
-            P5 = row[TarifasEnergiaUnicaDb.p5],
-            P6 = row[TarifasEnergiaUnicaDb.p6]
-        )
-    }
-
-    private fun deleteResultById(resultId: Int) {
+    private fun deleteChildrenByResultId(resultId: Int) {
         val potenciaIds = TerminoDePotenciaDb
             .selectAll()
             .where { TerminoDePotenciaDb.resultId eq resultId }
@@ -286,8 +148,21 @@ class PriceTableRepository {
             TarifasEnergiaUnicaDb.deleteWhere { TarifasEnergiaUnicaDb.terminoId eq terminoId }
         }
         TerminoDeEnergiaDb.deleteWhere { TerminoDeEnergiaDb.resultId eq resultId }
+    }
 
+    private fun deleteResultById(resultId: Int): Boolean {
+        val deletedRows = PriceTableResultsDb
+            .selectAll()
+            .where { PriceTableResultsDb.id eq resultId }
+            .count()
+
+        if (deletedRows == 0L) {
+            return false
+        }
+
+        deleteChildrenByResultId(resultId)
         PriceTableResultsDb.deleteWhere { PriceTableResultsDb.id eq resultId }
+        return true
     }
     
     fun getAllPriceTableResults(tarifaType: String? = null): PriceTableResponse {
@@ -378,7 +253,13 @@ class PriceTableRepository {
                     )
                 )
                 
-                results.add(PriceTableResult(fileName = fileName, extracted_tables = extractedTables))
+                results.add(
+                    PriceTableResult(
+                        id = resultId,
+                        fileName = fileName,
+                        extracted_tables = extractedTables
+                    )
+                )
             }
             
             PriceTableResponse(
@@ -532,6 +413,35 @@ class PriceTableRepository {
             // Return total number of rows deleted
             tarifasPotenciaDeleted + tarifasEnergiaBaseDeleted + tarifasEnergiaUnicaDeleted + 
             terminoPotenciaDeleted + terminoEnergiaDeleted + priceTableResultsDeleted
+        }
+    }
+
+    fun deleteResultsByIds(ids: List<Int>): Pair<List<Int>, List<Int>> {
+        return transaction {
+            val distinctIds = ids.distinct()
+            val existingIds = PriceTableResultsDb
+                .selectAll()
+                .map { it[PriceTableResultsDb.id].value }
+                .toSet()
+
+            val deletedIds = mutableListOf<Int>()
+            val notFoundIds = mutableListOf<Int>()
+
+            distinctIds.forEach { id ->
+                if (id !in existingIds) {
+                    notFoundIds.add(id)
+                    return@forEach
+                }
+
+                val deleted = deleteResultById(id)
+                if (deleted) {
+                    deletedIds.add(id)
+                } else {
+                    notFoundIds.add(id)
+                }
+            }
+
+            Pair(deletedIds, notFoundIds)
         }
     }
 }

@@ -3,6 +3,7 @@ package com.bm.backend.services
 import com.bm.backend.models.BatchPriceTablesRequest
 import com.bm.backend.models.BatchProcessResponse
 import com.bm.backend.models.ClearDataResponse
+import com.bm.backend.models.DeleteSelectedPriceTablesResponse
 import com.bm.backend.models.FilteredPriceTableResponse
 import com.bm.backend.models.PriceTableResponse
 import com.bm.backend.repositories.PriceTableRepository
@@ -61,6 +62,34 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
             )
         } catch (e: Exception) {
             throw Exception("Error clearing database: ${e.message}", e)
+        }
+    }
+
+    fun deleteSelectedPriceTables(ids: List<Int>): DeleteSelectedPriceTablesResponse {
+        if (ids.isEmpty()) {
+            throw ValidationException("ids cannot be empty")
+        }
+
+        if (ids.any { it <= 0 }) {
+            throw ValidationException("ids must contain only positive integers")
+        }
+
+        return try {
+            val (deletedIds, notFoundIds) = repository.deleteResultsByIds(ids)
+            val message = when {
+                deletedIds.isNotEmpty() && notFoundIds.isEmpty() -> "Selected price proposals deleted successfully"
+                deletedIds.isNotEmpty() -> "Selected price proposals partially deleted"
+                else -> "No selected price proposals were deleted"
+            }
+
+            DeleteSelectedPriceTablesResponse(
+                success = deletedIds.isNotEmpty(),
+                message = message,
+                deleted_ids = deletedIds,
+                not_found_ids = notFoundIds
+            )
+        } catch (e: Exception) {
+            throw Exception("Error deleting selected price proposals: ${e.message}", e)
         }
     }
 
