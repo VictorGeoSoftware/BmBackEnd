@@ -20,6 +20,7 @@ data class PriceTableResponse(
 
 @Serializable
 data class PriceTableResult(
+    val id: Int? = null,
     val fileName: String,
     val extracted_tables: ExtractedTables
 )
@@ -105,6 +106,19 @@ data class ClearDataResponse(
     val success: Boolean,
     val message: String,
     val deleted_rows: Int
+)
+
+@Serializable
+data class DeleteSelectedPriceTablesRequest(
+    val ids: List<Int>
+)
+
+@Serializable
+data class DeleteSelectedPriceTablesResponse(
+    val success: Boolean,
+    val message: String,
+    val deleted_ids: List<Int>,
+    val not_found_ids: List<Int>
 )
 
 @Serializable
