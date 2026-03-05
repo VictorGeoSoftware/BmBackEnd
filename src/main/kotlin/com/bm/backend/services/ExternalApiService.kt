@@ -12,6 +12,7 @@ import com.bm.backend.models.TarifaRow
 import com.bm.backend.models.TerminoDeEnergia
 import com.bm.backend.models.TerminoDePotencia
 import com.bm.backend.models.N8nWebhookResponse
+import com.bm.backend.models.TriggerWorkflowResponse
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -71,7 +72,12 @@ class ExternalApiService {
         System.getenv("DOCLING_PRICE_TABLES_API_URL")
             ?: System.getenv("DOCLING_API_URL")
             ?: "http://localhost:5001"
-    private val n8nWebhookUrl = "http://localhost:5678/webhook/fetch-user-consumption"
+    private val n8nConsumptionWebhookUrl =
+        System.getenv("N8N_FETCH_USER_CONSUMPTION_WEBHOOK_URL")
+            ?: "http://localhost:5678/webhook/fetch-user-consumption"
+    private val n8nFetchTotalPricesWebhookUrl =
+        System.getenv("N8N_FETCH_TOTAL_PRICES_WEBHOOK_URL")
+            ?: "http://localhost:5678/webhook/fetch-total-prices"
 
     /**
      * Calls Docling price tables API and normalizes the response to backend price table schema.
@@ -316,7 +322,7 @@ class ExternalApiService {
      */
     suspend fun processWithN8nWebhook(doclingData: DoclingExtractedData): N8nWebhookResponse {
         return try {
-            val httpResponse = client.post(n8nWebhookUrl) {
+            val httpResponse = client.post(n8nConsumptionWebhookUrl) {
                 contentType(ContentType.Application.Json)
                 setBody(doclingData)
             }
@@ -356,6 +362,35 @@ class ExternalApiService {
             response
         } catch (e: Exception) {
             throw Exception("Failed to process data via N8N webhook: ${e.message}", e)
+        }
+    }
+
+    /**
+     * Triggers the n8n workflow that fetches current Total prices.
+     */
+    suspend fun triggerFetchTotalPricesWorkflow(): TriggerWorkflowResponse {
+        return try {
+            val httpResponse = client.post(n8nFetchTotalPricesWebhookUrl) {
+                contentType(ContentType.Application.Json)
+                setBody(emptyMap<String, String>())
+            }
+
+            val responseText = runCatching {
+                httpResponse.body<String>()
+            }.getOrDefault("")
+
+            if (!httpResponse.status.isSuccess()) {
+                val errorBody = responseText.ifBlank { "Unable to read error response body" }
+                throw Exception("N8N Total prices webhook returned error status ${httpResponse.status.value}: $errorBody")
+            }
+
+            TriggerWorkflowResponse(
+                success = true,
+                message = "Total prices workflow triggered successfully",
+                details = responseText.takeIf { it.isNotBlank() }
+            )
+        } catch (e: Exception) {
+            throw Exception("Failed to trigger Total prices workflow: ${e.message}", e)
         }
     }
     

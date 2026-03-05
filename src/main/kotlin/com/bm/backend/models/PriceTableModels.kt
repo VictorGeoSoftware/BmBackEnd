@@ -107,6 +107,13 @@ data class ClearDataResponse(
     val deleted_rows: Int
 )
 
+@Serializable
+data class TriggerWorkflowResponse(
+    val success: Boolean,
+    val message: String,
+    val details: String? = null
+)
+
 // Filtered response models (for consumption report - single tarifa instead of array)
 @Serializable
 data class FilteredPriceTableResponse(
