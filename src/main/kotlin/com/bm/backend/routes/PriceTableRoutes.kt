@@ -2,6 +2,7 @@ package com.bm.backend.routes
 
 import com.bm.backend.models.BatchPriceTablesRequest
 import com.bm.backend.models.ErrorResponse
+import com.bm.backend.models.TriggerWorkflowResponse
 import com.bm.backend.models.UploadPriceProposalResponse
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.PriceTableService
@@ -69,6 +70,23 @@ fun Route.priceTableRoutes(
             call.respond(
                 HttpStatusCode.InternalServerError,
                 ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
+
+    post("/fetch-total-prices") {
+        try {
+            val response = externalApiService.triggerFetchTotalPricesWorkflow()
+            call.respond(HttpStatusCode.OK, response)
+        } catch (e: Exception) {
+            call.application.log.error("Error triggering Total prices workflow: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                TriggerWorkflowResponse(
+                    success = false,
+                    message = "Failed to trigger Total prices workflow",
+                    details = e.message
+                )
             )
         }
     }
