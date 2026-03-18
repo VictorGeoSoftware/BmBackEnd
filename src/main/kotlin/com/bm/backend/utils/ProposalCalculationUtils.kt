@@ -94,14 +94,16 @@ fun calculateProposals(
         // Calculate total annual price
         val totalAnnualPrice = annualPowerTermCost + annualEnergyCost + extraServices + ivaAmount + electricalTax
 
-        val cleanedTitle = baseTable.titulo
-            .replace("PRECIO", "", ignoreCase = true)
-            .replace("(c€/kWh)", "")
-            .trim()
+        val proposalTitle = resolveProposalTitle(
+            energiaTitle = extractedTables.termino_de_energia.titulo,
+            potenciaTitle = extractedTables.termino_de_potencia.titulo,
+            fileName = result.fileName,
+            fallbackTableTitle = baseTable.titulo
+        )
 
         proposals.add(
             ProposalPriceModel(
-                proposalTitle = cleanedTitle,
+                proposalTitle = proposalTitle,
                 powerTermItems = powerTermItems,
                 annualPowerTermCost = annualPowerTermCost,
                 consumedEnergyItems = consumedEnergyItems,
@@ -115,4 +117,37 @@ fun calculateProposals(
     }
     
     return proposals
+}
+
+private fun resolveProposalTitle(
+    energiaTitle: String,
+    potenciaTitle: String,
+    fileName: String,
+    fallbackTableTitle: String
+): String {
+    val fromEnergia = extractProductNameFromTermTitle(energiaTitle, "Termino de energia")
+    if (fromEnergia.isNotBlank()) return fromEnergia
+
+    val fromPotencia = extractProductNameFromTermTitle(potenciaTitle, "Termino de potencia")
+    if (fromPotencia.isNotBlank()) return fromPotencia
+
+    val fromFileName = fileName
+        .substringAfterLast(" - ", "")
+        .trim()
+    if (fromFileName.isNotBlank()) return fromFileName
+
+    return cleanLegacyTableTitle(fallbackTableTitle)
+}
+
+private fun extractProductNameFromTermTitle(title: String, termPrefix: String): String {
+    val match = Regex("^${Regex.escape(termPrefix)}\\s*[-:]\\s*(.+)$", RegexOption.IGNORE_CASE)
+        .find(title.trim())
+    return match?.groupValues?.get(1)?.trim().orEmpty()
+}
+
+private fun cleanLegacyTableTitle(title: String): String {
+    return title
+        .replace("PRECIO", "", ignoreCase = true)
+        .replace("(c€/kWh)", "")
+        .trim()
 }
