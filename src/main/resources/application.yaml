@@ -7,10 +7,14 @@ ktor:
       - com.bm.backend.ApplicationKt.module
 
 # Database configuration
+# DB_URL can be overridden via environment variable (read in DatabaseFactory.kt)
 database:
   url: "jdbc:sqlite:price_tables.db"
   driver: "org.sqlite.JDBC"
-  
+
+# Security
+# BM_ENCRYPTION_KEY must be set via environment variable (read in Application.kt)
+
 # Rate limiting
 rate_limit:
   enabled: true

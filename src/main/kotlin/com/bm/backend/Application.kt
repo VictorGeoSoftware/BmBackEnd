@@ -82,9 +82,24 @@ fun Application.configureRouting() {
 
 
 fun Application.module() {
+    initEncryption()
     DatabaseFactory.init()
+    com.bm.backend.security.DataMigration.encryptExistingUserData()
     this.configurePlugins()
     this.configureRouting()
+}
+
+private fun Application.initEncryption() {
+    val encryptionKey = System.getenv("BM_ENCRYPTION_KEY")
+    if (encryptionKey.isNullOrBlank()) {
+        log.warn("BM_ENCRYPTION_KEY not set. Generating a temporary key for development. DO NOT use in production!")
+        val tempKey = com.bm.backend.security.EncryptionUtils.generateKey()
+        log.warn("Generated temporary encryption key (store this in BM_ENCRYPTION_KEY): {}", tempKey)
+        com.bm.backend.security.EncryptionUtils.init(tempKey)
+    } else {
+        com.bm.backend.security.EncryptionUtils.init(encryptionKey)
+        log.info("Encryption initialized with provided key")
+    }
 }
 
 fun Application.testModule() {

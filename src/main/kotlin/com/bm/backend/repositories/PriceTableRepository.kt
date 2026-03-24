@@ -5,8 +5,11 @@ import com.bm.backend.models.*
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
+import org.slf4j.LoggerFactory
 
 class PriceTableRepository {
+
+    private val logger = LoggerFactory.getLogger(PriceTableRepository::class.java)
 
     fun storePriceTableResults(priceTableResponse: PriceTableResponse): Int {
         return transaction {
@@ -44,6 +47,7 @@ class PriceTableRepository {
                 totalRowsInserted += insertPriceTableDetails(resultId, result)
             }
             
+            logger.info("AUDIT: Batch store completed — {} rows inserted from {} results", totalRowsInserted, priceTableResponse.results.size)
             totalRowsInserted
         }
     }
@@ -411,8 +415,11 @@ class PriceTableRepository {
             val priceTableResultsDeleted = PriceTableResultsDb.deleteAll()
             
             // Return total number of rows deleted
-            tarifasPotenciaDeleted + tarifasEnergiaBaseDeleted + tarifasEnergiaUnicaDeleted + 
+            val total = tarifasPotenciaDeleted + tarifasEnergiaBaseDeleted + tarifasEnergiaUnicaDeleted + 
             terminoPotenciaDeleted + terminoEnergiaDeleted + priceTableResultsDeleted
+
+            logger.warn("AUDIT: All data cleared — {} total rows deleted", total)
+            total
         }
     }
 
@@ -441,6 +448,7 @@ class PriceTableRepository {
                 }
             }
 
+            logger.info("AUDIT: Selective delete — deleted={}, notFound={}", deletedIds, notFoundIds)
             Pair(deletedIds, notFoundIds)
         }
     }
