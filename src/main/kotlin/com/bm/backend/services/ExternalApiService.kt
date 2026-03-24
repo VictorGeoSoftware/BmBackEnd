@@ -1,18 +1,6 @@
 package com.bm.backend.services
 
-import com.bm.backend.models.DoclingApiResponse
-import com.bm.backend.models.DoclingExtractedData
-import com.bm.backend.models.ExtractedTables
-import com.bm.backend.models.PriceTableResponse
-import com.bm.backend.models.PriceTableResult
-import com.bm.backend.models.TablaPrecioClasicaBase
-import com.bm.backend.models.TablaPrecioClasicaUnica
-import com.bm.backend.models.TablaPrecioPotencia
-import com.bm.backend.models.TarifaRow
-import com.bm.backend.models.TerminoDeEnergia
-import com.bm.backend.models.TerminoDePotencia
-import com.bm.backend.models.N8nWebhookResponse
-import com.bm.backend.models.TriggerWorkflowResponse
+import com.bm.backend.models.*
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -22,16 +10,7 @@ import io.ktor.client.request.*
 import io.ktor.client.request.forms.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonElement
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.booleanOrNull
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.doubleOrNull
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
+import kotlinx.serialization.json.*
 import java.io.File
 
 class ExternalApiService {

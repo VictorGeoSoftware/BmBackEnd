@@ -3,8 +3,8 @@ package com.bm.backend.firebase
 import com.google.auth.oauth2.GoogleCredentials
 import com.google.firebase.FirebaseApp
 import com.google.firebase.FirebaseOptions
-import java.io.FileInputStream
 import java.io.File
+import java.io.FileInputStream
 
 object FirebaseAdminFactory {
     fun init() {

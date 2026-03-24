@@ -1,7 +1,7 @@
 package com.bm.backend.security
 
 import java.security.SecureRandom
-import java.util.Base64
+import java.util.*
 import javax.crypto.Cipher
 import javax.crypto.SecretKey
 import javax.crypto.spec.GCMParameterSpec
@@ -56,8 +56,6 @@ object EncryptionUtils {
     }
 
     fun encryptNullable(value: String?): String? = value?.let { encrypt(it) }
-
-    fun decryptNullable(value: String?): String? = value?.let { decrypt(it) }
 
     fun generateKey(): String {
         val keyBytes = ByteArray(32)
