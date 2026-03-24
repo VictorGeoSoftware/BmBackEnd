@@ -6,6 +6,8 @@ import com.bm.backend.repositories.UserDataRepository
 import com.bm.backend.routes.priceTableRoutes
 import com.bm.backend.routes.userConsumptionRoutes
 import com.bm.backend.routes.userDataRoutes
+import com.bm.backend.security.DataMigration
+import com.bm.backend.security.EncryptionUtils
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.UserConsumptionService
@@ -82,11 +84,22 @@ fun Application.configureRouting() {
 
 
 fun Application.module() {
+    initEncryption()
     DatabaseFactory.init()
+    DataMigration.encryptExistingUserData()
     this.configurePlugins()
     this.configureRouting()
 }
 
-fun Application.testModule() {
-    this.configureRouting()
+private fun Application.initEncryption() {
+    val encryptionKey = System.getenv("BM_ENCRYPTION_KEY")
+    if (encryptionKey.isNullOrBlank()) {
+        log.warn("BM_ENCRYPTION_KEY not set. Generating a temporary key for development. DO NOT use in production!")
+        val tempKey = EncryptionUtils.generateKey()
+        log.warn("Generated temporary encryption key (store this in BM_ENCRYPTION_KEY): {}", tempKey)
+        EncryptionUtils.init(tempKey)
+    } else {
+        EncryptionUtils.init(encryptionKey)
+        log.info("Encryption initialized with provided key")
+    }
 }

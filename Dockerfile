@@ -24,14 +24,21 @@ WORKDIR /app
 # Install curl for healthchecks
 RUN apk add --no-cache curl
 
+# Create non-root user for security
+RUN addgroup -S bmapp && adduser -S bmapp -G bmapp
+
 # Copy the built JAR from build stage
 COPY --from=build /app/build/libs/*-all.jar app.jar
 
 # Copy application resources
 COPY --from=build /app/src/main/resources ./resources
 
-# Create directory for database (will be created fresh on first run)
-RUN mkdir -p /app/data
+# Create directory for database with restricted permissions
+RUN mkdir -p /app/data && chown -R bmapp:bmapp /app/data && chmod 700 /app/data
+RUN chown bmapp:bmapp /app/app.jar
+
+# Switch to non-root user
+USER bmapp
 
 # Expose the application port
 EXPOSE 8081

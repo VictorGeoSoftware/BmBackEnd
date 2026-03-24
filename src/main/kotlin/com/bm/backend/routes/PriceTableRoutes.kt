@@ -1,10 +1,6 @@
 package com.bm.backend.routes
 
-import com.bm.backend.models.BatchPriceTablesRequest
-import com.bm.backend.models.DeleteSelectedPriceTablesRequest
-import com.bm.backend.models.ErrorResponse
-import com.bm.backend.models.TriggerWorkflowResponse
-import com.bm.backend.models.UploadPriceProposalResponse
+import com.bm.backend.models.*
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.ValidationException

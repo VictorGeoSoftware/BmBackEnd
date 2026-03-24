@@ -42,10 +42,10 @@ bin/
 .DS_Store
 
 ### Database files ###
-*.db-journal
-# Exclude all .db files except price_tables.db (for reference/schema)
 *.db
-!price_tables.db
+*.db-journal
+*.db-wal
+*.db-shm
 
 ### Logs ###
 logs/
