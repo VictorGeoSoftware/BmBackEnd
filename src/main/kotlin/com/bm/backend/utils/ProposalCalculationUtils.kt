@@ -66,14 +66,17 @@ fun calculateProposals(
                     0.0
                 }
             }
-        
+
+        val consumptionAndEnergyItems = annualConsumptions.zip(energyPricesList)
+
         // Get energy prices from table (only for non-zero consumptions)
-        val consumedEnergyItems = annualConsumptions.zip(energyPricesList)
+        // Keep original units from source tables for UI display consistency.
+        val consumedEnergyItems = consumptionAndEnergyItems
             .filter { (consumption, price) -> consumption > 0.0 && price != null }
-            .map { (_, price) -> price!! / 100.0 }  // Convert c€/kWh to €/kWh
+            .map { (_, price) -> price!! }
         
-        // Calculate annual energy cost (convert from c€/kWh to €/kWh by dividing by 100)
-        val annualEnergyCost: Double = annualConsumptions.zip(energyPricesList)
+        // Calculate annual energy cost using canonical €/kWh values.
+        val annualEnergyCost: Double = consumptionAndEnergyItems
             .sumOf { (consumption: Double, price: Double?) ->
                 if (price != null && consumption > 0.0) {
                     consumption * (price / 100.0)  // Convert c€/kWh to €/kWh
