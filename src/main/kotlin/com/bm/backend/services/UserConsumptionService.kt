@@ -36,18 +36,8 @@ class UserConsumptionService(
         // Step 3: Clean the consumption data
         val cleanedConsumptionData = n8nResponse.data.toCleanedData(n8nResponse.processedAt)
         
-        // Step 4: Get filtered price table results based on tarifa
-        val filteredPrices = runCatching {
-            priceTableService.getFilteredPriceTableResults(cleanedConsumptionData.tarifa)
-        }.getOrElse { e ->
-            throw Exception("Failed at price table filtering step: ${e.message}", e)
-        }
-        
-        // Step 5: Calculate proposals
-        val proposals = calculateProposals(
-            cleanedConsumptionData,
-            filteredPrices
-        )
+        // Step 4-5: Resolve current prices and calculate proposals
+        val proposals = resolveProposals(cleanedConsumptionData)
         
         // Step 6: Build consolidated response
         return ConsumptionReportResponse(
@@ -55,6 +45,23 @@ class UserConsumptionService(
             userData = doclingData,
             consumptionData = cleanedConsumptionData,
             proposals = proposals
+        )
+    }
+
+    fun refreshProposals(consumptionData: com.bm.backend.models.CleanedConsumptionData): List<com.bm.backend.models.ProposalPriceModel> {
+        return resolveProposals(consumptionData)
+    }
+
+    private fun resolveProposals(consumptionData: com.bm.backend.models.CleanedConsumptionData): List<com.bm.backend.models.ProposalPriceModel> {
+        val filteredPrices = runCatching {
+            priceTableService.getFilteredPriceTableResults(consumptionData.tarifa)
+        }.getOrElse { e ->
+            throw Exception("Failed at price table filtering step: ${e.message}", e)
+        }
+
+        return calculateProposals(
+            consumptionData,
+            filteredPrices
         )
     }
 }

@@ -215,4 +215,46 @@ fun Route.userConsumptionRoutes(
             }
         }
     }
+
+    post("/consumption-report-refresh/{jobId}") {
+        val jobId = call.parameters["jobId"]
+
+        if (jobId == null) {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ErrorResponse(message = "Job ID is required")
+            )
+            return@post
+        }
+
+        val job = jobService.getJob(jobId)
+        if (job == null) {
+            call.respond(
+                HttpStatusCode.NotFound,
+                ErrorResponse(message = "Job not found")
+            )
+            return@post
+        }
+
+        if (job.status != JobStatus.COMPLETED || job.result == null) {
+            call.respond(
+                HttpStatusCode.Conflict,
+                ErrorResponse(message = "Only completed jobs can refresh proposals")
+            )
+            return@post
+        }
+
+        try {
+            val latestProposals = userConsumptionService.refreshProposals(job.result!!.consumptionData)
+            val refreshedResult = job.result!!.copy(proposals = latestProposals)
+            jobService.completeJob(jobId, refreshedResult)
+            call.respond(HttpStatusCode.OK, refreshedResult)
+        } catch (e: Exception) {
+            call.application.log.error("Error refreshing proposals for job $jobId: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Failed to refresh proposals: ${e.message}")
+            )
+        }
+    }
 }

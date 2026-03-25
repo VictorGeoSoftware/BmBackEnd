@@ -128,6 +128,21 @@ data class TriggerWorkflowResponse(
     val details: String? = null
 )
 
+@Serializable
+enum class PriceUpdatesEventType {
+    PRICE_PROPOSALS_UPSERTED,
+    PRICE_PROPOSALS_DELETED,
+    PRICE_PROPOSALS_CLEARED
+}
+
+@Serializable
+data class PriceUpdatesNotification(
+    val eventType: PriceUpdatesEventType,
+    val changedIds: List<Int> = emptyList(),
+    val changedCount: Int = 0,
+    val timestamp: String = java.time.Instant.now().toString()
+)
+
 // Filtered response models (for consumption report - single tarifa instead of array)
 @Serializable
 data class FilteredPriceTableResponse(
