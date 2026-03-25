@@ -3,6 +3,7 @@ package com.bm.backend.routes
 import com.bm.backend.models.*
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.PriceTableService
+import com.bm.backend.services.PriceUpdatesNotifier
 import com.bm.backend.services.ValidationException
 import io.ktor.http.*
 import io.ktor.http.content.*
@@ -17,7 +18,8 @@ import java.nio.file.Files
 
 fun Route.priceTableRoutes(
     priceTableService: PriceTableService,
-    externalApiService: ExternalApiService
+    externalApiService: ExternalApiService,
+    priceUpdatesNotifier: PriceUpdatesNotifier
 ) {
     post("/batch-process-price-tables") {
         try {
@@ -30,6 +32,12 @@ fun Route.priceTableRoutes(
             val request: BatchPriceTablesRequest = externalApiService.parseBatchPriceTablesPayload(rawBody)
             
             val response = priceTableService.processBatchPriceTables(request)
+            priceUpdatesNotifier.notify(
+                PriceUpdatesNotification(
+                    eventType = PriceUpdatesEventType.PRICE_PROPOSALS_UPSERTED,
+                    changedCount = response.processed_files
+                )
+            )
             call.respond(HttpStatusCode.Created, response)
         } catch (e: ValidationException) {
             call.respond(
@@ -61,6 +69,12 @@ fun Route.priceTableRoutes(
     delete("/clear-all-data") {
         try {
             val response = priceTableService.clearAllData()
+            priceUpdatesNotifier.notify(
+                PriceUpdatesNotification(
+                    eventType = PriceUpdatesEventType.PRICE_PROPOSALS_CLEARED,
+                    changedCount = response.deleted_rows
+                )
+            )
             call.respond(HttpStatusCode.OK, response)
         } catch (e: Exception) {
             call.application.log.error("Error clearing all data: ${e.message}", e)
@@ -92,6 +106,15 @@ fun Route.priceTableRoutes(
         try {
             val request = call.receive<DeleteSelectedPriceTablesRequest>()
             val response = priceTableService.deleteSelectedPriceTables(request.ids)
+            if (response.deleted_ids.isNotEmpty()) {
+                priceUpdatesNotifier.notify(
+                    PriceUpdatesNotification(
+                        eventType = PriceUpdatesEventType.PRICE_PROPOSALS_DELETED,
+                        changedIds = response.deleted_ids,
+                        changedCount = response.deleted_ids.size
+                    )
+                )
+            }
             call.respond(HttpStatusCode.OK, response)
         } catch (e: ValidationException) {
             call.respond(
@@ -169,6 +192,12 @@ fun Route.priceTableRoutes(
             )
 
             val storageResponse = priceTableService.processBatchPriceTables(listOf(extractedResponse))
+            priceUpdatesNotifier.notify(
+                PriceUpdatesNotification(
+                    eventType = PriceUpdatesEventType.PRICE_PROPOSALS_UPSERTED,
+                    changedCount = storageResponse.processed_files
+                )
+            )
 
             call.respond(
                 HttpStatusCode.Created,
