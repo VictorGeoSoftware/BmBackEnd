@@ -12,15 +12,17 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
                 throw ValidationException("Request cannot be empty")
             }
 
+            val normalizedRequest = request.map { it.normalizeEnergyUnitsToEuroPerKwh() }
+
             // Validate all responses before processing
-            for (priceTableResponse in request) {
+            for (priceTableResponse in normalizedRequest) {
                 validatePriceTableResponse(priceTableResponse)
             }
 
             var totalRowsInserted = 0
             var processedFiles = 0
 
-            for (priceTableResponse in request) {
+            for (priceTableResponse in normalizedRequest) {
                 val rowsInserted = repository.storePriceTableResults(priceTableResponse)
                 totalRowsInserted += rowsInserted
                 processedFiles += priceTableResponse.results.size
@@ -37,6 +39,64 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
         } catch (e: Exception) {
             throw Exception("Error during batch processing: ${e.message}", e)
         }
+    }
+
+    private fun PriceTableResponse.normalizeEnergyUnitsToEuroPerKwh(): PriceTableResponse {
+        return copy(results = results.map { it.normalizeEnergyUnitsToEuroPerKwh() })
+    }
+
+    private fun PriceTableResult.normalizeEnergyUnitsToEuroPerKwh(): PriceTableResult {
+        val energia = extracted_tables.termino_de_energia
+        val context = "${energia.titulo} ${energia.tabla_precio_clasica_base.titulo} ${energia.tabla_precio_clasica_unica.titulo}".lowercase()
+
+        val normalizedEnergia = energia.copy(
+            tabla_precio_clasica_base = energia.tabla_precio_clasica_base.copy(
+                tarifas = energia.tabla_precio_clasica_base.tarifas.map { tarifa ->
+                    tarifa.normalizeEnergyToEuroPerKwh(context)
+                }
+            ),
+            tabla_precio_clasica_unica = energia.tabla_precio_clasica_unica.copy(
+                tarifas = energia.tabla_precio_clasica_unica.tarifas.map { tarifa ->
+                    tarifa.normalizeEnergyToEuroPerKwh(context)
+                }
+            )
+        )
+
+        return copy(
+            extracted_tables = extracted_tables.copy(
+                termino_de_energia = normalizedEnergia
+            )
+        )
+    }
+
+    private fun TarifaRow.normalizeEnergyToEuroPerKwh(context: String): TarifaRow {
+        return copy(
+            P1 = normalizeEnergyValueToEuroPerKwh(P1, context),
+            P2 = normalizeEnergyValueToEuroPerKwh(P2, context),
+            P3 = normalizeEnergyValueToEuroPerKwh(P3, context),
+            P4 = normalizeEnergyValueToEuroPerKwh(P4, context),
+            P5 = normalizeEnergyValueToEuroPerKwh(P5, context),
+            P6 = normalizeEnergyValueToEuroPerKwh(P6, context)
+        )
+    }
+
+    private fun normalizeEnergyValueToEuroPerKwh(value: Double?, context: String): Double? {
+        if (value == null) return null
+
+        val hasCentsUnit =
+            context.contains("c€/kwh") ||
+            context.contains("ct/kwh") ||
+            context.contains("cents/kwh") ||
+            context.contains("centimos/kwh") ||
+            context.contains("céntimos/kwh")
+
+        if (hasCentsUnit) return value / 100.0
+
+        val hasEuroUnit = context.contains("€/kwh")
+        if (hasEuroUnit) return value
+
+        // Fallback for ambiguous labels: values above 2 are treated as c€/kWh.
+        return if (value > 2.0) value / 100.0 else value
     }
 
     fun getAllPriceTableResults(tarifaType: String? = null): PriceTableResponse {
