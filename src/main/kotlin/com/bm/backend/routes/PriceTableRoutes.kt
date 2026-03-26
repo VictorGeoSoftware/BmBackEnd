@@ -66,6 +66,46 @@ fun Route.priceTableRoutes(
         }
     }
 
+    get("/price-table-tax-settings") {
+        try {
+            val response = priceTableService.getTaxSettings()
+            call.respond(HttpStatusCode.OK, response)
+        } catch (e: Exception) {
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
+
+    patch("/price-table-tax-settings") {
+        try {
+            val request = call.receive<UpdateTaxSettingsRequest>()
+            val response = priceTableService.updateTaxSettings(
+                iva = request.iva,
+                impuestoElectrico = request.impuestoElectrico
+            )
+            priceUpdatesNotifier.notify(
+                PriceUpdatesNotification(
+                    eventType = PriceUpdatesEventType.PRICE_PROPOSALS_UPSERTED,
+                    changedCount = 0
+                )
+            )
+            call.respond(HttpStatusCode.OK, response)
+        } catch (e: ValidationException) {
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ErrorResponse(message = "Validation failed: ${e.message}")
+            )
+        } catch (e: Exception) {
+            call.application.log.error("Error updating tax settings: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
+
     delete("/clear-all-data") {
         try {
             val response = priceTableService.clearAllData()

@@ -12,7 +12,7 @@ data class PriceTableResponse(
     val results: List<PriceTableResult>,
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault
-    val iva: Int = IVA,
+    val iva: Double = IVA,
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault
     val impuestoElectrico: Double = IMPUESTO_ELECTRICO
@@ -122,6 +122,19 @@ data class DeleteSelectedPriceTablesResponse(
 )
 
 @Serializable
+data class UpdateTaxSettingsRequest(
+    val iva: Double,
+    val impuestoElectrico: Double
+)
+
+@Serializable
+data class TaxSettingsResponse(
+    val success: Boolean,
+    val iva: Double,
+    val impuestoElectrico: Double
+)
+
+@Serializable
 data class TriggerWorkflowResponse(
     val success: Boolean,
     val message: String,
@@ -150,7 +163,7 @@ data class FilteredPriceTableResponse(
     val results: List<FilteredPriceTableResult>,
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault
-    val iva: Int = IVA,
+    val iva: Double = IVA,
     @OptIn(ExperimentalSerializationApi::class)
     @EncodeDefault
     val impuestoElectrico: Double = IMPUESTO_ELECTRICO

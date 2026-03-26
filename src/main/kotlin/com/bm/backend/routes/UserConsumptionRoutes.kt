@@ -246,7 +246,12 @@ fun Route.userConsumptionRoutes(
 
         try {
             val latestProposals = userConsumptionService.refreshProposals(job.result!!.consumptionData)
-            val refreshedResult = job.result!!.copy(proposals = latestProposals)
+            val taxSettings = userConsumptionService.getCurrentTaxSettings()
+            val refreshedResult = job.result!!.copy(
+                proposals = latestProposals,
+                iva = taxSettings.iva,
+                impuestoElectrico = taxSettings.impuestoElectrico
+            )
             jobService.completeJob(jobId, refreshedResult)
             call.respond(HttpStatusCode.OK, refreshedResult)
         } catch (e: Exception) {
