@@ -11,6 +11,65 @@ class PriceTableRepository {
 
     private val logger = LoggerFactory.getLogger(PriceTableRepository::class.java)
 
+    fun getTaxSettings(): TaxSettingsResponse {
+        return transaction {
+            getOrCreateTaxSettings()
+        }
+    }
+
+    fun updateTaxSettings(iva: Double, impuestoElectrico: Double): TaxSettingsResponse {
+        return transaction {
+            val existingRow = TaxSettingsDb
+                .selectAll()
+                .orderBy(TaxSettingsDb.id to SortOrder.ASC)
+                .firstOrNull()
+
+            if (existingRow == null) {
+                TaxSettingsDb.insert {
+                    it[TaxSettingsDb.iva] = iva
+                    it[TaxSettingsDb.impuestoElectrico] = impuestoElectrico
+                }
+            } else {
+                TaxSettingsDb.update({ TaxSettingsDb.id eq existingRow[TaxSettingsDb.id].value }) {
+                    it[TaxSettingsDb.iva] = iva
+                    it[TaxSettingsDb.impuestoElectrico] = impuestoElectrico
+                }
+            }
+
+            TaxSettingsResponse(
+                success = true,
+                iva = iva,
+                impuestoElectrico = impuestoElectrico
+            )
+        }
+    }
+
+    private fun getOrCreateTaxSettings(): TaxSettingsResponse {
+        val existingRow = TaxSettingsDb
+            .selectAll()
+            .orderBy(TaxSettingsDb.id to SortOrder.ASC)
+            .firstOrNull()
+
+        if (existingRow != null) {
+            return TaxSettingsResponse(
+                success = true,
+                iva = existingRow[TaxSettingsDb.iva],
+                impuestoElectrico = existingRow[TaxSettingsDb.impuestoElectrico]
+            )
+        }
+
+        TaxSettingsDb.insert {
+            it[iva] = IVA
+            it[impuestoElectrico] = IMPUESTO_ELECTRICO
+        }
+
+        return TaxSettingsResponse(
+            success = true,
+            iva = IVA,
+            impuestoElectrico = IMPUESTO_ELECTRICO
+        )
+    }
+
     fun storePriceTableResults(priceTableResponse: PriceTableResponse): Int {
         return transaction {
             var totalRowsInserted = 0
@@ -172,6 +231,7 @@ class PriceTableRepository {
     fun getAllPriceTableResults(tarifaType: String? = null): PriceTableResponse {
         return transaction {
             val results = mutableListOf<PriceTableResult>()
+            val taxSettings = getOrCreateTaxSettings()
             
             // Get all main results
             PriceTableResultsDb.selectAll().forEach { resultRow ->
@@ -269,8 +329,8 @@ class PriceTableRepository {
             PriceTableResponse(
                 success = true,
                 results = results,
-                iva = IVA,
-                impuestoElectrico = IMPUESTO_ELECTRICO,
+                iva = taxSettings.iva,
+                impuestoElectrico = taxSettings.impuestoElectrico,
             )
         }
     }
@@ -278,6 +338,7 @@ class PriceTableRepository {
     fun getFilteredPriceTableResults(tarifaType: String? = null): FilteredPriceTableResponse {
         return transaction {
             val results = mutableListOf<FilteredPriceTableResult>()
+            val taxSettings = getOrCreateTaxSettings()
             
             // Get all main results
             PriceTableResultsDb.selectAll().forEach { resultRow ->
@@ -398,8 +459,8 @@ class PriceTableRepository {
             FilteredPriceTableResponse(
                 success = true,
                 results = results,
-                iva = IVA,
-                impuestoElectrico = IMPUESTO_ELECTRICO,
+                iva = taxSettings.iva,
+                impuestoElectrico = taxSettings.impuestoElectrico,
             )
         }
     }

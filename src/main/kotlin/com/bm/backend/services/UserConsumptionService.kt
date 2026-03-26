@@ -37,14 +37,20 @@ class UserConsumptionService(
         val cleanedConsumptionData = n8nResponse.data.toCleanedData(n8nResponse.processedAt)
         
         // Step 4-5: Resolve current prices and calculate proposals
-        val proposals = resolveProposals(cleanedConsumptionData)
+        val filteredPrices = resolveFilteredPrices(cleanedConsumptionData)
+        val proposals = calculateProposals(
+            cleanedConsumptionData,
+            filteredPrices
+        )
         
         // Step 6: Build consolidated response
         return ConsumptionReportResponse(
             success = true,
             userData = doclingData,
             consumptionData = cleanedConsumptionData,
-            proposals = proposals
+            proposals = proposals,
+            iva = filteredPrices.iva,
+            impuestoElectrico = filteredPrices.impuestoElectrico
         )
     }
 
@@ -52,16 +58,24 @@ class UserConsumptionService(
         return resolveProposals(consumptionData)
     }
 
+    fun getCurrentTaxSettings(): com.bm.backend.models.TaxSettingsResponse {
+        return priceTableService.getTaxSettings()
+    }
+
     private fun resolveProposals(consumptionData: com.bm.backend.models.CleanedConsumptionData): List<com.bm.backend.models.ProposalPriceModel> {
-        val filteredPrices = runCatching {
-            priceTableService.getFilteredPriceTableResults(consumptionData.tarifa)
-        }.getOrElse { e ->
-            throw Exception("Failed at price table filtering step: ${e.message}", e)
-        }
+        val filteredPrices = resolveFilteredPrices(consumptionData)
 
         return calculateProposals(
             consumptionData,
             filteredPrices
         )
+    }
+
+    private fun resolveFilteredPrices(consumptionData: com.bm.backend.models.CleanedConsumptionData): com.bm.backend.models.FilteredPriceTableResponse {
+        return runCatching {
+            priceTableService.getFilteredPriceTableResults(consumptionData.tarifa)
+        }.getOrElse { e ->
+            throw Exception("Failed at price table filtering step: ${e.message}", e)
+        }
     }
 }

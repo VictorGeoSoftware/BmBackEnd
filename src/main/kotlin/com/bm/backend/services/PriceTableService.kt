@@ -102,6 +102,22 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
     fun getAllPriceTableResults(tarifaType: String? = null): PriceTableResponse {
         return repository.getAllPriceTableResults(tarifaType)
     }
+
+    fun getTaxSettings(): TaxSettingsResponse {
+        return repository.getTaxSettings()
+    }
+
+    fun updateTaxSettings(iva: Double, impuestoElectrico: Double): TaxSettingsResponse {
+        if (iva < 0.0) {
+            throw ValidationException("iva must be greater than or equal to 0")
+        }
+
+        if (impuestoElectrico < 0.0) {
+            throw ValidationException("impuestoElectrico must be greater than or equal to 0")
+        }
+
+        return repository.updateTaxSettings(iva, impuestoElectrico)
+    }
     
     fun getFilteredPriceTableResults(tarifaType: String? = null): FilteredPriceTableResponse {
         return repository.getFilteredPriceTableResults(tarifaType)

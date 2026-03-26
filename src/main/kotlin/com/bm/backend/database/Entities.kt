@@ -62,6 +62,11 @@ object TarifasEnergiaUnicaDb : IntIdTable("tarifas_energia_unica") {
     val p6 = double("p6").nullable()
 }
 
+object TaxSettingsDb : IntIdTable("tax_settings") {
+    val iva = double("iva")
+    val impuestoElectrico = double("impuesto_electrico")
+}
+
 // Table for authenticated Firebase user data synced from web login
 object UserDataDb : IntIdTable("user_data") {
     val uid = varchar("uid", 128).uniqueIndex()
