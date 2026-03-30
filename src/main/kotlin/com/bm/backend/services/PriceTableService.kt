@@ -83,6 +83,8 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
     private fun normalizeEnergyValueToEuroPerKwh(value: Double?, context: String): Double? {
         if (value == null) return null
 
+        val seemsAlreadyEuroPerKwh = value <= 2.0
+
         val hasCentsUnit =
             context.contains("c€/kwh") ||
             context.contains("ct/kwh") ||
@@ -90,7 +92,7 @@ class PriceTableService(private val repository: PriceTableRepository = PriceTabl
             context.contains("centimos/kwh") ||
             context.contains("céntimos/kwh")
 
-        if (hasCentsUnit) return value / 100.0
+        if (hasCentsUnit) return if (seemsAlreadyEuroPerKwh) value else value / 100.0
 
         val hasEuroUnit = context.contains("€/kwh")
         if (hasEuroUnit) return value
