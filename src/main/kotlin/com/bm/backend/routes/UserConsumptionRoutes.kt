@@ -1,6 +1,7 @@
 package com.bm.backend.routes
 
 import com.bm.backend.models.*
+import com.bm.backend.services.ComparatorReportPdfService
 import com.bm.backend.services.JobService
 import com.bm.backend.services.UserConsumptionService
 import io.ktor.http.*
@@ -18,8 +19,34 @@ import java.nio.file.Files
 
 fun Route.userConsumptionRoutes(
     userConsumptionService: UserConsumptionService,
-    jobService: JobService
+    jobService: JobService,
+    comparatorReportPdfService: ComparatorReportPdfService
 ) {
+    post("/reports/comparator-pdf") {
+        try {
+            val request = call.receive<ComparatorReportPdfRequest>()
+            val pdfBytes = comparatorReportPdfService.generate(request)
+            val fileName = "comparativo_${System.currentTimeMillis()}.pdf"
+            call.response.headers.append(
+                HttpHeaders.ContentDisposition,
+                ContentDisposition.Attachment
+                    .withParameter(ContentDisposition.Parameters.FileName, fileName)
+                    .toString()
+            )
+            call.respondBytes(
+                bytes = pdfBytes,
+                contentType = ContentType.Application.Pdf,
+                status = HttpStatusCode.OK
+            )
+        } catch (e: Exception) {
+            call.application.log.error("Error generating comparator report PDF: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Failed to generate comparator report PDF: ${e.message}")
+            )
+        }
+    }
+
     post("/consumption-report") {
         try {
             val consumptionRequest = call.receive<UserConsumptionRequest>()

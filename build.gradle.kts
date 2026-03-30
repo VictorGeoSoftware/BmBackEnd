@@ -44,6 +44,9 @@ dependencies {
 
     // Firebase Admin
     implementation("com.google.firebase:firebase-admin:9.4.3")
+
+    // PDF generation
+    implementation("com.github.librepdf:openpdf:1.3.40")
     
     testImplementation(kotlin("test"))
     testImplementation("io.ktor:ktor-server-test-host:2.3.12")
