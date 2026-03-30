@@ -10,6 +10,7 @@ import com.bm.backend.security.DataMigration
 import com.bm.backend.security.EncryptionUtils
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.FirebasePriceUpdatesNotifier
+import com.bm.backend.services.ComparatorReportPdfService
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.UserConsumptionService
 import com.bm.backend.services.UserDataService
@@ -60,6 +61,7 @@ fun Application.configureRouting() {
     val userConsumptionRepository = UserConsumptionRepository()
     val userDataRepository = UserDataRepository()
     val jobService = com.bm.backend.services.JobService()
+    val comparatorReportPdfService = ComparatorReportPdfService()
     val userConsumptionService = UserConsumptionService(
         userConsumptionRepository,
         externalApiService,
@@ -78,7 +80,7 @@ fun Application.configureRouting() {
 
         route("/api/v1") {
             priceTableRoutes(priceTableService, externalApiService, priceUpdatesNotifier)
-            userConsumptionRoutes(userConsumptionService, jobService)
+            userConsumptionRoutes(userConsumptionService, jobService, comparatorReportPdfService)
             userDataRoutes(userDataService)
         }
     }
