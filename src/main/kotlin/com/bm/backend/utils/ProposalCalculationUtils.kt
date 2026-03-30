@@ -79,7 +79,7 @@ fun calculateProposals(
         val annualEnergyCost: Double = consumptionAndEnergyItems
             .sumOf { (consumption: Double, price: Double?) ->
                 if (price != null && consumption > 0.0) {
-                    consumption * (price / 100.0)  // Convert c€/kWh to €/kWh
+                    consumption * price
                 } else {
                     0.0
                 }
