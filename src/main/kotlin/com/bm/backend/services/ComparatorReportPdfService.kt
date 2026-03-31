@@ -39,6 +39,7 @@ class ComparatorReportPdfService {
         val titleTable = PdfPTable(floatArrayOf(4.4f, 1.6f)).apply {
             widthPercentage = 100f
             setWidths(floatArrayOf(4.4f, 1.6f))
+            setSpacingAfter(12f)
         }
         titleTable.addCell(
             buildCell(
@@ -68,15 +69,28 @@ class ComparatorReportPdfService {
         val infoTable = PdfPTable(floatArrayOf(1.2f, 3.8f)).apply {
             widthPercentage = 74f
             horizontalAlignment = Element.ALIGN_LEFT
+            setSpacingAfter(14f)
         }
 
-        infoTable.addCell(buildCell("Titular del suministro:", font = FONT_LABEL, border = Rectangle.NO_BORDER))
+        infoTable.addCell(
+            buildCell(
+                ComparatorReportPdfTexts.SUPPLY_HOLDER_LABEL,
+                font = FONT_LABEL,
+                border = Rectangle.NO_BORDER
+            )
+        )
         infoTable.addCell(buildCell(request.supplyHolder, font = FONT_VALUE, border = Rectangle.NO_BORDER))
 
-        infoTable.addCell(buildCell("Dirección del suministro:", font = FONT_LABEL, border = Rectangle.NO_BORDER))
+        infoTable.addCell(
+            buildCell(
+                ComparatorReportPdfTexts.SUPPLY_ADDRESS_LABEL,
+                font = FONT_LABEL,
+                border = Rectangle.NO_BORDER
+            )
+        )
         infoTable.addCell(buildCell(request.supplyAddress, font = FONT_VALUE, border = Rectangle.NO_BORDER))
 
-        infoTable.addCell(buildCell("CUPS:", font = FONT_LABEL, border = Rectangle.NO_BORDER))
+        infoTable.addCell(buildCell(ComparatorReportPdfTexts.CUPS_LABEL, font = FONT_LABEL, border = Rectangle.NO_BORDER))
         infoTable.addCell(buildCell(request.cups, font = FONT_VALUE, border = Rectangle.NO_BORDER))
 
         document.add(infoTable)
@@ -84,19 +98,6 @@ class ComparatorReportPdfService {
 
     private fun addComparisonTable(document: Document, request: ComparatorReportPdfRequest) {
         val columns = mutableListOf<ComparatorReportColumn>()
-        columns.add(
-            ComparatorReportColumn(
-                title = "CONSUMO ANUAL",
-                powerTermItems = request.powerTermRows.map { it.value },
-                annualPowerTermCost = "-",
-                consumedEnergyItems = request.energyConsumedRows.map { it.value.toDouble() },
-                annualEnergyCost = "-",
-                extraServices = "-",
-                electricalTax = request.impuestoElectrico,
-                iva = request.iva,
-                totalAnnualPrice = "-"
-            )
-        )
         columns.add(request.customerConditions)
         columns.addAll(request.proposals.map { proposal ->
             ComparatorReportColumn(
@@ -116,22 +117,31 @@ class ComparatorReportPdfService {
             widthPercentage = 100f
             keepTogether = true
             isSplitLate = false
+            setSpacingAfter(12f)
             val widths = MutableList(2 + columns.size) { 1f }
             widths[0] = 1.7f
             widths[1] = 1.15f
+            if (columns.isNotEmpty()) {
+                widths[2] = 1.25f
+            }
             setWidths(widths.toFloatArray())
         }
 
         table.addCell(buildHeaderCell(request.tariffName, COLOR_HIGHLIGHT))
-        table.addCell(buildHeaderCell("CONSUMO ANUAL", COLOR_HIGHLIGHT))
+        table.addCell(buildHeaderCell(ComparatorReportPdfTexts.ANNUAL_CONSUMPTION_COLUMN, COLOR_HIGHLIGHT))
         columns.forEachIndexed { index, column ->
-            val background = if (index == 1) COLOR_SECONDARY_HEADER else Color.WHITE
-            table.addCell(buildHeaderCell(column.title, background))
+            val columnTitle = if (index == 0) {
+                ComparatorReportPdfTexts.CURRENT_CONDITIONS_COLUMN
+            } else {
+                column.title
+            }
+            val background = if (index == 0) COLOR_SECONDARY_HEADER else Color.WHITE
+            table.addCell(buildHeaderCell(columnTitle, background))
         }
 
         addSeriesRows(
             table = table,
-            sideTitle = "POTENCIA\nCONTRATADA",
+            sideTitle = ComparatorReportPdfTexts.POWER_TERM_SIDE_TITLE,
             periods = request.powerTermRows.map { it.period },
             consumptionValues = request.powerTermRows.map { formatNumber(it.value) },
             columnValues = columns.map { column ->
@@ -141,11 +151,15 @@ class ComparatorReportPdfService {
             }
         )
 
-        addTotalRow(table, "Coste anual término de potencia", columns.map { it.annualPowerTermCost })
+        addTotalRow(
+            table,
+            ComparatorReportPdfTexts.POWER_TERM_ANNUAL_COST_LABEL,
+            columns.map { it.annualPowerTermCost }
+        )
 
         addSeriesRows(
             table = table,
-            sideTitle = "ENERGÍA\nCONSUMIDA",
+            sideTitle = ComparatorReportPdfTexts.ENERGY_CONSUMED_SIDE_TITLE,
             periods = request.energyConsumedRows.map { it.period },
             consumptionValues = request.energyConsumedRows.map { "${it.value} kWh" },
             columnValues = columns.map { column ->
@@ -155,15 +169,19 @@ class ComparatorReportPdfService {
             }
         )
 
-        addTotalRow(table, "Coste anual término de energía", columns.map { it.annualEnergyCost })
+        addTotalRow(
+            table,
+            ComparatorReportPdfTexts.ENERGY_TERM_ANNUAL_COST_LABEL,
+            columns.map { it.annualEnergyCost }
+        )
 
-        addMetaRow(table, "SERVICIOS EXTRA", columns.map { it.extraServices })
-        addMetaRow(table, "IMPUESTO ELÉCTRICO", columns.map { it.electricalTax })
-        addMetaRow(table, "IVA", columns.map { it.iva })
+        addMetaRow(table, ComparatorReportPdfTexts.EXTRA_SERVICES_LABEL, columns.map { it.extraServices })
+        addMetaRow(table, buildLabelWithReferenceValue(ComparatorReportPdfTexts.ELECTRIC_TAX_LABEL, request.impuestoElectrico), columns.map { it.electricalTax })
+        addMetaRow(table, buildLabelWithReferenceValue(ComparatorReportPdfTexts.IVA_LABEL, request.iva), columns.map { it.iva })
 
         addTotalRow(
             table,
-            "COSTE ANUAL FACTURA ELÉCTRICA",
+            ComparatorReportPdfTexts.ANNUAL_INVOICE_COST_LABEL,
             columns.map { it.totalAnnualPrice },
             emphasize = true
         )
@@ -233,13 +251,13 @@ class ComparatorReportPdfService {
 
     private fun addSavingsRow(table: PdfPTable, proposals: List<ComparatorReportProposal>) {
         val totalColumns = table.numberOfColumns
-        val fixedColumns = 4
-        val firstColumnsBeforeLabel = 3
+        val fixedColumns = 3
+        val firstColumnsBeforeLabel = 2
 
         table.addCell(buildCell("", colSpan = firstColumnsBeforeLabel, border = Rectangle.NO_BORDER))
         table.addCell(
             buildCell(
-                text = "AHORRO ANUAL",
+                text = ComparatorReportPdfTexts.ANNUAL_SAVINGS_LABEL,
                 background = COLOR_SAVINGS,
                 align = Element.ALIGN_CENTER,
                 font = FONT_SECTION
@@ -273,11 +291,16 @@ class ComparatorReportPdfService {
 
     private fun addDisclaimer(document: Document) {
         document.add(
-            Paragraph(
-                "BRIEL MARNYSOS CONSULTORÍA ENERGÉTICA S.L.U. - Informe generado automáticamente.",
-                FONT_FOOTER
-            )
+            Paragraph(ComparatorReportPdfTexts.DATA_PROTECTION_DISCLAIMER, FONT_FOOTER).apply {
+                spacingBefore = 8f
+                alignment = Element.ALIGN_JUSTIFIED
+            }
         )
+    }
+
+    private fun buildLabelWithReferenceValue(label: String, referenceValue: String): String {
+        if (referenceValue.isBlank() || referenceValue == "-") return label
+        return "$label - $referenceValue"
     }
 
     private fun buildHeaderCell(text: String, background: Color): PdfPCell {
