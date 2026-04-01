@@ -3,7 +3,9 @@ package com.bm.backend
 import com.bm.backend.database.DatabaseFactory
 import com.bm.backend.repositories.UserConsumptionRepository
 import com.bm.backend.repositories.UserDataRepository
+import com.bm.backend.repositories.UserActivityRepository
 import com.bm.backend.routes.priceTableRoutes
+import com.bm.backend.routes.userActivityRoutes
 import com.bm.backend.routes.userConsumptionRoutes
 import com.bm.backend.routes.userDataRoutes
 import com.bm.backend.security.DataMigration
@@ -14,6 +16,7 @@ import com.bm.backend.services.ComparatorReportPdfService
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.UserConsumptionService
 import com.bm.backend.services.UserDataService
+import com.bm.backend.services.UserActivityService
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.plugins.contentnegotiation.*
@@ -60,6 +63,7 @@ fun Application.configureRouting() {
     val priceUpdatesNotifier = FirebasePriceUpdatesNotifier()
     val userConsumptionRepository = UserConsumptionRepository()
     val userDataRepository = UserDataRepository()
+    val userActivityRepository = UserActivityRepository()
     val jobService = com.bm.backend.services.JobService()
     val comparatorReportPdfService = ComparatorReportPdfService()
     val userConsumptionService = UserConsumptionService(
@@ -68,6 +72,7 @@ fun Application.configureRouting() {
         priceTableService
     )
     val userDataService = UserDataService(userDataRepository)
+    val userActivityService = UserActivityService(userActivityRepository)
     
     routing {
         get("/") {
@@ -82,6 +87,7 @@ fun Application.configureRouting() {
             priceTableRoutes(priceTableService, externalApiService, priceUpdatesNotifier)
             userConsumptionRoutes(userConsumptionService, jobService, comparatorReportPdfService)
             userDataRoutes(userDataService)
+            userActivityRoutes(userActivityService)
         }
     }
 }
