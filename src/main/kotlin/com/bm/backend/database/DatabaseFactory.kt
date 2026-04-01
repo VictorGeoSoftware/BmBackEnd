@@ -34,7 +34,8 @@ object DatabaseFactory {
                 TarifasEnergiaBaseDb,
                 TarifasEnergiaUnicaDb,
                 TaxSettingsDb,
-                UserDataDb
+                UserDataDb,
+                UserActivityDb
             )
         }
 
@@ -63,7 +64,8 @@ object DatabaseFactory {
                 TarifasEnergiaBaseDb,
                 TarifasEnergiaUnicaDb,
                 TaxSettingsDb,
-                UserDataDb
+                UserDataDb,
+                UserActivityDb
             )
         }
     }

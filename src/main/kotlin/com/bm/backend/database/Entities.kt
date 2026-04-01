@@ -80,3 +80,14 @@ object UserDataDb : IntIdTable("user_data") {
     val createdAt = long("created_at")
     val updatedAt = long("updated_at")
 }
+
+object UserActivityDb : IntIdTable("user_activity") {
+    val email = varchar("email", 255).uniqueIndex()
+    val name = varchar("name", 255)
+    val isOnline = bool("is_online")
+    val monthlyUsageCount = integer("monthly_usage_count")
+    val monthKey = varchar("month_key", 7)
+    val lastConnectedAt = long("last_connected_at").nullable()
+    val lastDisconnectedAt = long("last_disconnected_at").nullable()
+    val updatedAt = long("updated_at")
+}

@@ -1,0 +1,101 @@
+package com.bm.backend.routes
+
+import com.bm.backend.models.ErrorResponse
+import com.bm.backend.models.UserActivityEventRequest
+import com.bm.backend.models.UserActivityListResponse
+import com.bm.backend.models.UserActivityMutationResponse
+import com.bm.backend.services.UserActivityService
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.call
+import io.ktor.server.application.log
+import io.ktor.server.request.receive
+import io.ktor.server.response.respond
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.get
+import io.ktor.server.routing.post
+
+fun Route.userActivityRoutes(userActivityService: UserActivityService) {
+    post("/user-activity/online") {
+        try {
+            val request = call.receive<UserActivityEventRequest>()
+            userActivityService.setUserOnline(name = request.name, email = request.email)
+            call.respond(
+                HttpStatusCode.OK,
+                UserActivityMutationResponse(
+                    success = true,
+                    message = "User marked as online"
+                )
+            )
+        } catch (e: IllegalArgumentException) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(message = e.message ?: "Invalid request"))
+        } catch (e: Exception) {
+            call.application.log.error("Error setting user online: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
+
+    post("/user-activity/offline") {
+        try {
+            val request = call.receive<UserActivityEventRequest>()
+            userActivityService.setUserOffline(name = request.name, email = request.email)
+            call.respond(
+                HttpStatusCode.OK,
+                UserActivityMutationResponse(
+                    success = true,
+                    message = "User marked as offline"
+                )
+            )
+        } catch (e: IllegalArgumentException) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(message = e.message ?: "Invalid request"))
+        } catch (e: Exception) {
+            call.application.log.error("Error setting user offline: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
+
+    post("/user-activity/proposals-response") {
+        try {
+            val request = call.receive<UserActivityEventRequest>()
+            userActivityService.incrementMonthlyUsageCounter(name = request.name, email = request.email)
+            call.respond(
+                HttpStatusCode.OK,
+                UserActivityMutationResponse(
+                    success = true,
+                    message = "User monthly usage counter incremented"
+                )
+            )
+        } catch (e: IllegalArgumentException) {
+            call.respond(HttpStatusCode.BadRequest, ErrorResponse(message = e.message ?: "Invalid request"))
+        } catch (e: Exception) {
+            call.application.log.error("Error incrementing user monthly usage counter: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
+
+    get("/user-activity/users") {
+        try {
+            call.respond(
+                HttpStatusCode.OK,
+                UserActivityListResponse(
+                    success = true,
+                    users = userActivityService.getUsersActivity()
+                )
+            )
+        } catch (e: Exception) {
+            call.application.log.error("Error fetching users activity: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
+}
