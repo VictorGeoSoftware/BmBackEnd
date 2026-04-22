@@ -20,34 +20,33 @@ class UserConsumptionService(
     
     suspend fun processConsumptionReportFromPdf(pdfFile: File): ConsumptionReportResponse {
         // Step 1: Extract data from PDF via Docling API
-        val doclingResult = runCatching {
+        val extractedData = runCatching {
             externalApiService.extractDataFromPdf(pdfFile)
         }.getOrElse { e ->
             throw Exception("Failed at Docling API extraction step: ${e.message}", e)
         }
-        
+
         // Step 2: Process with N8N webhook
         val n8nResponse = runCatching {
-            externalApiService.processWithN8nWebhook(doclingResult.extractedData)
+            externalApiService.processWithN8nWebhook(extractedData)
         }.getOrElse { e ->
             throw Exception("Failed at N8N webhook processing step: ${e.message}", e)
         }
-        
+
         // Step 3: Clean the consumption data
         val cleanedConsumptionData = n8nResponse.data.toCleanedData(n8nResponse.processedAt)
-        
+
         // Step 4-5: Resolve current prices and calculate proposals
         val filteredPrices = resolveFilteredPrices(cleanedConsumptionData)
         val proposals = calculateProposals(
             cleanedConsumptionData,
             filteredPrices
         )
-        
+
         // Step 6: Build consolidated response
         return ConsumptionReportResponse(
             success = true,
-            userData = doclingResult.extractedData,
-            currentConditions = doclingResult.currentConditions,
+            userData = extractedData,
             consumptionData = cleanedConsumptionData,
             proposals = proposals,
             iva = filteredPrices.iva,

@@ -7,8 +7,7 @@ import kotlinx.serialization.Serializable
 data class DoclingApiResponse(
     val extractedData: DoclingExtractedData,
     val fileName: String,
-    val success: Boolean,
-    val conditions: CustomerCurrentConditions? = null
+    val success: Boolean
 )
 
 @Serializable
@@ -67,7 +66,6 @@ data class N8nConsumptionData(
 data class ConsumptionReportResponse(
     val success: Boolean,
     val userData: DoclingExtractedData,
-    val currentConditions: CustomerCurrentConditions? = null,
     val consumptionData: CleanedConsumptionData,
     val proposals: List<ProposalPriceModel>,
     val iva: Double,
