@@ -237,12 +237,12 @@ class ExternalApiService {
     /**
      * Calls Docling API to extract data from PDF
      */
-    suspend fun extractDataFromPdf(pdfFile: File): DoclingExtractionResult {
+    suspend fun extractDataFromPdf(pdfFile: File): DoclingExtractedData {
         return try {
             println("Sending PDF to Docling API: ${pdfFile.name}, size: ${pdfFile.length()} bytes")
             
             val httpResponse = client.submitFormWithBinaryData(
-                url = "$doclingCustomerApiUrl/extract-all-v2",
+                url = "$doclingCustomerApiUrl/extract-all",
                 formData = formData {
                     append("file", pdfFile.readBytes(), Headers.build {
                         append(HttpHeaders.ContentType, "application/pdf")
@@ -290,10 +290,7 @@ class ExternalApiService {
             }
             
             println("Docling API extraction successful")
-            DoclingExtractionResult(
-                extractedData = firstResult.extractedData,
-                currentConditions = firstResult.conditions,
-            )
+            firstResult.extractedData
         } catch (e: Exception) {
             throw Exception("Failed to extract data from PDF via Docling API: ${e.message}", e)
         }
