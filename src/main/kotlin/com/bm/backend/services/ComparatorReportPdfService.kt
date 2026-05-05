@@ -336,7 +336,7 @@ class ComparatorReportPdfService {
         }
     }
 
-    private fun formatNumber(value: Double): String = String.format(Locale.US, "%.5f", value)
+    private fun formatNumber(value: Double): String = String.format(Locale.US, "%.6f", value)
 
     private fun withCurrency(value: String): String {
         if (value.isBlank() || value == "-") return value
