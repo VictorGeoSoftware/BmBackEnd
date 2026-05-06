@@ -1,5 +1,6 @@
 package com.bm.backend.services
 
+import com.bm.backend.models.UserActivityFirstConnectionResponse
 import com.bm.backend.models.UserActivityUserResponse
 import com.bm.backend.repositories.UserActivityRepository
 
@@ -36,6 +37,10 @@ class UserActivityService(
 
     fun getUsersActivity(): List<UserActivityUserResponse> {
         return userActivityRepository.getUsersActivity()
+    }
+
+    fun getUsersFirstConnection(): List<UserActivityFirstConnectionResponse> {
+        return userActivityRepository.getUsersFirstConnection()
     }
 
     private fun normalizeEmail(email: String): String {

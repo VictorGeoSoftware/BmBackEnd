@@ -26,7 +26,7 @@ object DatabaseFactory {
         restrictFilePermissions(dbPath)
 
         transaction(database) {
-            SchemaUtils.create(
+            SchemaUtils.createMissingTablesAndColumns(
                 PriceTableResultsDb,
                 TerminoDePotenciaDb,
                 TerminoDeEnergiaDb,
@@ -56,7 +56,7 @@ object DatabaseFactory {
         applySecurityPragmas(database)
 
         transaction(database) {
-            SchemaUtils.create(
+            SchemaUtils.createMissingTablesAndColumns(
                 PriceTableResultsDb,
                 TerminoDePotenciaDb,
                 TerminoDeEnergiaDb,

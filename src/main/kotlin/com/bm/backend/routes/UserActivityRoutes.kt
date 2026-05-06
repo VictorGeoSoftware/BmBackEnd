@@ -2,6 +2,7 @@ package com.bm.backend.routes
 
 import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.UserActivityEventRequest
+import com.bm.backend.models.UserActivityFirstConnectionListResponse
 import com.bm.backend.models.UserActivityListResponse
 import com.bm.backend.models.UserActivityMutationResponse
 import com.bm.backend.services.UserActivityService
@@ -92,6 +93,24 @@ fun Route.userActivityRoutes(userActivityService: UserActivityService) {
             )
         } catch (e: Exception) {
             call.application.log.error("Error fetching users activity: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
+
+    get("/user-activity/users/first-connection") {
+        try {
+            call.respond(
+                HttpStatusCode.OK,
+                UserActivityFirstConnectionListResponse(
+                    success = true,
+                    users = userActivityService.getUsersFirstConnection()
+                )
+            )
+        } catch (e: Exception) {
+            call.application.log.error("Error fetching users first connection: ${e.message}", e)
             call.respond(
                 HttpStatusCode.InternalServerError,
                 ErrorResponse(message = "Internal server error: ${e.message}")

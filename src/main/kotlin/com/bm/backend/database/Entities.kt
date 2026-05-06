@@ -87,6 +87,7 @@ object UserActivityDb : IntIdTable("user_activity") {
     val isOnline = bool("is_online")
     val monthlyUsageCount = integer("monthly_usage_count")
     val monthKey = varchar("month_key", 7)
+    val firstConnectedAt = long("first_connected_at").nullable()
     val lastConnectedAt = long("last_connected_at").nullable()
     val lastDisconnectedAt = long("last_disconnected_at").nullable()
     val updatedAt = long("updated_at")
