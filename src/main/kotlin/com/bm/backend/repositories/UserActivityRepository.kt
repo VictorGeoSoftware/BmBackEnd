@@ -3,6 +3,7 @@ package com.bm.backend.repositories
 import com.bm.backend.database.UserActivityDb
 import com.bm.backend.models.UserActivityFirstConnectionResponse
 import com.bm.backend.models.UserActivityUserResponse
+import com.bm.backend.repositories.ports.UserActivityRepositoryPort
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
@@ -10,9 +11,9 @@ import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
 import java.time.YearMonth
 
-class UserActivityRepository {
+class UserActivityRepository : UserActivityRepositoryPort {
 
-    fun setOnline(name: String, email: String) {
+    override fun setOnline(name: String, email: String) {
         transaction {
             val now = System.currentTimeMillis()
             val monthKey = currentMonthKey()
@@ -44,7 +45,7 @@ class UserActivityRepository {
         }
     }
 
-    fun setOffline(name: String, email: String) {
+    override fun setOffline(name: String, email: String) {
         transaction {
             val now = System.currentTimeMillis()
             val monthKey = currentMonthKey()
@@ -76,7 +77,7 @@ class UserActivityRepository {
         }
     }
 
-    fun incrementMonthlyUsageCounter(name: String, email: String) {
+    override fun incrementMonthlyUsageCounter(name: String, email: String) {
         transaction {
             val now = System.currentTimeMillis()
             val monthKey = currentMonthKey()
@@ -106,7 +107,7 @@ class UserActivityRepository {
         }
     }
 
-    fun getUsersActivity(): List<UserActivityUserResponse> {
+    override fun getUsersActivity(): List<UserActivityUserResponse> {
         return transaction {
             val monthKey = currentMonthKey()
             UserActivityDb
@@ -127,7 +128,7 @@ class UserActivityRepository {
         }
     }
 
-    fun getUsersFirstConnection(): List<UserActivityFirstConnectionResponse> {
+    override fun getUsersFirstConnection(): List<UserActivityFirstConnectionResponse> {
         return transaction {
             UserActivityDb
                 .selectAll()

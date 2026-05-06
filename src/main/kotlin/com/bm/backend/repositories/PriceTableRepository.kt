@@ -2,22 +2,23 @@ package com.bm.backend.repositories
 
 import com.bm.backend.database.*
 import com.bm.backend.models.*
+import com.bm.backend.repositories.ports.PriceTableRepositoryPort
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
 
-class PriceTableRepository {
+class PriceTableRepository : PriceTableRepositoryPort {
 
     private val logger = LoggerFactory.getLogger(PriceTableRepository::class.java)
 
-    fun getTaxSettings(): TaxSettingsResponse {
+    override fun getTaxSettings(): TaxSettingsResponse {
         return transaction {
             getOrCreateTaxSettings()
         }
     }
 
-    fun updateTaxSettings(iva: Double, impuestoElectrico: Double): TaxSettingsResponse {
+    override fun updateTaxSettings(iva: Double, impuestoElectrico: Double): TaxSettingsResponse {
         return transaction {
             val existingRow = TaxSettingsDb
                 .selectAll()
@@ -70,7 +71,7 @@ class PriceTableRepository {
         )
     }
 
-    fun storePriceTableResults(priceTableResponse: PriceTableResponse): Int {
+    override fun storePriceTableResults(priceTableResponse: PriceTableResponse): Int {
         return transaction {
             var totalRowsInserted = 0
             
@@ -228,7 +229,7 @@ class PriceTableRepository {
         return true
     }
     
-    fun getAllPriceTableResults(tarifaType: String? = null): PriceTableResponse {
+    override fun getAllPriceTableResults(tarifaType: String?): PriceTableResponse {
         return transaction {
             val results = mutableListOf<PriceTableResult>()
             val taxSettings = getOrCreateTaxSettings()
@@ -335,7 +336,7 @@ class PriceTableRepository {
         }
     }
     
-    fun getFilteredPriceTableResults(tarifaType: String? = null): FilteredPriceTableResponse {
+    override fun getFilteredPriceTableResults(tarifaType: String?): FilteredPriceTableResponse {
         return transaction {
             val results = mutableListOf<FilteredPriceTableResult>()
             val taxSettings = getOrCreateTaxSettings()
@@ -465,7 +466,7 @@ class PriceTableRepository {
         }
     }
     
-    fun clearAllData(): Int {
+    override fun clearAllData(): Int {
         return transaction {
             // Delete in reverse order of dependencies to avoid foreign key constraint violations
             val tarifasPotenciaDeleted = TarifasPotenciaDb.deleteAll()
@@ -484,7 +485,7 @@ class PriceTableRepository {
         }
     }
 
-    fun deleteResultsByIds(ids: List<Int>): Pair<List<Int>, List<Int>> {
+    override fun deleteResultsByIds(ids: List<Int>): Pair<List<Int>, List<Int>> {
         return transaction {
             val distinctIds = ids.distinct()
             val existingIds = PriceTableResultsDb

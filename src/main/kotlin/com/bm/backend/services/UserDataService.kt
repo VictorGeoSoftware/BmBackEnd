@@ -1,9 +1,9 @@
 package com.bm.backend.services
 
-import com.bm.backend.repositories.UserDataRepository
+import com.bm.backend.repositories.ports.UserDataRepositoryPort
 
 class UserDataService(
-    private val userDataRepository: UserDataRepository
+    private val userDataRepository: UserDataRepositoryPort
 ) {
     fun upsertUserData(
         uid: String,

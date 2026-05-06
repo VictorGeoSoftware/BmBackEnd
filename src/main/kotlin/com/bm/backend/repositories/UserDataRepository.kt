@@ -1,6 +1,7 @@
 package com.bm.backend.repositories
 
 import com.bm.backend.database.UserDataDb
+import com.bm.backend.repositories.ports.UserDataRepositoryPort
 import com.bm.backend.security.EncryptionUtils
 import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
@@ -8,11 +9,11 @@ import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
 import org.slf4j.LoggerFactory
 
-class UserDataRepository {
+class UserDataRepository : UserDataRepositoryPort {
 
     private val logger = LoggerFactory.getLogger(UserDataRepository::class.java)
 
-    fun upsertUserData(
+    override fun upsertUserData(
         uid: String,
         email: String?,
         displayName: String?,
