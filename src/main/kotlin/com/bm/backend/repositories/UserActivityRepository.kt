@@ -25,20 +25,18 @@ class UserActivityRepository {
                     it[UserActivityDb.isOnline] = true
                     it[UserActivityDb.monthlyUsageCount] = 0
                     it[UserActivityDb.monthKey] = monthKey
-                    it[UserActivityDb.firstConnectedAt] = now
+                    it[UserActivityDb.usageStartedAt] = now
                     it[UserActivityDb.lastConnectedAt] = now
                     it[UserActivityDb.lastDisconnectedAt] = null
                     it[UserActivityDb.updatedAt] = now
                 }
             } else {
                 val monthlyUsageCount = resolveMonthlyCount(existing, monthKey)
-                val firstConnectedAt = existing[UserActivityDb.firstConnectedAt] ?: now
                 UserActivityDb.update({ UserActivityDb.email eq email }) {
                     it[UserActivityDb.name] = name
                     it[UserActivityDb.isOnline] = true
                     it[UserActivityDb.monthlyUsageCount] = monthlyUsageCount
                     it[UserActivityDb.monthKey] = monthKey
-                    it[UserActivityDb.firstConnectedAt] = firstConnectedAt
                     it[UserActivityDb.lastConnectedAt] = now
                     it[UserActivityDb.updatedAt] = now
                 }
@@ -59,7 +57,7 @@ class UserActivityRepository {
                     it[UserActivityDb.isOnline] = false
                     it[UserActivityDb.monthlyUsageCount] = 0
                     it[UserActivityDb.monthKey] = monthKey
-                    it[UserActivityDb.firstConnectedAt] = null
+                    it[UserActivityDb.usageStartedAt] = now
                     it[UserActivityDb.lastConnectedAt] = null
                     it[UserActivityDb.lastDisconnectedAt] = now
                     it[UserActivityDb.updatedAt] = now
@@ -91,7 +89,7 @@ class UserActivityRepository {
                     it[UserActivityDb.isOnline] = true
                     it[UserActivityDb.monthlyUsageCount] = 1
                     it[UserActivityDb.monthKey] = monthKey
-                    it[UserActivityDb.firstConnectedAt] = now
+                    it[UserActivityDb.usageStartedAt] = now
                     it[UserActivityDb.lastConnectedAt] = now
                     it[UserActivityDb.lastDisconnectedAt] = null
                     it[UserActivityDb.updatedAt] = now
@@ -136,7 +134,7 @@ class UserActivityRepository {
                 .map { row ->
                     UserActivityFirstConnectionResponse(
                         email = row[UserActivityDb.email],
-                        firstConnectedAt = row[UserActivityDb.firstConnectedAt]
+                        firstConnectedAt = row[UserActivityDb.usageStartedAt]
                     )
                 }
         }

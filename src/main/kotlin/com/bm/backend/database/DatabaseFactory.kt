@@ -39,6 +39,8 @@ object DatabaseFactory {
             )
         }
 
+        backfillUsageStartedAt(database)
+
         logger.info("Database initialized at: {}", dbPath)
     }
 
@@ -68,6 +70,8 @@ object DatabaseFactory {
                 UserActivityDb
             )
         }
+
+        backfillUsageStartedAt(database)
     }
 
     private fun applySecurityPragmas(database: Database) {
@@ -87,6 +91,24 @@ object DatabaseFactory {
             }
         }
         logger.info("SQLite security PRAGMAs applied (WAL + foreign_keys + secure_delete + synchronous=FULL)")
+    }
+
+    private fun backfillUsageStartedAt(database: Database) {
+        val url = database.url
+        java.sql.DriverManager.getConnection(url).use { conn ->
+            conn.createStatement().use { stmt ->
+                val affectedRows = stmt.executeUpdate(
+                    """
+                    UPDATE user_activity
+                    SET usage_started_at = COALESCE(last_connected_at, last_disconnected_at, updated_at)
+                    WHERE usage_started_at IS NULL
+                    """.trimIndent()
+                )
+                if (affectedRows > 0) {
+                    logger.info("Backfilled usage_started_at for {} user_activity rows", affectedRows)
+                }
+            }
+        }
     }
 
     private fun restrictFilePermissions(dbPath: String) {
