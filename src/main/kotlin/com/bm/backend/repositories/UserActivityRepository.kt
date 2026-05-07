@@ -7,13 +7,14 @@ import com.bm.backend.repositories.ports.UserActivityRepositoryPort
 import org.jetbrains.exposed.sql.ResultRow
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
+import java.time.Instant
 import java.time.YearMonth
 
 class UserActivityRepository : UserActivityRepositoryPort {
 
     override fun setOnline(name: String, email: String) {
         transaction {
-            val now = System.currentTimeMillis()
+            val now = Instant.now()
             val monthKey = currentMonthKey()
 
             exec(
@@ -46,7 +47,7 @@ class UserActivityRepository : UserActivityRepositoryPort {
 
     override fun setOffline(name: String, email: String) {
         transaction {
-            val now = System.currentTimeMillis()
+            val now = Instant.now()
             val monthKey = currentMonthKey()
 
             exec(
@@ -79,7 +80,7 @@ class UserActivityRepository : UserActivityRepositoryPort {
 
     override fun incrementMonthlyUsageCounter(name: String, email: String) {
         transaction {
-            val now = System.currentTimeMillis()
+            val now = Instant.now()
             val monthKey = currentMonthKey()
 
             exec(
@@ -120,9 +121,9 @@ class UserActivityRepository : UserActivityRepositoryPort {
                         email = row[UserActivityDb.email],
                         isOnline = row[UserActivityDb.isOnline],
                         monthlyUsageCount = monthlyUsageCount,
-                        lastConnectedAt = row[UserActivityDb.lastConnectedAt],
-                        lastDisconnectedAt = row[UserActivityDb.lastDisconnectedAt],
-                        updatedAt = row[UserActivityDb.updatedAt]
+                        lastConnectedAt = row[UserActivityDb.lastConnectedAt]?.toEpochMilli(),
+                        lastDisconnectedAt = row[UserActivityDb.lastDisconnectedAt]?.toEpochMilli(),
+                        updatedAt = row[UserActivityDb.updatedAt].toEpochMilli()
                     )
                 }
                 .sortedByDescending { user -> user.updatedAt }
@@ -136,7 +137,7 @@ class UserActivityRepository : UserActivityRepositoryPort {
                 .map { row ->
                     UserActivityFirstConnectionResponse(
                         email = row[UserActivityDb.email],
-                        firstConnectedAt = row[UserActivityDb.usageStartedAt]
+                        firstConnectedAt = row[UserActivityDb.usageStartedAt]?.toEpochMilli()
                     )
                 }
         }

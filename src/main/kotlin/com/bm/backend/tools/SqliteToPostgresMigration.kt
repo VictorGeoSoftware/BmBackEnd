@@ -3,6 +3,7 @@ package com.bm.backend.tools
 import org.slf4j.LoggerFactory
 import java.sql.Connection
 import java.sql.DriverManager
+import java.sql.Timestamp
 import javax.sql.DataSource
 
 /**
@@ -70,6 +71,12 @@ class SqliteToPostgresMigration(
 ) {
     private val logger = LoggerFactory.getLogger(SqliteToPostgresMigration::class.java)
 
+    /** Columns that were BIGINT epoch-millis in SQLite and are now TIMESTAMPTZ in Postgres. */
+    private val epochMillisColumns = setOf(
+        "token_issued_at", "token_expires_at", "last_login_at", "created_at", "updated_at",
+        "usage_started_at", "first_connected_at", "last_connected_at", "last_disconnected_at"
+    )
+
     /** Tables in FK-safe insertion order. */
     private val tables = listOf(
         TableSpec("price_table_results",  listOf("id", "file_name", "company_name")),
@@ -126,11 +133,17 @@ class SqliteToPostgresMigration(
                     while (rs.next()) {
                         for ((idx, col) in table.columns.withIndex()) {
                             val value = rs.getObject(col)
-                            // SQLite stores booleans as 0/1 integers
-                            if (col == "is_online" && value is Number) {
-                                ps.setBoolean(idx + 1, value.toInt() != 0)
-                            } else {
-                                ps.setObject(idx + 1, value)
+                            when {
+                                // SQLite stores booleans as 0/1 integers
+                                col == "is_online" && value is Number ->
+                                    ps.setBoolean(idx + 1, value.toInt() != 0)
+                                // Convert epoch-millis Long to Timestamp for TIMESTAMPTZ columns
+                                col in epochMillisColumns && value is Number ->
+                                    ps.setTimestamp(idx + 1, Timestamp(value.toLong()))
+                                col in epochMillisColumns && value == null ->
+                                    ps.setNull(idx + 1, java.sql.Types.TIMESTAMP)
+                                else ->
+                                    ps.setObject(idx + 1, value)
                             }
                         }
                         ps.addBatch()

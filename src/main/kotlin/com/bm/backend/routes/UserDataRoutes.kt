@@ -54,8 +54,12 @@ fun Route.userDataRoutes(userDataService: UserDataService) {
                 return@post
             }
 
-            val tokenIssuedAt = (decodedToken.claims["iat"] as? Number)?.toLong() ?: 0L
-            val tokenExpiresAt = (decodedToken.claims["exp"] as? Number)?.toLong() ?: 0L
+            val tokenIssuedAt = java.time.Instant.ofEpochSecond(
+                (decodedToken.claims["iat"] as? Number)?.toLong() ?: 0L
+            )
+            val tokenExpiresAt = java.time.Instant.ofEpochSecond(
+                (decodedToken.claims["exp"] as? Number)?.toLong() ?: 0L
+            )
 
             userDataService.upsertUserData(
                 uid = uid,

@@ -1,7 +1,7 @@
 package com.bm.backend
 
 import com.bm.backend.database.DatabaseFactory
-import com.bm.backend.repositories.UserConsumptionRepository
+import com.bm.backend.repositories.PostgresUserConsumptionRepository
 import com.bm.backend.repositories.UserDataRepository
 import com.bm.backend.repositories.UserActivityRepository
 import com.bm.backend.routes.priceTableRoutes
@@ -19,11 +19,14 @@ import com.bm.backend.services.UserDataService
 import com.bm.backend.services.UserActivityService
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
+import io.ktor.server.metrics.micrometer.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.ratelimit.*
 import io.ktor.server.plugins.statuspages.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
+import io.micrometer.prometheusmetrics.PrometheusConfig
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
 import kotlinx.serialization.json.Json
 import kotlin.time.Duration.Companion.seconds
 
@@ -31,13 +34,19 @@ fun main(args: Array<String>) {
     io.ktor.server.netty.EngineMain.main(args)
 }
 
-fun Application.configurePlugins() {
+fun Application.configurePlugins(): PrometheusMeterRegistry {
+    val prometheusMeterRegistry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
+
     // Install plugins
     install(ContentNegotiation) {
         json(Json {
             prettyPrint = true
             ignoreUnknownKeys = true
         })
+    }
+
+    install(MicrometerMetrics) {
+        registry = prometheusMeterRegistry
     }
 
     install(StatusPages) {
@@ -54,14 +63,16 @@ fun Application.configurePlugins() {
             rateLimiter(limit = 100, refillPeriod = 60.seconds)
         }
     }
+
+    return prometheusMeterRegistry
 }
 
-fun Application.configureRouting() {
+fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistry? = null) {
     // Initialize services
     val priceTableService = PriceTableService()
     val externalApiService = ExternalApiService()
     val priceUpdatesNotifier = FirebasePriceUpdatesNotifier()
-    val userConsumptionRepository = UserConsumptionRepository()
+    val userConsumptionRepository = PostgresUserConsumptionRepository()
     val userDataRepository = UserDataRepository()
     val userActivityRepository = UserActivityRepository()
     val jobService = com.bm.backend.services.JobService()
@@ -77,6 +88,14 @@ fun Application.configureRouting() {
     routing {
         get("/") {
             call.respond(mapOf("message" to "Price Table Backend Service is running"))
+        }
+
+        get("/metrics") {
+            if (prometheusMeterRegistry != null) {
+                call.respondText(prometheusMeterRegistry.scrape())
+            } else {
+                call.respond(io.ktor.http.HttpStatusCode.NotFound, "Metrics not configured")
+            }
         }
 
         get("/health") {
@@ -112,8 +131,8 @@ fun Application.module() {
     initEncryption()
     DatabaseFactory.init()
     DataMigration.encryptExistingUserData()
-    this.configurePlugins()
-    this.configureRouting()
+    val prometheusMeterRegistry = this.configurePlugins()
+    this.configureRouting(prometheusMeterRegistry)
 }
 
 private fun Application.initEncryption() {

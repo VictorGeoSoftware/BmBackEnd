@@ -1,6 +1,7 @@
 package com.bm.backend.services
 
 import com.bm.backend.repositories.ports.UserDataRepositoryPort
+import java.time.Instant
 
 class UserDataService(
     private val userDataRepository: UserDataRepositoryPort
@@ -11,8 +12,8 @@ class UserDataService(
         displayName: String?,
         photoURL: String?,
         providerIds: List<String>,
-        tokenIssuedAt: Long,
-        tokenExpiresAt: Long
+        tokenIssuedAt: Instant,
+        tokenExpiresAt: Instant
     ) {
         val cleanedProviders = providerIds
             .map { it.trim() }

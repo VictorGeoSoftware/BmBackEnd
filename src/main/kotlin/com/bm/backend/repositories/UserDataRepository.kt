@@ -5,6 +5,7 @@ import com.bm.backend.repositories.ports.UserDataRepositoryPort
 import com.bm.backend.security.EncryptionUtils
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
+import java.time.Instant
 
 class UserDataRepository : UserDataRepositoryPort {
 
@@ -16,11 +17,11 @@ class UserDataRepository : UserDataRepositoryPort {
         displayName: String?,
         photoURL: String?,
         providerIds: List<String>,
-        tokenIssuedAt: Long,
-        tokenExpiresAt: Long
+        tokenIssuedAt: Instant,
+        tokenExpiresAt: Instant
     ) {
         transaction {
-            val now = System.currentTimeMillis()
+            val now = Instant.now()
             val providerIdsSerialized = providerIds.joinToString(",")
 
             val encryptedEmail = EncryptionUtils.encryptNullable(email)

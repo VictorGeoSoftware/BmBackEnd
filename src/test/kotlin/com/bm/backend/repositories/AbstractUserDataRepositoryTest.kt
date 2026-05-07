@@ -7,6 +7,7 @@ import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.time.Instant
 import kotlin.test.assertEquals
 import kotlin.test.assertNotEquals
 import kotlin.test.assertNotNull
@@ -36,7 +37,8 @@ abstract class AbstractUserDataRepositoryTest {
             uid = "uid-1", email = "alice@example.com", displayName = "Alice",
             photoURL = "https://example.com/a.png",
             providerIds = listOf("google.com", "password"),
-            tokenIssuedAt = 1_000L, tokenExpiresAt = 2_000L
+            tokenIssuedAt = Instant.ofEpochSecond(1_000L),
+            tokenExpiresAt = Instant.ofEpochSecond(2_000L)
         )
         val raw = transaction {
             UserDataDb.selectAll().single().let {
@@ -57,13 +59,15 @@ abstract class AbstractUserDataRepositoryTest {
         repository.upsertUserData(
             uid = "uid-1", email = "alice@example.com", displayName = "Alice",
             photoURL = null, providerIds = listOf("password"),
-            tokenIssuedAt = 1_000L, tokenExpiresAt = 2_000L
+            tokenIssuedAt = Instant.ofEpochSecond(1_000L),
+            tokenExpiresAt = Instant.ofEpochSecond(2_000L)
         )
         Thread.sleep(2)
         repository.upsertUserData(
             uid = "uid-1", email = "alice+new@example.com", displayName = "Alice 2",
             photoURL = null, providerIds = listOf("password", "google.com"),
-            tokenIssuedAt = 3_000L, tokenExpiresAt = 4_000L
+            tokenIssuedAt = Instant.ofEpochSecond(3_000L),
+            tokenExpiresAt = Instant.ofEpochSecond(4_000L)
         )
         val (createdAt, updatedAt, providerIds, decryptedEmail) = transaction {
             UserDataDb.selectAll().single().let { row ->
@@ -79,14 +83,16 @@ abstract class AbstractUserDataRepositoryTest {
         assertEquals(1L, rowCount)
         assertEquals("alice+new@example.com", decryptedEmail)
         assertEquals("password,google.com", providerIds)
-        assertTrue((updatedAt as Long) >= (createdAt as Long))
+        assertTrue((updatedAt as Instant) >= (createdAt as Instant))
     }
 
     @Test
     fun `upsertUserData stores nullable PII as null (not encrypted empty string)`() {
         repository.upsertUserData(
             uid = "uid-2", email = null, displayName = null, photoURL = null,
-            providerIds = emptyList(), tokenIssuedAt = 1L, tokenExpiresAt = 2L
+            providerIds = emptyList(),
+            tokenIssuedAt = Instant.ofEpochSecond(1L),
+            tokenExpiresAt = Instant.ofEpochSecond(2L)
         )
         val (email, displayName, photoURL) = transaction {
             UserDataDb.selectAll().single().let {

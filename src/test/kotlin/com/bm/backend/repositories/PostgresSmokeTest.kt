@@ -53,7 +53,7 @@ class PostgresSmokeTest {
             "tarifas_energia_base", "tarifas_energia_unica", "tarifas_potencia",
             "tax_settings",
             "termino_de_energia", "termino_de_potencia",
-            "user_activity", "user_data"
+            "user_activity", "user_consumption", "user_data"
         )
         assertEquals(expected, tables.filter { !it.startsWith("flyway_") }.sorted())
     }

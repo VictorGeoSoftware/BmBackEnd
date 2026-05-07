@@ -30,8 +30,8 @@ class ApplicationTest {
 
     private fun Application.testApplicationModule() {
         // Skip DatabaseFactory.init() — Testcontainer DB is already connected
-        configurePlugins()
-        configureRouting()
+        val registry = configurePlugins()
+        configureRouting(registry)
     }
 
     @Test

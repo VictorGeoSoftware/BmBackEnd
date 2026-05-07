@@ -8,6 +8,7 @@ import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
+import java.time.Instant
 import java.time.YearMonth
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -70,7 +71,7 @@ abstract class AbstractUserActivityRepositoryTest {
     @Test
     fun `monthlyUsageCount resets when month changes`() {
         val previousMonth = YearMonth.now().minusMonths(1).toString()
-        val pastEpoch = System.currentTimeMillis() - 35L * 24 * 3_600_000
+        val pastInstant = Instant.now().minusSeconds(35L * 24 * 3_600)
         transaction {
             UserActivityDb.insert {
                 it[UserActivityDb.name] = "Carol"
@@ -78,10 +79,10 @@ abstract class AbstractUserActivityRepositoryTest {
                 it[UserActivityDb.isOnline] = false
                 it[UserActivityDb.monthlyUsageCount] = 7
                 it[UserActivityDb.monthKey] = previousMonth
-                it[UserActivityDb.usageStartedAt] = pastEpoch
-                it[UserActivityDb.lastConnectedAt] = pastEpoch
-                it[UserActivityDb.lastDisconnectedAt] = pastEpoch
-                it[UserActivityDb.updatedAt] = pastEpoch
+                it[UserActivityDb.usageStartedAt] = pastInstant
+                it[UserActivityDb.lastConnectedAt] = pastInstant
+                it[UserActivityDb.lastDisconnectedAt] = pastInstant
+                it[UserActivityDb.updatedAt] = pastInstant
             }
         }
         val carol = repository.getUsersActivity().single { it.email == "carol@example.com" }

@@ -1,5 +1,7 @@
 package com.bm.backend.repositories.ports
 
+import java.time.Instant
+
 /**
  * Port (Clean Architecture) for the authenticated user data persistence
  * boundary. Implementations are responsible for at-rest encryption of PII
@@ -13,7 +15,7 @@ interface UserDataRepositoryPort {
         displayName: String?,
         photoURL: String?,
         providerIds: List<String>,
-        tokenIssuedAt: Long,
-        tokenExpiresAt: Long
+        tokenIssuedAt: Instant,
+        tokenExpiresAt: Instant
     )
 }
