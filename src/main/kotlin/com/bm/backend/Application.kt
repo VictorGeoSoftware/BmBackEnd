@@ -80,7 +80,22 @@ fun Application.configureRouting() {
         }
 
         get("/health") {
-            call.respond(mapOf("status" to "healthy", "timestamp" to java.time.Instant.now().toString()))
+            val dbHealthy = try {
+                org.jetbrains.exposed.sql.transactions.transaction {
+                    exec("SELECT 1") { it.next() }
+                }
+                true
+            } catch (_: Exception) {
+                false
+            }
+            val status = if (dbHealthy) "healthy" else "degraded"
+            val httpStatus = if (dbHealthy) io.ktor.http.HttpStatusCode.OK
+                else io.ktor.http.HttpStatusCode.ServiceUnavailable
+            call.respond(httpStatus, mapOf(
+                "status" to status,
+                "database" to if (dbHealthy) "connected" else "unreachable",
+                "timestamp" to java.time.Instant.now().toString()
+            ))
         }
 
         route("/api/v1") {

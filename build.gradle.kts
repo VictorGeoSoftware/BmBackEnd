@@ -26,12 +26,22 @@ dependencies {
     implementation("io.ktor:ktor-client-cio:2.3.12")
     implementation("io.ktor:ktor-client-content-negotiation:2.3.12")
     
-    // Database - Updated to latest stable versions
+    // Database - Exposed ORM
     implementation("org.jetbrains.exposed:exposed-core:0.55.0")
     implementation("org.jetbrains.exposed:exposed-dao:0.55.0")
     implementation("org.jetbrains.exposed:exposed-jdbc:0.55.0")
     implementation("org.jetbrains.exposed:exposed-java-time:0.55.0")
-    implementation("org.xerial:sqlite-jdbc:3.46.1.3") // Updated for security fixes
+
+    // Database drivers
+    implementation("org.xerial:sqlite-jdbc:3.46.1.3")
+    implementation("org.postgresql:postgresql:42.7.4")
+
+    // Connection pool
+    implementation("com.zaxxer:HikariCP:6.2.1")
+
+    // Schema migrations
+    implementation("org.flywaydb:flyway-core:10.21.0")
+    implementation("org.flywaydb:flyway-database-postgresql:10.21.0")
     
     // Logging - Updated to latest stable
     implementation("ch.qos.logback:logback-classic:1.5.7")
@@ -52,6 +62,9 @@ dependencies {
     testImplementation("io.ktor:ktor-server-test-host:2.3.12")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:2.0.21")
     testImplementation("io.mockk:mockk:1.13.8")
+    testImplementation("org.testcontainers:testcontainers:1.20.4")
+    testImplementation("org.testcontainers:postgresql:1.20.4")
+    testImplementation("org.testcontainers:junit-jupiter:1.20.4")
 }
 
 tasks.test {

@@ -7,8 +7,11 @@ ktor:
       - com.bm.backend.ApplicationKt.module
 
 # Database configuration
-# DB_URL can be overridden via environment variable (read in DatabaseFactory.kt)
+# DB_VENDOR: "sqlite" (default) or "postgres"
+# For SQLite: DB_URL overrides the default path (read in DatabaseFactory.kt)
+# For Postgres: DB_URL, DB_USER, DB_PASSWORD must be set via environment variables
 database:
+  vendor: "sqlite"  # overridable via DB_VENDOR env var
   url: "jdbc:sqlite:price_tables.db"
   driver: "org.sqlite.JDBC"
 
@@ -24,4 +27,4 @@ rate_limit:
 # Logging
 logging:
   level: INFO
-  org.jetbrains.exposed: DEBUG
+  org.jetbrains.exposed: INFO

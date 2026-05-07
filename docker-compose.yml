@@ -1,21 +1,47 @@
 version: '3.8'
 
 services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: bm-postgres
+    ports:
+      - "5433:5432"
+    environment:
+      POSTGRES_DB: bm_backend
+      POSTGRES_USER: bm_app
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme_dev}
+    volumes:
+      - bm-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U bm_app -d bm_backend"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    restart: unless-stopped
+    networks:
+      - bm-network
+
   bm-backend:
     build: .
     container_name: bm-backend
     ports:
       - "8081:8081"
     volumes:
-      - ./price_tables.db:/app/price_tables.db
-      - ./data:/app/data
       - ./logs:/app/logs
     environment:
       - KTOR_ENV=production
+      - DB_VENDOR=postgres
+      - DB_URL=jdbc:postgresql://postgres:5432/bm_backend
+      - DB_USER=bm_app
+      - DB_PASSWORD=${DB_PASSWORD:-changeme_dev}
       - DOCLING_API_URL=http://host.docker.internal:5000
       - N8N_WEBHOOK_URL=http://host.docker.internal:5678/webhook/fetch-user-consumption
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8081/health"]
@@ -25,6 +51,9 @@ services:
       start_period: 40s
     networks:
       - bm-network
+
+volumes:
+  bm-pgdata:
 
 networks:
   bm-network:
