@@ -62,9 +62,12 @@ dependencies {
     testImplementation("io.ktor:ktor-server-test-host:2.3.12")
     testImplementation("org.jetbrains.kotlin:kotlin-test-junit5:2.0.21")
     testImplementation("io.mockk:mockk:1.13.8")
-    testImplementation("org.testcontainers:testcontainers:1.20.4")
-    testImplementation("org.testcontainers:postgresql:1.20.4")
-    testImplementation("org.testcontainers:junit-jupiter:1.20.4")
+    testImplementation("org.testcontainers:testcontainers:1.21.3")
+    testImplementation("org.testcontainers:postgresql:1.21.3")
+    testImplementation("org.testcontainers:junit-jupiter:1.21.3")
+    // Force docker-java 3.5.1 for Docker Desktop 29+ API v1.44+ compatibility
+    testImplementation("com.github.docker-java:docker-java-api:3.5.1")
+    testImplementation("com.github.docker-java:docker-java-transport-zerodep:3.5.1")
 }
 
 tasks.test {

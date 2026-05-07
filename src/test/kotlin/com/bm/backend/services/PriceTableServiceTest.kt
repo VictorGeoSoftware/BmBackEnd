@@ -27,6 +27,7 @@ class PriceTableServiceTest {
 
     @BeforeEach
     fun init() {
+        PostgresTestSetup.resetSchema()
         service = PriceTableService()
     }
 

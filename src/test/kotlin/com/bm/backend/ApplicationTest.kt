@@ -29,11 +29,16 @@ class ApplicationTest {
     }
 
     private fun Application.testApplicationModule() {
+        // Skip DatabaseFactory.init() — Testcontainer DB is already connected
+        configurePlugins()
         configureRouting()
     }
 
     @Test
     fun testApplicationModule() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
         application {
             testApplicationModule()
         }
@@ -41,6 +46,9 @@ class ApplicationTest {
 
     @Test
     fun `test root endpoint returns service status`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
         application {
             testApplicationModule()
         }
@@ -51,6 +59,9 @@ class ApplicationTest {
 
     @Test
     fun `test health check endpoint`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
         application {
             testApplicationModule()
         }
@@ -63,6 +74,9 @@ class ApplicationTest {
 
     @Test
     fun `test get price table results endpoint`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
         application {
             testApplicationModule()
         }
@@ -76,6 +90,9 @@ class ApplicationTest {
 
     @Test
     fun `test batch process endpoint with empty data`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
         application {
             testApplicationModule()
         }
