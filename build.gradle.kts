@@ -33,7 +33,7 @@ dependencies {
     implementation("org.jetbrains.exposed:exposed-java-time:0.55.0")
 
     // Database drivers
-    implementation("org.xerial:sqlite-jdbc:3.46.1.3")
+    runtimeOnly("org.xerial:sqlite-jdbc:3.46.1.3") // Only needed by SqliteToPostgresMigration tool; remove after cutover
     implementation("org.postgresql:postgresql:42.7.4")
 
     // Connection pool

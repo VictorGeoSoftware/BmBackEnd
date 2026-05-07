@@ -8,8 +8,7 @@ import com.bm.backend.models.TaxSettingsResponse
  * Port (Clean Architecture) for the price-table persistence boundary.
  *
  * Services depend on this interface, never on a concrete adapter, so that the
- * underlying engine (SQLite today, PostgreSQL after the migration) can be
- * swapped without touching application logic.
+ * underlying engine (PostgreSQL) can be swapped without touching application logic.
  */
 interface PriceTableRepositoryPort {
 

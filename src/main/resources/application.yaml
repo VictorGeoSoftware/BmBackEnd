@@ -6,14 +6,11 @@ ktor:
     modules:
       - com.bm.backend.ApplicationKt.module
 
-# Database configuration
-# DB_VENDOR: "sqlite" (default) or "postgres"
-# For SQLite: DB_URL overrides the default path (read in DatabaseFactory.kt)
-# For Postgres: DB_URL, DB_USER, DB_PASSWORD must be set via environment variables
+# Database configuration (PostgreSQL)
+# Required env vars: DB_URL, DB_USER, DB_PASSWORD
+# Example: DB_URL=jdbc:postgresql://localhost:5432/bm_backend
 database:
-  vendor: "sqlite"  # overridable via DB_VENDOR env var
-  url: "jdbc:sqlite:price_tables.db"
-  driver: "org.sqlite.JDBC"
+  driver: "org.postgresql.Driver"
 
 # Security
 # BM_ENCRYPTION_KEY must be set via environment variable (read in Application.kt)

@@ -1,4 +1,4 @@
-package com.bm.backend.repositories.postgres
+package com.bm.backend.repositories
 
 import com.bm.backend.testing.DockerAvailable
 import com.bm.backend.testing.PostgresTestSetup

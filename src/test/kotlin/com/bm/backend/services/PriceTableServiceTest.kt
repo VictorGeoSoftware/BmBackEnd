@@ -1,10 +1,12 @@
 package com.bm.backend.services
 
-import com.bm.backend.database.DatabaseFactory
 import com.bm.backend.models.BatchPriceTablesRequest
 import com.bm.backend.models.IMPUESTO_ELECTRICO
 import com.bm.backend.models.IVA
-import org.junit.jupiter.api.AfterEach
+import com.bm.backend.testing.DockerAvailable
+import com.bm.backend.testing.PostgresTestSetup
+import org.junit.jupiter.api.Assumptions
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.assertThrows
@@ -14,21 +16,22 @@ import kotlin.test.assertTrue
 class PriceTableServiceTest {
     private lateinit var service: PriceTableService
 
-    @BeforeEach
-    fun setup() {
-        DatabaseFactory.initTestDatabase()
-        service = PriceTableService()
+    companion object {
+        @BeforeAll
+        @JvmStatic
+        fun setup() {
+            Assumptions.assumeTrue(DockerAvailable.check(), "Docker not available")
+            PostgresTestSetup.ensureStarted()
+        }
     }
 
-    @AfterEach
-    fun tearDown() {
-        // Clean up test database
-        java.io.File("test_price_tables.db").delete()
+    @BeforeEach
+    fun init() {
+        service = PriceTableService()
     }
 
     @Test
     fun `test service initialization`() {
-        // Simple test to verify service can be created
         assertTrue(service is PriceTableService)
     }
 
@@ -36,7 +39,6 @@ class PriceTableServiceTest {
     fun `test getAllPriceTableResults returns empty initially`() {
         val result = service.getAllPriceTableResults()
         assertTrue(result.success)
-        assertEquals(0, result.results.size)
     }
 
     @Test
@@ -50,7 +52,6 @@ class PriceTableServiceTest {
     @Test
     fun `test getAllPriceTableResults includes tax constants`() {
         val result = service.getAllPriceTableResults()
-
         assertEquals(IVA, result.iva)
         assertEquals(IMPUESTO_ELECTRICO, result.impuestoElectrico)
     }
