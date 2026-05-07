@@ -1,13 +1,14 @@
 # BM Backend Deployment Guide
 
-This guide covers deploying the BM Backend (Kotlin/Ktor) to your remote server at **217.154.181.175**.
+This guide covers deploying the BM Backend (Kotlin/Ktor + PostgreSQL) to your remote server at **217.154.181.175**.
 
 ## 🏗️ Architecture Overview
 
 **BM Backend:**
 - Kotlin/Ktor REST API
 - Port: 8081
-- SQLite database (`price_tables.db`)
+- PostgreSQL 16 database (via Docker or system-installed)
+- HikariCP connection pooling, Flyway migrations
 - Depends on:
   - Docling API (port 5000) - for PDF extraction
   - N8N webhook (port 5678) - for workflow processing
@@ -22,7 +23,7 @@ This guide covers deploying the BM Backend (Kotlin/Ktor) to your remote server a
 ### On Your Local Machine
 - SSH access to the server: `ssh root@217.154.181.175`
 - Gradle installed (or use `./gradlew`)
-- Git (optional, for version control)
+- Docker (for running tests with Testcontainers)
 
 ### On Remote Server
 The server already has:
@@ -33,7 +34,7 @@ The server already has:
 
 Additional requirements:
 - Java 17+ (for non-Docker deployment)
-- Gradle (for building on server)
+- PostgreSQL 16+ (via Docker Compose or system package)
 
 ## 🚀 Deployment Options
 
@@ -91,12 +92,11 @@ ssh root@217.154.181.175 "mkdir -p /root/BmBackEnd"
 # Copy JAR file
 scp build/libs/bm-backend-1.0-all.jar root@217.154.181.175:/root/BmBackEnd/
 
-# Copy database
-scp price_tables.db root@217.154.181.175:/root/BmBackEnd/
-
 # Copy application config
 scp -r src/main/resources root@217.154.181.175:/root/BmBackEnd/
 ```
+
+> **Note:** The database is now PostgreSQL — no `.db` file to copy. Flyway runs migrations automatically on startup.
 
 #### Step 3: Set Up Systemd Service
 
@@ -209,9 +209,21 @@ ktor:
       - com.bm.backend.ApplicationKt.module
 
 database:
-  url: "jdbc:sqlite:price_tables.db"
-  driver: "org.sqlite.JDBC"
+  url: ${DB_URL}
+  user: ${DB_USER}
+  password: ${DB_PASSWORD}
 ```
+
+### Required Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `DB_URL` | PostgreSQL JDBC URL | `jdbc:postgresql://localhost:5432/bm_backend` |
+| `DB_USER` | Database user | `bm_user` |
+| `DB_PASSWORD` | Database password | `secret` |
+| `ENCRYPTION_KEY` | 32-byte hex key for AES-GCM PII encryption | `0123456789abcdef...` |
+
+The application **fails fast** on startup if `DB_URL`, `DB_USER`, or `DB_PASSWORD` are missing.
 
 ### External API URLs
 
@@ -328,11 +340,17 @@ ssh root@217.154.181.175 "kill -9 <PID>"
 ### Database Issues
 
 ```bash
-# Check database file
-ssh root@217.154.181.175 "ls -lh /root/BmBackEnd/price_tables.db"
+# Check PostgreSQL container
+ssh root@217.154.181.175 "docker ps | grep postgres"
 
-# Verify permissions
-ssh root@217.154.181.175 "chmod 644 /root/BmBackEnd/price_tables.db"
+# Connect to database
+ssh root@217.154.181.175 "docker exec -it bm-postgres psql -U bm_user bm_backend"
+
+# Check Flyway migration status
+ssh root@217.154.181.175 "docker exec -it bm-postgres psql -U bm_user bm_backend -c 'SELECT * FROM flyway_schema_history ORDER BY installed_rank;'"
+
+# Check connection pool (in app logs)
+ssh root@217.154.181.175 "journalctl -u bm-backend | grep HikariPool"
 ```
 
 ### Cannot Connect to Docling API
@@ -388,14 +406,53 @@ Consider adding authentication to your API endpoints. Update the Ktor configurat
 
 ## 📝 Environment Variables
 
-You can set environment variables in the systemd service file:
+Set environment variables in the systemd service file:
 
 ```ini
 [Service]
 Environment="KTOR_ENV=production"
-Environment="DATABASE_PATH=/root/BmBackEnd/price_tables.db"
-Environment="DOCLING_API_URL=http://localhost:5000"
-Environment="N8N_WEBHOOK_URL=http://localhost:5678/webhook/fetch-user-consumption"
+Environment="DB_URL=jdbc:postgresql://localhost:5432/bm_backend"
+Environment="DB_USER=bm_user"
+Environment="DB_PASSWORD=your_secure_password"
+Environment="ENCRYPTION_KEY=your_32_byte_hex_key"
+```
+
+Or in `docker-compose.yml` (already configured):
+
+```yaml
+environment:
+  DB_URL: jdbc:postgresql://postgres:5432/bm_backend
+  DB_USER: bm_user
+  DB_PASSWORD: ${DB_PASSWORD}
+  ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+```
+
+## 💾 Database Backup & Restore
+
+### Backup
+
+```bash
+# Dump the entire database
+ssh root@217.154.181.175 "docker exec bm-postgres pg_dump -U bm_user bm_backend | gzip > /root/backups/bm_backend_$(date +%Y%m%d).sql.gz"
+```
+
+### Restore
+
+```bash
+# Restore from a backup
+ssh root@217.154.181.175 "gunzip -c /root/backups/bm_backend_20240101.sql.gz | docker exec -i bm-postgres psql -U bm_user bm_backend"
+```
+
+### SQLite Migration (One-Time)
+
+If migrating from a previous SQLite deployment, use the built-in migration tool:
+
+```bash
+java -cp bm-backend-1.0-all.jar com.bm.backend.tools.SqliteToPostgresMigrationKt \
+  --sqlite-path /path/to/price_tables.db \
+  --pg-url jdbc:postgresql://localhost:5432/bm_backend \
+  --pg-user bm_user \
+  --pg-password secret
 ```
 
 ## 🎯 Quick Reference
@@ -449,13 +506,17 @@ If you encounter issues:
 ---
 
 **Deployment Checklist:**
+- [ ] PostgreSQL running (Docker Compose or system)
+- [ ] Environment variables set (`DB_URL`, `DB_USER`, `DB_PASSWORD`, `ENCRYPTION_KEY`)
 - [ ] Build JAR successfully
 - [ ] Copy files to server
 - [ ] Configure systemd service or Docker
+- [ ] Flyway migrations applied (automatic on startup)
 - [ ] Set up nginx reverse proxy
-- [ ] Test health endpoint
+- [ ] Test health endpoint (includes DB check)
 - [ ] Test API endpoints
 - [ ] Verify logs are working
 - [ ] Configure firewall rules
-- [ ] Set up monitoring (optional)
+- [ ] Set up database backups (pg_dump cron)
 - [ ] Configure SSL certificate (optional)
+- [ ] Migrate data from SQLite if applicable
