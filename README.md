@@ -6,20 +6,24 @@ Kotlin/Ktor REST API for managing price tables and user consumption data with PD
 
 - **Price Table Management**: CRUD operations for electricity price tables
 - **User Consumption Processing**: Upload and process consumption PDFs
+- **Firebase Authentication**: Token verification with encrypted PII storage (AES-GCM)
 - **External API Integration**: 
   - Docling API for PDF data extraction
   - N8N workflows for automated processing
-- **SQLite Database**: Lightweight, file-based storage
+- **PostgreSQL Database**: Production-grade storage with HikariCP connection pooling
+- **Flyway Migrations**: Versioned, repeatable schema management
 - **Rate Limiting**: Built-in request throttling
-- **Health Checks**: Monitoring endpoints
+- **Health Checks**: DB-aware monitoring endpoints
 
 ## 📋 Tech Stack
 
 - **Language**: Kotlin 2.0.21
 - **Framework**: Ktor 2.3.12
-- **Database**: SQLite with Exposed ORM
-- **Build Tool**: Gradle 8.5
+- **Database**: PostgreSQL 16 with Exposed ORM & HikariCP
+- **Migrations**: Flyway 10.21
+- **Build Tool**: Gradle 8.13
 - **Runtime**: JVM 17
+- **Testing**: JUnit 5, Testcontainers (PostgreSQL)
 
 ## 🏃 Quick Start
 
@@ -66,7 +70,16 @@ chmod +x deploy-remote.sh
 
 ## 🔧 Configuration
 
-Edit `src/main/resources/application.yaml`:
+### Required Environment Variables
+
+| Variable | Description | Example |
+|----------|-------------|---------|
+| `DB_URL` | PostgreSQL JDBC URL | `jdbc:postgresql://localhost:5432/bm_backend` |
+| `DB_USER` | Database user | `bm_user` |
+| `DB_PASSWORD` | Database password | `secret` |
+| `ENCRYPTION_KEY` | 32-byte hex key for AES-GCM PII encryption | `0123456789abcdef...` |
+
+### application.yaml
 
 ```yaml
 ktor:
@@ -75,7 +88,9 @@ ktor:
     host: 0.0.0.0
 
 database:
-  url: "jdbc:sqlite:price_tables.db"
+  url: ${DB_URL}
+  user: ${DB_USER}
+  password: ${DB_PASSWORD}
 ```
 
 ## 🏗️ Project Structure
@@ -83,17 +98,27 @@ database:
 ```
 src/main/kotlin/com/bm/backend/
 ├── Application.kt              # Main application entry
-├── database/                   # Database configuration
-├── models/                     # Data models
-├── repositories/               # Data access layer
+├── database/                   # Database configuration (DataSourceFactory, DatabaseFactory)
+├── models/                     # Data models (one file per model)
+├── repositories/               # Data access layer (Exposed + raw SQL)
+│   └── ports/                  # Repository interfaces (Clean Architecture)
 ├── routes/                     # API routes
-└── services/                   # Business logic
+├── security/                   # Firebase auth, AES-GCM encryption
+├── services/                   # Business logic (depends on ports)
+└── tools/                      # CLI utilities (SQLite-to-Postgres migration)
+
+src/main/resources/
+├── application.yaml            # Ktor + DB config
+└── db/migration/postgres/      # Flyway migrations (V1-V3)
 ```
 
 ## 🧪 Testing
 
 ```bash
+# Requires Docker running (Testcontainers spins up PostgreSQL)
 ./gradlew test
+
+# Tests skip gracefully if Docker is unavailable
 ```
 
 ## 📦 Building
@@ -108,11 +133,12 @@ src/main/kotlin/com/bm/backend/
 ## 🐳 Docker
 
 ```bash
-# Build image
-docker build -t bm-backend .
-
-# Run container
+# Start PostgreSQL + backend
 docker-compose up -d
+
+# The compose file includes:
+# - postgres:16-alpine (port 5432) with healthcheck
+# - bm-backend (port 8081) with depends_on healthcheck
 ```
 
 ## 🔗 Dependencies

@@ -1,6 +1,7 @@
 package com.bm.backend.database
 
 import org.jetbrains.exposed.dao.id.IntIdTable
+import org.jetbrains.exposed.sql.javatime.timestamp
 
 // Main table for storing file results
 object PriceTableResultsDb : IntIdTable("price_table_results") {
@@ -74,11 +75,11 @@ object UserDataDb : IntIdTable("user_data") {
     val displayName = varchar("display_name", 255).nullable()
     val photoURL = text("photo_url").nullable()
     val providerIds = text("provider_ids")
-    val tokenIssuedAt = long("token_issued_at")
-    val tokenExpiresAt = long("token_expires_at")
-    val lastLoginAt = long("last_login_at")
-    val createdAt = long("created_at")
-    val updatedAt = long("updated_at")
+    val tokenIssuedAt = timestamp("token_issued_at")
+    val tokenExpiresAt = timestamp("token_expires_at")
+    val lastLoginAt = timestamp("last_login_at")
+    val createdAt = timestamp("created_at")
+    val updatedAt = timestamp("updated_at")
 }
 
 object UserActivityDb : IntIdTable("user_activity") {
@@ -87,9 +88,17 @@ object UserActivityDb : IntIdTable("user_activity") {
     val isOnline = bool("is_online")
     val monthlyUsageCount = integer("monthly_usage_count")
     val monthKey = varchar("month_key", 7)
-    val usageStartedAt = long("usage_started_at").nullable()
-    val firstConnectedAt = long("first_connected_at").nullable()
-    val lastConnectedAt = long("last_connected_at").nullable()
-    val lastDisconnectedAt = long("last_disconnected_at").nullable()
-    val updatedAt = long("updated_at")
+    val usageStartedAt = timestamp("usage_started_at").nullable()
+    val firstConnectedAt = timestamp("first_connected_at").nullable()
+    val lastConnectedAt = timestamp("last_connected_at").nullable()
+    val lastDisconnectedAt = timestamp("last_disconnected_at").nullable()
+    val updatedAt = timestamp("updated_at")
+}
+
+// Table for persisted user consumption data (JSONB)
+object UserConsumptionDb : IntIdTable("user_consumption") {
+    val uid = varchar("uid", 128).uniqueIndex()
+    val data = text("data") // JSON-serialized UserConsumption
+    val createdAt = timestamp("created_at")
+    val updatedAt = timestamp("updated_at")
 }

@@ -33,8 +33,7 @@ COPY --from=build /app/build/libs/*-all.jar app.jar
 # Copy application resources
 COPY --from=build /app/src/main/resources ./resources
 
-# Create directory for database with restricted permissions
-RUN mkdir -p /app/data && chown -R bmapp:bmapp /app/data && chmod 700 /app/data
+# Ensure app directory ownership
 RUN chown bmapp:bmapp /app/app.jar
 
 # Switch to non-root user

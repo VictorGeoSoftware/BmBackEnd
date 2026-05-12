@@ -6,11 +6,11 @@ ktor:
     modules:
       - com.bm.backend.ApplicationKt.module
 
-# Database configuration
-# DB_URL can be overridden via environment variable (read in DatabaseFactory.kt)
+# Database configuration (PostgreSQL)
+# Required env vars: DB_URL, DB_USER, DB_PASSWORD
+# Example: DB_URL=jdbc:postgresql://localhost:5432/bm_backend
 database:
-  url: "jdbc:sqlite:price_tables.db"
-  driver: "org.sqlite.JDBC"
+  driver: "org.postgresql.Driver"
 
 # Security
 # BM_ENCRYPTION_KEY must be set via environment variable (read in Application.kt)
@@ -24,4 +24,4 @@ rate_limit:
 # Logging
 logging:
   level: INFO
-  org.jetbrains.exposed: DEBUG
+  org.jetbrains.exposed: INFO

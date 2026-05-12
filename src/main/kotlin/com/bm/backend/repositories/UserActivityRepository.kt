@@ -3,110 +3,113 @@ package com.bm.backend.repositories
 import com.bm.backend.database.UserActivityDb
 import com.bm.backend.models.UserActivityFirstConnectionResponse
 import com.bm.backend.models.UserActivityUserResponse
+import com.bm.backend.repositories.ports.UserActivityRepositoryPort
 import org.jetbrains.exposed.sql.ResultRow
-import org.jetbrains.exposed.sql.insert
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
-import org.jetbrains.exposed.sql.update
+import java.time.Instant
 import java.time.YearMonth
 
-class UserActivityRepository {
+class UserActivityRepository : UserActivityRepositoryPort {
 
-    fun setOnline(name: String, email: String) {
+    override fun setOnline(name: String, email: String) {
         transaction {
-            val now = System.currentTimeMillis()
+            val now = Instant.now()
             val monthKey = currentMonthKey()
-            val existing = findByEmail(email)
 
-            if (existing == null) {
-                UserActivityDb.insert {
-                    it[UserActivityDb.name] = name
-                    it[UserActivityDb.email] = email
-                    it[UserActivityDb.isOnline] = true
-                    it[UserActivityDb.monthlyUsageCount] = 0
-                    it[UserActivityDb.monthKey] = monthKey
-                    it[UserActivityDb.usageStartedAt] = now
-                    it[UserActivityDb.lastConnectedAt] = now
-                    it[UserActivityDb.lastDisconnectedAt] = null
-                    it[UserActivityDb.updatedAt] = now
-                }
-            } else {
-                val monthlyUsageCount = resolveMonthlyCount(existing, monthKey)
-                UserActivityDb.update({ UserActivityDb.email eq email }) {
-                    it[UserActivityDb.name] = name
-                    it[UserActivityDb.isOnline] = true
-                    it[UserActivityDb.monthlyUsageCount] = monthlyUsageCount
-                    it[UserActivityDb.monthKey] = monthKey
-                    it[UserActivityDb.lastConnectedAt] = now
-                    it[UserActivityDb.updatedAt] = now
-                }
-            }
+            exec(
+                """
+                INSERT INTO user_activity (email, name, is_online, monthly_usage_count, month_key,
+                    usage_started_at, last_connected_at, last_disconnected_at, updated_at)
+                VALUES (?, ?, true, 0, ?, ?, ?, NULL, ?)
+                ON CONFLICT (email) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    is_online = true,
+                    monthly_usage_count = CASE
+                        WHEN user_activity.month_key = EXCLUDED.month_key THEN user_activity.monthly_usage_count
+                        ELSE 0
+                    END,
+                    month_key = EXCLUDED.month_key,
+                    last_connected_at = EXCLUDED.last_connected_at,
+                    updated_at = EXCLUDED.updated_at
+                """.trimIndent(),
+                args = listOf(
+                    UserActivityDb.email.columnType to email,
+                    UserActivityDb.name.columnType to name,
+                    UserActivityDb.monthKey.columnType to monthKey,
+                    UserActivityDb.usageStartedAt.columnType to now,
+                    UserActivityDb.lastConnectedAt.columnType to now,
+                    UserActivityDb.updatedAt.columnType to now
+                )
+            )
         }
     }
 
-    fun setOffline(name: String, email: String) {
+    override fun setOffline(name: String, email: String) {
         transaction {
-            val now = System.currentTimeMillis()
+            val now = Instant.now()
             val monthKey = currentMonthKey()
-            val existing = findByEmail(email)
 
-            if (existing == null) {
-                UserActivityDb.insert {
-                    it[UserActivityDb.name] = name
-                    it[UserActivityDb.email] = email
-                    it[UserActivityDb.isOnline] = false
-                    it[UserActivityDb.monthlyUsageCount] = 0
-                    it[UserActivityDb.monthKey] = monthKey
-                    it[UserActivityDb.usageStartedAt] = now
-                    it[UserActivityDb.lastConnectedAt] = null
-                    it[UserActivityDb.lastDisconnectedAt] = now
-                    it[UserActivityDb.updatedAt] = now
-                }
-            } else {
-                val monthlyUsageCount = resolveMonthlyCount(existing, monthKey)
-                UserActivityDb.update({ UserActivityDb.email eq email }) {
-                    it[UserActivityDb.name] = name
-                    it[UserActivityDb.isOnline] = false
-                    it[UserActivityDb.monthlyUsageCount] = monthlyUsageCount
-                    it[UserActivityDb.monthKey] = monthKey
-                    it[UserActivityDb.lastDisconnectedAt] = now
-                    it[UserActivityDb.updatedAt] = now
-                }
-            }
+            exec(
+                """
+                INSERT INTO user_activity (email, name, is_online, monthly_usage_count, month_key,
+                    usage_started_at, last_connected_at, last_disconnected_at, updated_at)
+                VALUES (?, ?, false, 0, ?, ?, NULL, ?, ?)
+                ON CONFLICT (email) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    is_online = false,
+                    monthly_usage_count = CASE
+                        WHEN user_activity.month_key = EXCLUDED.month_key THEN user_activity.monthly_usage_count
+                        ELSE 0
+                    END,
+                    month_key = EXCLUDED.month_key,
+                    last_disconnected_at = EXCLUDED.last_disconnected_at,
+                    updated_at = EXCLUDED.updated_at
+                """.trimIndent(),
+                args = listOf(
+                    UserActivityDb.email.columnType to email,
+                    UserActivityDb.name.columnType to name,
+                    UserActivityDb.monthKey.columnType to monthKey,
+                    UserActivityDb.usageStartedAt.columnType to now,
+                    UserActivityDb.lastDisconnectedAt.columnType to now,
+                    UserActivityDb.updatedAt.columnType to now
+                )
+            )
         }
     }
 
-    fun incrementMonthlyUsageCounter(name: String, email: String) {
+    override fun incrementMonthlyUsageCounter(name: String, email: String) {
         transaction {
-            val now = System.currentTimeMillis()
+            val now = Instant.now()
             val monthKey = currentMonthKey()
-            val existing = findByEmail(email)
 
-            if (existing == null) {
-                UserActivityDb.insert {
-                    it[UserActivityDb.name] = name
-                    it[UserActivityDb.email] = email
-                    it[UserActivityDb.isOnline] = true
-                    it[UserActivityDb.monthlyUsageCount] = 1
-                    it[UserActivityDb.monthKey] = monthKey
-                    it[UserActivityDb.usageStartedAt] = now
-                    it[UserActivityDb.lastConnectedAt] = now
-                    it[UserActivityDb.lastDisconnectedAt] = null
-                    it[UserActivityDb.updatedAt] = now
-                }
-            } else {
-                val monthlyUsageCount = resolveMonthlyCount(existing, monthKey) + 1
-                UserActivityDb.update({ UserActivityDb.email eq email }) {
-                    it[UserActivityDb.name] = name
-                    it[UserActivityDb.monthlyUsageCount] = monthlyUsageCount
-                    it[UserActivityDb.monthKey] = monthKey
-                    it[UserActivityDb.updatedAt] = now
-                }
-            }
+            exec(
+                """
+                INSERT INTO user_activity (email, name, is_online, monthly_usage_count, month_key,
+                    usage_started_at, last_connected_at, last_disconnected_at, updated_at)
+                VALUES (?, ?, true, 1, ?, ?, ?, NULL, ?)
+                ON CONFLICT (email) DO UPDATE SET
+                    name = EXCLUDED.name,
+                    monthly_usage_count = CASE
+                        WHEN user_activity.month_key = EXCLUDED.month_key THEN user_activity.monthly_usage_count + 1
+                        ELSE 1
+                    END,
+                    month_key = EXCLUDED.month_key,
+                    updated_at = EXCLUDED.updated_at
+                """.trimIndent(),
+                args = listOf(
+                    UserActivityDb.email.columnType to email,
+                    UserActivityDb.name.columnType to name,
+                    UserActivityDb.monthKey.columnType to monthKey,
+                    UserActivityDb.usageStartedAt.columnType to now,
+                    UserActivityDb.lastConnectedAt.columnType to now,
+                    UserActivityDb.updatedAt.columnType to now
+                )
+            )
         }
     }
 
-    fun getUsersActivity(): List<UserActivityUserResponse> {
+    override fun getUsersActivity(): List<UserActivityUserResponse> {
         return transaction {
             val monthKey = currentMonthKey()
             UserActivityDb
@@ -118,33 +121,26 @@ class UserActivityRepository {
                         email = row[UserActivityDb.email],
                         isOnline = row[UserActivityDb.isOnline],
                         monthlyUsageCount = monthlyUsageCount,
-                        lastConnectedAt = row[UserActivityDb.lastConnectedAt],
-                        lastDisconnectedAt = row[UserActivityDb.lastDisconnectedAt],
-                        updatedAt = row[UserActivityDb.updatedAt]
+                        lastConnectedAt = row[UserActivityDb.lastConnectedAt]?.toEpochMilli(),
+                        lastDisconnectedAt = row[UserActivityDb.lastDisconnectedAt]?.toEpochMilli(),
+                        updatedAt = row[UserActivityDb.updatedAt].toEpochMilli()
                     )
                 }
                 .sortedByDescending { user -> user.updatedAt }
         }
     }
 
-    fun getUsersFirstConnection(): List<UserActivityFirstConnectionResponse> {
+    override fun getUsersFirstConnection(): List<UserActivityFirstConnectionResponse> {
         return transaction {
             UserActivityDb
                 .selectAll()
                 .map { row ->
                     UserActivityFirstConnectionResponse(
                         email = row[UserActivityDb.email],
-                        firstConnectedAt = row[UserActivityDb.usageStartedAt]
+                        firstConnectedAt = row[UserActivityDb.usageStartedAt]?.toEpochMilli()
                     )
                 }
         }
-    }
-
-    private fun findByEmail(email: String): ResultRow? {
-        return UserActivityDb
-            .selectAll()
-            .where { UserActivityDb.email eq email }
-            .singleOrNull()
     }
 
     private fun resolveMonthlyCount(row: ResultRow, currentMonthKey: String): Int {

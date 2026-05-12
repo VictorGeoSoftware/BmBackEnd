@@ -2,22 +2,23 @@ package com.bm.backend.repositories
 
 import com.bm.backend.database.*
 import com.bm.backend.models.*
+import com.bm.backend.repositories.ports.PriceTableRepositoryPort
 import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
 
-class PriceTableRepository {
+class PriceTableRepository : PriceTableRepositoryPort {
 
     private val logger = LoggerFactory.getLogger(PriceTableRepository::class.java)
 
-    fun getTaxSettings(): TaxSettingsResponse {
+    override fun getTaxSettings(): TaxSettingsResponse {
         return transaction {
             getOrCreateTaxSettings()
         }
     }
 
-    fun updateTaxSettings(iva: Double, impuestoElectrico: Double): TaxSettingsResponse {
+    override fun updateTaxSettings(iva: Double, impuestoElectrico: Double): TaxSettingsResponse {
         return transaction {
             val existingRow = TaxSettingsDb
                 .selectAll()
@@ -70,7 +71,7 @@ class PriceTableRepository {
         )
     }
 
-    fun storePriceTableResults(priceTableResponse: PriceTableResponse): Int {
+    override fun storePriceTableResults(priceTableResponse: PriceTableResponse): Int {
         return transaction {
             var totalRowsInserted = 0
             
@@ -88,11 +89,16 @@ class PriceTableRepository {
                         it[companyName] = result.extracted_tables.companyName
                     }
 
+                    // Delete duplicates — CASCADE removes their children automatically
                     existingResultIds.drop(1).forEach { duplicateId ->
-                        deleteResultById(duplicateId)
+                        PriceTableResultsDb.deleteWhere { PriceTableResultsDb.id eq duplicateId }
                     }
 
-                    deleteChildrenByResultId(keepResultId)
+                    // Delete children of the kept row by deleting intermediate tables;
+                    // CASCADE handles grandchildren (tarifas_*)
+                    TerminoDePotenciaDb.deleteWhere { TerminoDePotenciaDb.resultId eq keepResultId }
+                    TerminoDeEnergiaDb.deleteWhere { TerminoDeEnergiaDb.resultId eq keepResultId }
+
                     totalRowsInserted += insertPriceTableDetails(keepResultId, result)
                     return@forEach
                 }
@@ -121,7 +127,6 @@ class PriceTableRepository {
             it[TerminoDePotenciaDb.tablaTitulo] = result.extracted_tables.termino_de_potencia.tabla_precio_potencia.titulo
         }.value
 
-        // Insert tarifa rows for potencia
         result.extracted_tables.termino_de_potencia.tabla_precio_potencia.tarifas.forEach { tarifa ->
             TarifasPotenciaDb.insert {
                 it[TarifasPotenciaDb.terminoId] = terminoPotenciaId
@@ -145,7 +150,6 @@ class PriceTableRepository {
             it[TerminoDeEnergiaDb.tablaUnicaTitulo] = result.extracted_tables.termino_de_energia.tabla_precio_clasica_unica.titulo
         }.value
 
-        // Insert tarifa rows for energia base
         result.extracted_tables.termino_de_energia.tabla_precio_clasica_base.tarifas.forEach { tarifa ->
             TarifasEnergiaBaseDb.insert {
                 it[TarifasEnergiaBaseDb.terminoId] = terminoEnergiaId
@@ -161,7 +165,6 @@ class PriceTableRepository {
             insertedRows++
         }
 
-        // Insert tarifa rows for energia unica
         result.extracted_tables.termino_de_energia.tabla_precio_clasica_unica.tarifas.forEach { tarifa ->
             TarifasEnergiaUnicaDb.insert {
                 it[TarifasEnergiaUnicaDb.terminoId] = terminoEnergiaId
@@ -190,56 +193,16 @@ class PriceTableRepository {
             .map { it[PriceTableResultsDb.id].value }
     }
 
-    private fun deleteChildrenByResultId(resultId: Int) {
-        val potenciaIds = TerminoDePotenciaDb
-            .selectAll()
-            .where { TerminoDePotenciaDb.resultId eq resultId }
-            .map { it[TerminoDePotenciaDb.id].value }
-
-        potenciaIds.forEach { terminoId ->
-            TarifasPotenciaDb.deleteWhere { TarifasPotenciaDb.terminoId eq terminoId }
-        }
-        TerminoDePotenciaDb.deleteWhere { TerminoDePotenciaDb.resultId eq resultId }
-
-        val energiaIds = TerminoDeEnergiaDb
-            .selectAll()
-            .where { TerminoDeEnergiaDb.resultId eq resultId }
-            .map { it[TerminoDeEnergiaDb.id].value }
-
-        energiaIds.forEach { terminoId ->
-            TarifasEnergiaBaseDb.deleteWhere { TarifasEnergiaBaseDb.terminoId eq terminoId }
-            TarifasEnergiaUnicaDb.deleteWhere { TarifasEnergiaUnicaDb.terminoId eq terminoId }
-        }
-        TerminoDeEnergiaDb.deleteWhere { TerminoDeEnergiaDb.resultId eq resultId }
-    }
-
-    private fun deleteResultById(resultId: Int): Boolean {
-        val deletedRows = PriceTableResultsDb
-            .selectAll()
-            .where { PriceTableResultsDb.id eq resultId }
-            .count()
-
-        if (deletedRows == 0L) {
-            return false
-        }
-
-        deleteChildrenByResultId(resultId)
-        PriceTableResultsDb.deleteWhere { PriceTableResultsDb.id eq resultId }
-        return true
-    }
-    
-    fun getAllPriceTableResults(tarifaType: String? = null): PriceTableResponse {
+    override fun getAllPriceTableResults(tarifaType: String?): PriceTableResponse {
         return transaction {
             val results = mutableListOf<PriceTableResult>()
             val taxSettings = getOrCreateTaxSettings()
             
-            // Get all main results
             PriceTableResultsDb.selectAll().forEach { resultRow ->
                 val resultId = resultRow[PriceTableResultsDb.id].value
                 val fileName = resultRow[PriceTableResultsDb.fileName]
                 val companyName = resultRow[PriceTableResultsDb.companyName]
                 
-                // Get termino de potencia data
                 val terminoPotenciaRow = TerminoDePotenciaDb.selectAll().where { TerminoDePotenciaDb.resultId eq resultId }.single()
                 val terminoPotenciaId = terminoPotenciaRow[TerminoDePotenciaDb.id].value
                 
@@ -264,7 +227,6 @@ class PriceTableRepository {
                         }
                     }
                 
-                // Get termino de energia data
                 val terminoEnergiaRow = TerminoDeEnergiaDb.selectAll().where { TerminoDeEnergiaDb.resultId eq resultId }.single()
                 val terminoEnergiaId = terminoEnergiaRow[TerminoDeEnergiaDb.id].value
                 
@@ -289,14 +251,12 @@ class PriceTableRepository {
                         }
                     }
                 
-                // Skip this result if all tarifa lists are empty after filtering
                 if (tarifasPotencia.isEmpty() && tarifasEnergiaBase.isEmpty()) {
                     return@forEach
                 }
                 
-                // Build the result structure
                 val extractedTables = ExtractedTables(
-                    companyName = companyName, // Use the company name from the result
+                    companyName = companyName,
                     termino_de_potencia = TerminoDePotencia(
                         titulo = terminoPotenciaRow[TerminoDePotenciaDb.titulo],
                         tabla_precio_potencia = TablaPrecioPotencia(
@@ -335,18 +295,16 @@ class PriceTableRepository {
         }
     }
     
-    fun getFilteredPriceTableResults(tarifaType: String? = null): FilteredPriceTableResponse {
+    override fun getFilteredPriceTableResults(tarifaType: String?): FilteredPriceTableResponse {
         return transaction {
             val results = mutableListOf<FilteredPriceTableResult>()
             val taxSettings = getOrCreateTaxSettings()
             
-            // Get all main results
             PriceTableResultsDb.selectAll().forEach { resultRow ->
                 val resultId = resultRow[PriceTableResultsDb.id].value
                 val fileName = resultRow[PriceTableResultsDb.fileName]
                 val companyName = resultRow[PriceTableResultsDb.companyName]
                 
-                // Get termino de potencia data
                 val terminoPotenciaRow = TerminoDePotenciaDb.selectAll().where { TerminoDePotenciaDb.resultId eq resultId }.single()
                 val terminoPotenciaId = terminoPotenciaRow[TerminoDePotenciaDb.id].value
                 
@@ -372,7 +330,6 @@ class PriceTableRepository {
                     }
                     .firstOrNull()
                 
-                // Get termino de energia data
                 val terminoEnergiaRow = TerminoDeEnergiaDb.selectAll().where { TerminoDeEnergiaDb.resultId eq resultId }.single()
                 val terminoEnergiaId = terminoEnergiaRow[TerminoDeEnergiaDb.id].value
                 
@@ -420,17 +377,14 @@ class PriceTableRepository {
                     }
                     .firstOrNull()
                 
-                // Skip this result if all tarifa objects are null after filtering
                 if (tarifaPotencia == null && tarifaEnergiaBase == null && tarifaEnergiaUnica == null) {
                     return@forEach
                 }
                 
-                // Skip if any required tarifa is missing (all three should exist)
                 if (tarifaPotencia == null || tarifaEnergiaBase == null || tarifaEnergiaUnica == null) {
                     return@forEach
                 }
                 
-                // Build the result structure with single tarifa objects
                 val extractedTables = FilteredExtractedTables(
                     companyName = companyName,
                     termino_de_potencia = FilteredTerminoDePotencia(
@@ -465,30 +419,21 @@ class PriceTableRepository {
         }
     }
     
-    fun clearAllData(): Int {
+    override fun clearAllData(): Int {
         return transaction {
-            // Delete in reverse order of dependencies to avoid foreign key constraint violations
-            val tarifasPotenciaDeleted = TarifasPotenciaDb.deleteAll()
-            val tarifasEnergiaBaseDeleted = TarifasEnergiaBaseDb.deleteAll()
-            val tarifasEnergiaUnicaDeleted = TarifasEnergiaUnicaDb.deleteAll()
-            val terminoPotenciaDeleted = TerminoDePotenciaDb.deleteAll()
-            val terminoEnergiaDeleted = TerminoDeEnergiaDb.deleteAll()
+            // CASCADE handles all child/grandchild rows automatically
             val priceTableResultsDeleted = PriceTableResultsDb.deleteAll()
-            
-            // Return total number of rows deleted
-            val total = tarifasPotenciaDeleted + tarifasEnergiaBaseDeleted + tarifasEnergiaUnicaDeleted + 
-            terminoPotenciaDeleted + terminoEnergiaDeleted + priceTableResultsDeleted
-
-            logger.warn("AUDIT: All data cleared — {} total rows deleted", total)
-            total
+            logger.warn("AUDIT: All data cleared — {} price_table_results rows deleted (children cascaded)", priceTableResultsDeleted)
+            priceTableResultsDeleted
         }
     }
 
-    fun deleteResultsByIds(ids: List<Int>): Pair<List<Int>, List<Int>> {
+    override fun deleteResultsByIds(ids: List<Int>): Pair<List<Int>, List<Int>> {
         return transaction {
             val distinctIds = ids.distinct()
             val existingIds = PriceTableResultsDb
                 .selectAll()
+                .where { PriceTableResultsDb.id inList distinctIds }
                 .map { it[PriceTableResultsDb.id].value }
                 .toSet()
 
@@ -498,14 +443,10 @@ class PriceTableRepository {
             distinctIds.forEach { id ->
                 if (id !in existingIds) {
                     notFoundIds.add(id)
-                    return@forEach
-                }
-
-                val deleted = deleteResultById(id)
-                if (deleted) {
-                    deletedIds.add(id)
                 } else {
-                    notFoundIds.add(id)
+                    // CASCADE handles child deletion automatically
+                    PriceTableResultsDb.deleteWhere { PriceTableResultsDb.id eq id }
+                    deletedIds.add(id)
                 }
             }
 

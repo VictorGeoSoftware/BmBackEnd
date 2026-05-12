@@ -2,13 +2,13 @@ package com.bm.backend.services
 
 import com.bm.backend.models.ConsumptionReportResponse
 import com.bm.backend.models.UserConsumption
-import com.bm.backend.repositories.UserConsumptionRepository
+import com.bm.backend.repositories.ports.UserConsumptionRepositoryPort
 import com.bm.backend.utils.calculateProposals
 import com.bm.backend.utils.toCleanedData
 import java.io.File
 
 class UserConsumptionService(
-    private val userConsumptionRepository: UserConsumptionRepository,
+    private val userConsumptionRepository: UserConsumptionRepositoryPort,
     private val externalApiService: ExternalApiService,
     private val priceTableService: PriceTableService
 ) {

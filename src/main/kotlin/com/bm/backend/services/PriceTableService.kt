@@ -2,8 +2,9 @@ package com.bm.backend.services
 
 import com.bm.backend.models.*
 import com.bm.backend.repositories.PriceTableRepository
+import com.bm.backend.repositories.ports.PriceTableRepositoryPort
 
-class PriceTableService(private val repository: PriceTableRepository = PriceTableRepository()) {
+class PriceTableService(private val repository: PriceTableRepositoryPort = PriceTableRepository()) {
 
     fun processBatchPriceTables(request: BatchPriceTablesRequest): BatchProcessResponse {
         return try {

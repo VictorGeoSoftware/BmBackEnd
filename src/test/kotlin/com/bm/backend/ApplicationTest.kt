@@ -1,7 +1,8 @@
 package com.bm.backend
 
-import com.bm.backend.database.DatabaseFactory
 import com.bm.backend.models.PriceTableResponse
+import com.bm.backend.testing.DockerAvailable
+import com.bm.backend.testing.PostgresTestSetup
 import io.ktor.client.request.*
 import io.ktor.client.statement.*
 import io.ktor.http.*
@@ -10,29 +11,34 @@ import io.ktor.server.testing.*
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonPrimitive
-import org.junit.jupiter.api.AfterEach
-import org.junit.jupiter.api.BeforeEach
+import org.junit.jupiter.api.Assumptions
+import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertTrue
 
 class ApplicationTest {
 
-    @BeforeEach
-    fun setup() {
-        DatabaseFactory.initTestDatabase()
-    }
-
-    @AfterEach
-    fun tearDown() {
-        java.io.File("test_price_tables.db").delete()
+    companion object {
+        @BeforeAll
+        @JvmStatic
+        fun setup() {
+            Assumptions.assumeTrue(DockerAvailable.check(), "Docker not available")
+            PostgresTestSetup.ensureStarted()
+        }
     }
 
     private fun Application.testApplicationModule() {
-        configureRouting()
+        // Skip DatabaseFactory.init() — Testcontainer DB is already connected
+        val registry = configurePlugins()
+        configureRouting(registry)
     }
 
     @Test
     fun testApplicationModule() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
         application {
             testApplicationModule()
         }
@@ -40,6 +46,9 @@ class ApplicationTest {
 
     @Test
     fun `test root endpoint returns service status`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
         application {
             testApplicationModule()
         }
@@ -50,6 +59,9 @@ class ApplicationTest {
 
     @Test
     fun `test health check endpoint`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
         application {
             testApplicationModule()
         }
@@ -62,6 +74,9 @@ class ApplicationTest {
 
     @Test
     fun `test get price table results endpoint`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
         application {
             testApplicationModule()
         }
@@ -75,6 +90,9 @@ class ApplicationTest {
 
     @Test
     fun `test batch process endpoint with empty data`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
         application {
             testApplicationModule()
         }

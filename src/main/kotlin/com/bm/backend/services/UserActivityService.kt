@@ -2,10 +2,10 @@ package com.bm.backend.services
 
 import com.bm.backend.models.UserActivityFirstConnectionResponse
 import com.bm.backend.models.UserActivityUserResponse
-import com.bm.backend.repositories.UserActivityRepository
+import com.bm.backend.repositories.ports.UserActivityRepositoryPort
 
 class UserActivityService(
-    private val userActivityRepository: UserActivityRepository
+    private val userActivityRepository: UserActivityRepositoryPort
 ) {
 
     fun setUserOnline(name: String, email: String) {
