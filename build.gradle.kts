@@ -92,3 +92,150 @@ tasks.shadowJar {
     archiveClassifier.set("all")
     mergeServiceFiles()
 }
+
+// ---------------------------------------------------------------------------
+// launchAll - starts Docling servers, n8n, and the Ktor backend in one go.
+//
+// Usage:  ./gradlew launchAll            (from terminal)
+//         or create an IntelliJ run config for the Gradle task "launchAll"
+//
+// Ctrl+C stops everything (shutdown hook kills child processes).
+// ---------------------------------------------------------------------------
+tasks.register("launchAll") {
+    group = "application"
+    description = "Launch Docling servers, n8n, and the Ktor backend for local development"
+    dependsOn("classes")
+
+    doLast {
+        val n8nDir = file("${rootProject.projectDir}/../n8n")
+        if (!n8nDir.exists()) {
+            throw GradleException("n8n directory not found at ${n8nDir.absolutePath}")
+        }
+
+        val processes = mutableListOf<Process>()
+
+        fun startProcess(
+            name: String,
+            directory: File,
+            command: List<String>,
+            env: Map<String, String> = emptyMap(),
+        ): Process {
+            val pb = ProcessBuilder(command)
+                .directory(directory)
+                .redirectErrorStream(true)
+            pb.environment().putAll(env)
+
+            val process = pb.start()
+            processes.add(process)
+
+            Thread {
+                process.inputStream.bufferedReader().useLines { lines ->
+                    lines.forEach { line -> println("[$name] $line") }
+                }
+            }.apply {
+                isDaemon = true
+                start()
+            }
+
+            return process
+        }
+
+        // Kill any existing processes on the ports we need
+        fun killPort(port: Int) {
+            try {
+                val result = ProcessBuilder("bash", "-c", "lsof -ti tcp:$port")
+                    .redirectErrorStream(true)
+                    .start()
+                val pids = result.inputStream.bufferedReader().readText().trim()
+                result.waitFor()
+                if (pids.isNotBlank()) {
+                    println("Killing existing process(es) on port $port: $pids")
+                    ProcessBuilder("bash", "-c", "lsof -ti tcp:$port | xargs kill -9")
+                        .redirectErrorStream(true)
+                        .start()
+                        .waitFor()
+                    Thread.sleep(1_000)
+                }
+            } catch (e: Exception) {
+                println("Warning: could not check/kill port $port: ${e.message}")
+            }
+        }
+
+        listOf(5000, 5001, 5678, 8081).forEach { killPort(it) }
+
+        Runtime.getRuntime().addShutdownHook(Thread {
+            println("\nShutting down all services...")
+            processes.reversed().forEach { proc ->
+                proc.descendants().forEach { it.destroyForcibly() }
+                proc.destroyForcibly()
+            }
+            println("All services stopped.")
+        })
+
+        println("--- Starting Docling servers (ports 5000 and 5001) ---")
+        val doclingProcess = startProcess(
+            name = "docling",
+            directory = n8nDir,
+            command = listOf("bash", "${n8nDir.absolutePath}/launch_docling_server.sh"),
+        )
+        Thread.sleep(4_000)
+        if (!doclingProcess.isAlive) {
+            throw GradleException("Docling process exited early. Check [docling] logs above.")
+        }
+
+        println("--- Building n8n custom nodes ---")
+        val buildNodes = ProcessBuilder("bash", "-lc", "source ~/.nvm/nvm.sh && nvm use 22 && npm run build")
+            .directory(n8nDir)
+            .redirectErrorStream(true)
+            .start()
+        buildNodes.inputStream.bufferedReader().useLines { lines ->
+            lines.forEach { println("[n8n-build] $it") }
+        }
+        val buildExit = buildNodes.waitFor()
+        if (buildExit != 0) {
+            throw GradleException("n8n custom nodes build failed (exit code $buildExit). Check [n8n-build] logs above.")
+        }
+
+        println("--- Starting n8n (port 5678) ---")
+        val n8nProcess = startProcess(
+            name = "n8n",
+            directory = n8nDir,
+            command = listOf(
+                "bash",
+                "-lc",
+                "source ~/.nvm/nvm.sh && nvm use 22 && if command -v n8n >/dev/null 2>&1; then n8n start; else npx n8n start; fi",
+            ),
+            env = mapOf(
+                "N8N_CUSTOM_EXTENSIONS" to n8nDir.absolutePath,
+                "N8N_RESTRICT_ENVIRONMENT_VARIABLES" to "false",
+                "DOCLING_CUSTOMER_API_URL" to "http://localhost:5000",
+                "DOCLING_PRICE_TABLES_API_URL" to "http://localhost:5001",
+            ),
+        )
+        Thread.sleep(4_000)
+        if (!n8nProcess.isAlive) {
+            throw GradleException("n8n process exited early. Check [n8n] logs above.")
+        }
+
+        println("--- Starting Ktor backend (port 8081) ---")
+        println("=== Services are running. Press Ctrl+C to stop everything. ===")
+
+        val backendMainClass = application.mainClass.get()
+        val runtimeClasspath = sourceSets.getByName("main").runtimeClasspath.asPath
+        val backendProcess = startProcess(
+            name = "backend",
+            directory = rootProject.projectDir,
+            command = listOf("java", "-cp", runtimeClasspath, backendMainClass),
+            env = mapOf(
+                "DB_URL" to (System.getenv("DB_URL") ?: "jdbc:postgresql://localhost:5432/bm_backend?sslmode=disable"),
+                "DB_USER" to (System.getenv("DB_USER") ?: ""),
+                "DB_PASSWORD" to (System.getenv("DB_PASSWORD") ?: ""),
+            ),
+        )
+
+        val exitCode = backendProcess.waitFor()
+        if (exitCode != 0) {
+            throw GradleException("Backend exited with code $exitCode. Check [backend] logs above.")
+        }
+    }
+}
