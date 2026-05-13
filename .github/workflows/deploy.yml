@@ -44,6 +44,10 @@ jobs:
           ssh-keyscan -H 217.154.181.175 >> ~/.ssh/known_hosts
       
       - name: Deploy to Server
+        env:
+          DB_URL: ${{ secrets.DB_URL }}
+          DB_USER: ${{ secrets.DB_USER }}
+          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
         run: |
           # Create build/libs directory on server
           ssh root@217.154.181.175 "mkdir -p /root/BmBackEnd/build/libs"
@@ -54,8 +58,17 @@ jobs:
           # Copy resources
           scp -r src/main/resources root@217.154.181.175:/root/BmBackEnd/
           
-          # Restart service
-          ssh root@217.154.181.175 "systemctl restart bm-backend"
+          # Write systemd override with database environment variables from secrets
+          ssh root@217.154.181.175 "mkdir -p /etc/systemd/system/bm-backend.service.d && cat > /etc/systemd/system/bm-backend.service.d/override.conf << ENVEOF
+          [Service]
+          Environment=\"KTOR_ENV=production\"
+          Environment=\"DB_URL=${DB_URL}\"
+          Environment=\"DB_USER=${DB_USER}\"
+          Environment=\"DB_PASSWORD=${DB_PASSWORD}\"
+          ENVEOF"
+          
+          # Reload systemd and restart service
+          ssh root@217.154.181.175 "systemctl daemon-reload && systemctl restart bm-backend"
           
           # Wait for service to start
           sleep 5

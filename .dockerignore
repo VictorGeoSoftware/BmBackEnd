@@ -9,6 +9,9 @@ build/
 *.iws
 *.ipr
 
+# Docker Compose (not needed inside image)
+docker-compose.yml
+
 # Git
 .git/
 .gitignore
