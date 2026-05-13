@@ -1,4 +1,7 @@
-version: '3.8'
+# ============================================================
+# LOCAL DEVELOPMENT ONLY - Do NOT use in production.
+# Production uses systemd + GitHub Actions (see deploy.yml).
+# ============================================================
 
 services:
   postgres:
@@ -9,7 +12,7 @@ services:
     environment:
       POSTGRES_DB: bm_backend
       POSTGRES_USER: bm_app
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-changeme_dev}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?DB_PASSWORD must be set}
     volumes:
       - bm-pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -34,7 +37,7 @@ services:
       - DB_VENDOR=postgres
       - DB_URL=jdbc:postgresql://postgres:5432/bm_backend
       - DB_USER=bm_app
-      - DB_PASSWORD=${DB_PASSWORD:-changeme_dev}
+      - DB_PASSWORD=${DB_PASSWORD:?DB_PASSWORD must be set}
       - DOCLING_API_URL=http://host.docker.internal:5000
       - N8N_WEBHOOK_URL=http://host.docker.internal:5678/webhook/fetch-user-consumption
     extra_hosts:
