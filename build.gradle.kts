@@ -1,3 +1,5 @@
+import java.util.Properties
+
 plugins {
     kotlin("jvm") version "2.0.21"
     application
@@ -107,6 +109,15 @@ tasks.register("launchAll") {
     dependsOn("classes")
 
     doLast {
+        // Load local.properties (git-ignored) so devs don't need shell env vars
+        val localProps = Properties()
+        val localPropsFile = rootProject.file("local.properties")
+        if (localPropsFile.exists()) {
+            localPropsFile.inputStream().use { localProps.load(it) }
+        }
+        fun localProp(key: String, default: String = ""): String =
+            System.getenv(key) ?: localProps.getProperty(key) ?: default
+
         val n8nDir = file("${rootProject.projectDir}/../n8n")
         if (!n8nDir.exists()) {
             throw GradleException("n8n directory not found at ${n8nDir.absolutePath}")
@@ -162,6 +173,25 @@ tasks.register("launchAll") {
         }
 
         listOf(5000, 5001, 5678, 8081).forEach { killPort(it) }
+
+        // Ensure the Postgres container is running before starting the backend
+        println("--- Ensuring Postgres container is running (port 5433) ---")
+        val dbPassword = localProp("DB_PASSWORD")
+        val composeUp = ProcessBuilder(
+            "bash", "-c",
+            "DB_PASSWORD='$dbPassword' docker compose up postgres -d --wait"
+        )
+            .directory(rootProject.projectDir)
+            .redirectErrorStream(true)
+            .start()
+        composeUp.inputStream.bufferedReader().useLines { lines ->
+            lines.forEach { println("[postgres] $it") }
+        }
+        val composeExit = composeUp.waitFor()
+        if (composeExit != 0) {
+            throw GradleException("Failed to start Postgres container (exit code $composeExit). Check [postgres] logs above.")
+        }
+        println("--- Postgres is ready ---")
 
         Runtime.getRuntime().addShutdownHook(Thread {
             println("\nShutting down all services...")
@@ -227,9 +257,9 @@ tasks.register("launchAll") {
             directory = rootProject.projectDir,
             command = listOf("java", "-cp", runtimeClasspath, backendMainClass),
             env = mapOf(
-                "DB_URL" to (System.getenv("DB_URL") ?: "jdbc:postgresql://localhost:5432/bm_backend?sslmode=disable"),
-                "DB_USER" to (System.getenv("DB_USER") ?: ""),
-                "DB_PASSWORD" to (System.getenv("DB_PASSWORD") ?: ""),
+                "DB_URL" to localProp("DB_URL", "jdbc:postgresql://localhost:5432/bm_backend?sslmode=disable"),
+                "DB_USER" to localProp("DB_USER"),
+                "DB_PASSWORD" to localProp("DB_PASSWORD"),
             ),
         )
 

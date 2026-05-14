@@ -54,3 +54,6 @@ logs/
 ### Temporary files ###
 temp/
 tmp/
+
+### Local dev config ###
+local.properties
