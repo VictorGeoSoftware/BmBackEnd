@@ -65,6 +65,7 @@ jobs:
           Environment=\"DB_URL=${DB_URL}\"
           Environment=\"DB_USER=${DB_USER}\"
           Environment=\"DB_PASSWORD=${DB_PASSWORD}\"
+          Environment=\"FIREBASE_SERVICE_ACCOUNT_PATH=/root/BmBackEnd/firebase-service-account.json\"
           ENVEOF"
           
           # Reload systemd and restart service
