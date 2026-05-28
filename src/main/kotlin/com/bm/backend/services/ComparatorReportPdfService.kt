@@ -6,9 +6,7 @@ import com.bm.backend.models.ComparatorReportProposal
 import com.lowagie.text.Document
 import com.lowagie.text.Element
 import com.lowagie.text.Font
-import com.lowagie.text.Image
 import com.lowagie.text.PageSize
-import com.lowagie.text.Paragraph
 import com.lowagie.text.Phrase
 import com.lowagie.text.Rectangle
 import com.lowagie.text.pdf.PdfPCell
@@ -29,16 +27,14 @@ class ComparatorReportPdfService {
         addTitle(document, request)
         addSupplyData(document, request)
         addComparisonTable(document, request)
-        addDisclaimer(document)
         document.close()
 
         return outputStream.toByteArray()
     }
 
     private fun addTitle(document: Document, request: ComparatorReportPdfRequest) {
-        val titleTable = PdfPTable(floatArrayOf(4.4f, 1.6f)).apply {
+        val titleTable = PdfPTable(1).apply {
             widthPercentage = 100f
-            setWidths(floatArrayOf(4.4f, 1.6f))
             setSpacingAfter(12f)
         }
         titleTable.addCell(
@@ -50,18 +46,6 @@ class ComparatorReportPdfService {
                 font = FONT_TITLE
             )
         )
-
-        val logoCell = PdfPCell().apply {
-            border = Rectangle.NO_BORDER
-            horizontalAlignment = Element.ALIGN_RIGHT
-            verticalAlignment = Element.ALIGN_MIDDLE
-            setPadding(0f)
-        }
-        loadLogoImage()?.let { logo ->
-            logoCell.addElement(logo)
-        }
-        titleTable.addCell(logoCell)
-
         document.add(titleTable)
     }
 
@@ -88,7 +72,13 @@ class ComparatorReportPdfService {
                 border = Rectangle.NO_BORDER
             )
         )
-        infoTable.addCell(buildCell(request.supplyAddress, font = FONT_VALUE, border = Rectangle.NO_BORDER))
+        infoTable.addCell(
+            buildCell(
+                request.supplyAddress.uppercase(Locale("es", "ES")),
+                font = FONT_VALUE,
+                border = Rectangle.NO_BORDER
+            )
+        )
 
         infoTable.addCell(buildCell(ComparatorReportPdfTexts.CUPS_LABEL, font = FONT_LABEL, border = Rectangle.NO_BORDER))
         infoTable.addCell(buildCell(request.cups, font = FONT_VALUE, border = Rectangle.NO_BORDER))
@@ -143,7 +133,7 @@ class ComparatorReportPdfService {
             table = table,
             sideTitle = ComparatorReportPdfTexts.POWER_TERM_SIDE_TITLE,
             periods = request.powerTermRows.map { it.period },
-            consumptionValues = request.powerTermRows.map { formatNumber(it.value) },
+            consumptionValues = request.powerTermRows.map { "${formatConsumption(it.value)} kW" },
             columnValues = columns.map { column ->
                 request.powerTermRows.indices.map { idx ->
                     formatNumber(column.powerTermItems.getOrElse(idx) { 0.0 })
@@ -157,9 +147,10 @@ class ComparatorReportPdfService {
             columns.map { it.annualPowerTermCost }
         )
 
+        val totalAnnualEnergy = request.energyConsumedRows.sumOf { it.value }
         addSeriesRows(
             table = table,
-            sideTitle = ComparatorReportPdfTexts.ENERGY_CONSUMED_SIDE_TITLE,
+            sideTitle = "${ComparatorReportPdfTexts.ENERGY_CONSUMED_SIDE_TITLE}\n\n$totalAnnualEnergy kWh",
             periods = request.energyConsumedRows.map { it.period },
             consumptionValues = request.energyConsumedRows.map { "${it.value} kWh" },
             columnValues = columns.map { column ->
@@ -175,9 +166,9 @@ class ComparatorReportPdfService {
             columns.map { it.annualEnergyCost }
         )
 
-        addMetaRow(table, ComparatorReportPdfTexts.EXTRA_SERVICES_LABEL, columns.map { it.extraServices })
-        addMetaRow(table, buildLabelWithReferenceValue(ComparatorReportPdfTexts.ELECTRIC_TAX_LABEL, request.impuestoElectrico), columns.map { it.electricalTax })
-        addMetaRow(table, buildLabelWithReferenceValue(ComparatorReportPdfTexts.IVA_LABEL, request.iva), columns.map { it.iva })
+        addMetaRow(table, ComparatorReportPdfTexts.EXTRA_SERVICES_LABEL, columns.map { withCurrency(it.extraServices) })
+        addMetaRow(table, buildLabelWithReferenceValue(ComparatorReportPdfTexts.ELECTRIC_TAX_LABEL, request.impuestoElectrico), columns.map { withCurrency(it.electricalTax) })
+        addMetaRow(table, buildLabelWithReferenceValue(ComparatorReportPdfTexts.IVA_LABEL, request.iva), columns.map { withCurrency(it.iva) })
 
         addTotalRow(
             table,
@@ -272,10 +263,15 @@ class ComparatorReportPdfService {
             } else {
                 buildSavingsText(proposal)
             }
+            val background = when {
+                proposal == null -> COLOR_SAVINGS
+                isNegativeSavings(proposal.annualPriceDifference) -> COLOR_SAVINGS_NEGATIVE
+                else -> COLOR_SAVINGS
+            }
             table.addCell(
                 buildCell(
                     text = text,
-                    background = COLOR_SAVINGS,
+                    background = background,
                     align = Element.ALIGN_CENTER,
                     font = FONT_SECTION
                 )
@@ -283,19 +279,15 @@ class ComparatorReportPdfService {
         }
     }
 
+    private fun isNegativeSavings(annualPriceDifference: String?): Boolean {
+        if (annualPriceDifference.isNullOrBlank()) return false
+        return annualPriceDifference.trim().startsWith("-")
+    }
+
     private fun buildSavingsText(proposal: ComparatorReportProposal): String {
         val difference = proposal.annualPriceDifference.orEmpty()
         val percentage = proposal.annualSavingsPercentage?.let { "$it%" }.orEmpty()
         return listOf(difference, percentage).filter { it.isNotBlank() }.joinToString("\n")
-    }
-
-    private fun addDisclaimer(document: Document) {
-        document.add(
-            Paragraph(ComparatorReportPdfTexts.DATA_PROTECTION_DISCLAIMER, FONT_FOOTER).apply {
-                spacingBefore = 8f
-                alignment = Element.ALIGN_JUSTIFIED
-            }
-        )
     }
 
     private fun buildLabelWithReferenceValue(label: String, referenceValue: String): String {
@@ -338,33 +330,22 @@ class ComparatorReportPdfService {
 
     private fun formatNumber(value: Double): String = String.format(Locale.US, "%.6f", value)
 
+    private fun formatConsumption(value: Double): String = String.format(Locale.US, "%.3f", value)
+
     private fun withCurrency(value: String): String {
         if (value.isBlank() || value == "-") return value
         return if (value.endsWith("€") || value.endsWith("%")) value else "$value €"
     }
 
-    private fun loadLogoImage(): Image? {
-        val resourceBytes = this::class.java.classLoader
-            ?.getResourceAsStream(LOGO_RESOURCE_PATH)
-            ?.use { it.readBytes() }
-            ?: return null
-
-        return Image.getInstance(resourceBytes).apply {
-            scaleToFit(135f, 42f)
-            alignment = Element.ALIGN_RIGHT
-        }
-    }
-
     private companion object {
-        const val LOGO_RESOURCE_PATH = "images/logo_briel.png"
         val COLOR_HIGHLIGHT = Color(246, 222, 0)
         val COLOR_SECONDARY_HEADER = Color(178, 208, 230)
         val COLOR_SAVINGS = Color(171, 231, 179)
+        val COLOR_SAVINGS_NEGATIVE = Color(245, 178, 178)
 
         val FONT_TITLE = Font(Font.HELVETICA, 12.5f, Font.BOLD)
         val FONT_SECTION = Font(Font.HELVETICA, 8f, Font.BOLD)
         val FONT_LABEL = Font(Font.HELVETICA, 7f, Font.BOLD)
         val FONT_VALUE = Font(Font.HELVETICA, 7f, Font.NORMAL)
-        val FONT_FOOTER = Font(Font.HELVETICA, 6f, Font.NORMAL)
     }
 }
