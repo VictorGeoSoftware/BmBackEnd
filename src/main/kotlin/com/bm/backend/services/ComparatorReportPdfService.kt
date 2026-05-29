@@ -6,6 +6,7 @@ import com.bm.backend.models.ComparatorReportProposal
 import com.lowagie.text.Document
 import com.lowagie.text.Element
 import com.lowagie.text.Font
+import com.lowagie.text.Image
 import com.lowagie.text.PageSize
 import com.lowagie.text.Phrase
 import com.lowagie.text.Rectangle
@@ -33,10 +34,27 @@ class ComparatorReportPdfService {
     }
 
     private fun addTitle(document: Document, request: ComparatorReportPdfRequest) {
-        val titleTable = PdfPTable(1).apply {
+        val titleTable = PdfPTable(floatArrayOf(1f, 11f)).apply {
             widthPercentage = 100f
             setSpacingAfter(12f)
         }
+
+        val iconStream = ComparatorReportPdfService::class.java.getResourceAsStream("/images/powerapp_icon.png")
+        if (iconStream != null) {
+            val iconImage = Image.getInstance(iconStream.readBytes())
+            iconImage.scaleToFit(32f, 32f)
+            val iconCell = PdfPCell(iconImage, false).apply {
+                backgroundColor = COLOR_HIGHLIGHT
+                border = Rectangle.NO_BORDER
+                verticalAlignment = Element.ALIGN_MIDDLE
+                horizontalAlignment = Element.ALIGN_CENTER
+                setPadding(4f)
+            }
+            titleTable.addCell(iconCell)
+        } else {
+            titleTable.addCell(buildCell("", background = COLOR_HIGHLIGHT, border = Rectangle.NO_BORDER))
+        }
+
         titleTable.addCell(
             buildCell(
                 text = request.title,
