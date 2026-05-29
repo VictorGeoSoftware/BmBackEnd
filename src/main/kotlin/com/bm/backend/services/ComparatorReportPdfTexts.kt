@@ -8,9 +8,9 @@ object ComparatorReportPdfTexts {
     const val ANNUAL_CONSUMPTION_COLUMN = "DATOS DISTRIBUIDORA"
     const val CURRENT_CONDITIONS_COLUMN = "CONDICIONES ACTUALES"
 
-    const val POWER_TERM_SIDE_TITLE = "POTENCIA\nCONTRATADA\n(€/kW año)"
+    const val POWER_TERM_SIDE_TITLE = "POTENCIA\nCONTRATADA"
     const val POWER_TERM_ANNUAL_COST_LABEL = "Coste anual término de potencia"
-    const val ENERGY_CONSUMED_SIDE_TITLE = "ENERGÍA ANUAL\nCONSUMIDA"
+    const val ENERGY_CONSUMED_SIDE_TITLE = "TOTAL ENERGÍA ANUAL\nCONSUMIDA"
     const val ENERGY_TERM_ANNUAL_COST_LABEL = "Coste anual término de energía"
     const val EXTRA_SERVICES_LABEL = "SERVICIOS EXTRA"
     const val ELECTRIC_TAX_LABEL = "IMPUESTO ELÉCTRICO"
