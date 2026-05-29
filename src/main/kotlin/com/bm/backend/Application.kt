@@ -5,6 +5,7 @@ import com.bm.backend.repositories.PostgresUserConsumptionRepository
 import com.bm.backend.repositories.UserDataRepository
 import com.bm.backend.repositories.UserActivityRepository
 import com.bm.backend.routes.priceTableRoutes
+import com.bm.backend.routes.authRoutes
 import com.bm.backend.routes.userActivityRoutes
 import com.bm.backend.routes.userConsumptionRoutes
 import com.bm.backend.routes.userDataRoutes
@@ -122,6 +123,7 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
             userConsumptionRoutes(userConsumptionService, jobService, comparatorReportPdfService)
             userDataRoutes(userDataService)
             userActivityRoutes(userActivityService)
+            authRoutes(userActivityService)
         }
     }
 }
