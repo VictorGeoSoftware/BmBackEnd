@@ -1,6 +1,7 @@
 package com.bm.backend.services
 
 import com.bm.backend.models.ConsumptionReportResponse
+import com.bm.backend.models.DoclingExtractedData
 import com.bm.backend.models.UserConsumption
 import com.bm.backend.repositories.ports.UserConsumptionRepositoryPort
 import com.bm.backend.utils.calculateProposals
@@ -26,31 +27,44 @@ class UserConsumptionService(
             throw Exception("Failed at Docling API extraction step: ${e.message}", e)
         }
 
-        // Step 2: Process with N8N webhook
+        // Steps 2-6: shared pipeline
+        return runConsumptionPipeline(extractedData)
+    }
+
+    suspend fun processConsumptionReportFromCups(cupsCode: String): ConsumptionReportResponse {
+        val normalizedCupsCode = cupsCode.trim().uppercase()
+        val extractedData = DoclingExtractedData(cups_code = normalizedCupsCode)
+        return runConsumptionPipeline(extractedData)
+    }
+
+    /**
+     * Shared post-extraction pipeline:
+     * 1. Push extracted data through the n8n webhook to obtain raw consumption data.
+     * 2. Clean / normalize the consumption data.
+     * 3. Resolve filtered prices for the resulting tariff.
+     * 4. Calculate proposals.
+     * 5. Build the consolidated response.
+     */
+    private suspend fun runConsumptionPipeline(
+        extractedData: DoclingExtractedData
+    ): ConsumptionReportResponse {
         val n8nResponse = runCatching {
             externalApiService.processWithN8nWebhook(extractedData)
         }.getOrElse { e ->
             throw Exception("Failed at N8N webhook processing step: ${e.message}", e)
         }
 
-        // Step 3: Clean the consumption data
         val cleanedConsumptionData = n8nResponse.data.toCleanedData(n8nResponse.processedAt)
-
-        // Step 4-5: Resolve current prices and calculate proposals
         val filteredPrices = resolveFilteredPrices(cleanedConsumptionData)
-        val proposals = calculateProposals(
-            cleanedConsumptionData,
-            filteredPrices
-        )
+        val proposals = calculateProposals(cleanedConsumptionData, filteredPrices)
 
-        // Step 6: Build consolidated response
         return ConsumptionReportResponse(
             success = true,
             userData = extractedData,
             consumptionData = cleanedConsumptionData,
             proposals = proposals,
             iva = filteredPrices.iva,
-            impuestoElectrico = filteredPrices.impuestoElectrico
+            impuestoElectrico = filteredPrices.impuestoElectrico,
         )
     }
 
@@ -78,4 +92,5 @@ class UserConsumptionService(
             throw Exception("Failed at price table filtering step: ${e.message}", e)
         }
     }
+
 }

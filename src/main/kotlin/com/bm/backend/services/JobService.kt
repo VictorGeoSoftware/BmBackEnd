@@ -12,10 +12,11 @@ class JobService {
     // Auto-cleanup jobs older than 1 hour
     private val JOB_EXPIRY_MS = 60 * 60 * 1000L
     
-    fun createJob(): String {
+    fun createJob(ownerUid: String): String {
         val jobId = UUID.randomUUID().toString()
         jobs[jobId] = Job(
             jobId = jobId,
+            ownerUid = ownerUid,
             status = JobStatus.PENDING
         )
         cleanupOldJobs()

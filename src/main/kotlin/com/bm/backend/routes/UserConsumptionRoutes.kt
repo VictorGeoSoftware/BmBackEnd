@@ -7,6 +7,7 @@ import com.bm.backend.services.UserConsumptionService
 import io.ktor.http.*
 import io.ktor.http.content.*
 import io.ktor.server.application.*
+import io.ktor.server.plugins.BadRequestException
 import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
@@ -24,6 +25,7 @@ fun Route.userConsumptionRoutes(
 ) {
     post("/reports/comparator-pdf") {
         try {
+            call.requireAuthenticatedFirebaseUser() ?: return@post
             val request = call.receive<ComparatorReportPdfRequest>()
             val pdfBytes = comparatorReportPdfService.generate(request)
             val fileName = "comparativo_${System.currentTimeMillis()}.pdf"
@@ -47,6 +49,8 @@ fun Route.userConsumptionRoutes(
         }
     }
 
+    // NOTE: Server-to-server callback invoked by the n8n workflow (not by the app).
+    // Firebase auth is not applied here; lock down via webhook secret / network policy.
     post("/consumption-report") {
         try {
             val consumptionRequest = call.receive<UserConsumptionRequest>()
@@ -69,6 +73,7 @@ fun Route.userConsumptionRoutes(
         var errorResponse: Pair<HttpStatusCode, ErrorResponse>? = null
         
         try {
+            val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@post
             val multipartData = call.receiveMultipart()
             
             multipartData.forEachPart { part ->
@@ -112,7 +117,7 @@ fun Route.userConsumptionRoutes(
             }
             
             // Create a job and return immediately
-            val jobId = jobService.createJob()
+            val jobId = jobService.createJob(ownerUid = authenticatedUser.uid)
             val pdfFile = tempFile!!
             
             // Process asynchronously in background
@@ -156,8 +161,63 @@ fun Route.userConsumptionRoutes(
             )
         }
     }
+
+    post("/fetch-user-consumption-report-by-cups") {
+        try {
+            val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@post
+            val request = call.receive<FetchConsumptionReportByCupsRequest>()
+            val normalizedCupsCode = CupsValidation.normalize(request.cupsCode)
+            if (!CupsValidation.isValid(normalizedCupsCode)) {
+                call.respond(
+                    HttpStatusCode.BadRequest,
+                    ErrorResponse(message = "Invalid CUPS format")
+                )
+                return@post
+            }
+
+            val jobId = jobService.createJob(ownerUid = authenticatedUser.uid)
+
+            CoroutineScope(Dispatchers.IO).launch {
+                try {
+                    call.application.log.info("Starting background CUPS processing for job: $jobId")
+                    jobService.updateJobStatus(jobId, JobStatus.PROCESSING, progress = 0)
+
+                    val response = userConsumptionService.processConsumptionReportFromCups(normalizedCupsCode)
+
+                    jobService.completeJob(jobId, response)
+                    call.application.log.info("CUPS job $jobId completed successfully")
+
+                } catch (e: Exception) {
+                    call.application.log.error("CUPS job $jobId failed: ${e.message}", e)
+                    jobService.failJob(jobId, e.message ?: "Unknown error")
+                }
+            }
+
+            call.respond(
+                HttpStatusCode.Accepted,
+                JobResponse(
+                    jobId = jobId,
+                    status = "accepted",
+                    message = "Your request is being processed. Use the jobId to check status."
+                )
+            )
+        } catch (e: BadRequestException) {
+            call.application.log.warn("Malformed CUPS request body: ${e.message}")
+            call.respond(
+                HttpStatusCode.BadRequest,
+                ErrorResponse(message = "Malformed request body")
+            )
+        } catch (e: Exception) {
+            call.application.log.error("Error processing consumption report from CUPS: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
     
     get("/consumption-report-status/{jobId}") {
+        val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@get
         val jobId = call.parameters["jobId"]
         
         if (jobId == null) {
@@ -170,7 +230,7 @@ fun Route.userConsumptionRoutes(
         
         val job = jobService.getJob(jobId)
         
-        if (job == null) {
+        if (job == null || job.ownerUid != authenticatedUser.uid) {
             call.respond(
                 HttpStatusCode.NotFound,
                 ErrorResponse(message = "Job not found")
@@ -197,6 +257,7 @@ fun Route.userConsumptionRoutes(
     }
     
     get("/consumption-report-result/{jobId}") {
+        val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@get
         val jobId = call.parameters["jobId"]
         
         if (jobId == null) {
@@ -209,7 +270,7 @@ fun Route.userConsumptionRoutes(
         
         val job = jobService.getJob(jobId)
         
-        if (job == null) {
+        if (job == null || job.ownerUid != authenticatedUser.uid) {
             call.respond(
                 HttpStatusCode.NotFound,
                 ErrorResponse(message = "Job not found")
@@ -244,6 +305,7 @@ fun Route.userConsumptionRoutes(
     }
 
     post("/consumption-report-refresh/{jobId}") {
+        val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@post
         val jobId = call.parameters["jobId"]
 
         if (jobId == null) {
@@ -255,7 +317,7 @@ fun Route.userConsumptionRoutes(
         }
 
         val job = jobService.getJob(jobId)
-        if (job == null) {
+        if (job == null || job.ownerUid != authenticatedUser.uid) {
             call.respond(
                 HttpStatusCode.NotFound,
                 ErrorResponse(message = "Job not found")

@@ -29,6 +29,7 @@ enum class JobStatus {
 
 data class Job(
     val jobId: String,
+    val ownerUid: String,
     var status: JobStatus,
     var progress: Int = 0,
     var result: ConsumptionReportResponse? = null,
