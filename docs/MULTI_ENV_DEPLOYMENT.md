@@ -336,9 +336,10 @@ GRANT ALL PRIVILEGES ON DATABASE bm_qa TO bm_app;
 # Shared
 DB_PASSWORD=your-secure-password-here
 
-# Backend PII encryption (32-byte hex key, AES-GCM). REQUIRED — do not lose it,
+# Backend PII encryption (base64-encoded 32-byte key, AES-GCM). REQUIRED — do not lose it,
 # or previously-encrypted data becomes unreadable. Shared by PROD and QA backends.
-BM_ENCRYPTION_KEY=your-32-byte-hex-key-here
+# Generate with: openssl rand -base64 32
+BM_ENCRYPTION_KEY=your-base64-32-byte-key-here
 
 # PROD n8n
 N8N_PROD_PASSWORD=n8n-admin-prod
