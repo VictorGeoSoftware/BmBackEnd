@@ -1,5 +1,94 @@
 # BM Multi-Environment Deployment Guide
 
+<!-- ============================================================ -->
+<!-- PROGRESS LOG — read this first to resume work                -->
+<!-- ============================================================ -->
+
+## Migration Progress Log
+
+> Last updated: 2026-06-16. Phase 1 (local Docker Compose) is functionally COMPLETE
+> and validated end-to-end. Next session: Phase 1 cleanup (commit + creds) then Phase 2 (VPS).
+
+### ✅ Done (Phase 1 — local stack, all verified working)
+
+- **All 8 containers run & healthy** from `docker/docker-compose.yml`
+  (compose project name = `docker`). Build images: `bm/docling:latest`,
+  `bm/backend:latest`, `bm/n8n:latest`.
+- **Docling PDF → backend → Postgres** workflow works end-to-end. Verified via
+  `POST http://localhost:8081/api/v1/upload-price-proposal` with
+  `Facturas/Precios Total/table1.pdf` → HTTP 201, rows persisted in `bm_backend`.
+- **Firebase auth** works: `/api/v1/user-data` returns 200 from the Android app.
+- **n8n custom nodes + workflows** work: `fetch-user-consumption` and
+  `fetch-total-prices` webhooks registered & active on PROD (5678) and QA (6678).
+
+#### Blockers solved this session (so they're not re-debugged)
+1. **Docker container DNS** (corporate): set `/etc/docker/daemon.json` dns =
+   131.97.143.4 / .80 / 131.97.140.4 / .5 (host file, sudo, daemon restart).
+2. **Corporate TLS interception**: 8 Volvo CAs baked into `BmBackEnd/certs/`,
+   `DoclingBillReader/certs/` (git-ignored; `.gitkeep` committed). Guarded
+   default-off CA-install steps added to all Dockerfiles. Local-only; VPS stays clean.
+3. **HF Xet 416**: `HF_HUB_DISABLE_XET=1` on both docling services in compose.
+4. **Docling `libGL.so.1`**: added `libgl1`, `libglib2.0-0` to `DoclingBillReader/Dockerfile`.
+5. **Docling RapidOCR perms**: chmod 777 the rapidocr models dir in the Dockerfile.
+6. **`BM_ENCRYPTION_KEY`**: must be base64 32 bytes (`openssl rand -base64 32`).
+7. **Postgres alpine no TLS**: `DB_URL` needs `?sslmode=disable`.
+8. **nginx host port 80 in use locally** → mapped to host 8090 (PROD) / 8091 (QA).
+9. **Firebase**: real service-account JSON at
+   `BmBackEnd/brielmarnysos-1dc68-22e522af0a00.json` (git-ignored), mounted into
+   both backends; env `FIREBASE_SERVICE_ACCOUNT_PATH=/app/firebase-service-account.json`.
+10. **Custom n8n nodes**: `n8n-nodes-web-automation` was missing `package.json`/
+    `tsconfig.json`/icon — reconstructed. Built `bm/n8n:latest` from
+    `DoclingBillReader/Dockerfile.n8n` (base `mcr.microsoft.com/playwright:v1.48.2-jammy`
+    + **Node 22** (n8n needs ≥20.19) + python3/pandas/lxml + the node package loaded via
+    `N8N_CUSTOM_EXTENSIONS=/opt/custom-extensions`). Workflow JSONs live in
+    `DoclingBillReader/workflows/`; imported via `n8n import:workflow --separate` then
+    `n8n update:workflow --all --active=true` + restart.
+
+### ⏳ Pending — Phase 1 cleanup (do first next session)
+
+1. **n8n credentials + URL fixes** (only blocks workflow *execution*, not the webhook):
+   - Add **Total.es Account** credential (`totalEsCredentials`) in BOTH n8n UIs
+     (http://localhost:5678 admin/`n8n_prod_local`; http://localhost:6678 admin/`n8n_qa_local`).
+     Secrets are NOT in the exported JSON.
+   - In **"Fetch prices from Total"** workflow, fix internal URLs:
+     `http://localhost:8081/...` → `http://backend-prod:8081/...` (QA: `backend-qa`);
+     `http://0.0.0.0:5001/extract-total` → `http://docling-price-tables:5001/extract-total`.
+     ("Fetch user consumption data" has no internal HTTP URLs — only needs the credential.)
+   - ⚠️ The consumption node launches **Playwright Chromium to log into totalenergies.es** —
+     if the corporate network blocks that external site, execution fails at login (network
+     issue, not config).
+2. **Commit everything** (nothing from this session is committed). Spans `BmBackEnd`,
+   `DoclingBillReader`, and the un-versioned `docker/` folder — DECIDE where `docker/` is
+   versioned (root `B&M/` is not a git repo). NEVER commit: `docker/.env`, the Firebase JSON,
+   the contents of `*/certs/` (only `.gitkeep`).
+3. **Optional**: create IntelliJ run-configs (`.idea/runConfigurations/`) — only the
+   `.http` files + manual setup exist so far.
+
+### 🔜 Pending — Phase 2 (VPS, the actual migration goal)
+
+VPS = `217.154.181.175` (plain public VPS, no SSL inspection, no domain yet → route by port).
+1. Get repos onto the VPS.
+2. Recreate secrets ON the server (outside git): `docker/.env`, Firebase JSON, n8n passwords.
+3. Build images on VPS — ⚠️ Docling ~8GB + n8n ~3GB; mind disk/build time. Consider
+   `docker save`/`load` or a registry instead of building on the box.
+4. Swap nginx to real port-80/443 config (port 80 is free on the VPS).
+5. `docker compose up`, verify health, run smoke tests.
+6. Re-import + activate n8n workflows on VPS (same CLI), re-add TotalEs credentials.
+7. Point Android/web clients at the VPS URL.
+8. Optional: Let's Encrypt SSL.
+
+### Key facts / handy commands
+
+- Live local ports: backend PROD 8081, QA 9081; Docling 5000/5001; n8n 5678/6678;
+  Postgres 5433; nginx 8090/8091.
+- Native Docker daemon (Docker Desktop closed): `DOCKER_HOST=unix:///var/run/docker.sock`.
+- ICMP is blocked on the corporate net — `ping` always fails; ignore it (red herring).
+- Smoke test: `curl -X POST http://localhost:8081/api/v1/upload-price-proposal -F "file=@.../table1.pdf;type=application/pdf"`
+- Re-import a workflow into n8n:
+  `docker cp wf.json bm-n8n-prod:/tmp/wf/ && docker exec bm-n8n-prod n8n import:workflow --separate --input=/tmp/wf && docker exec bm-n8n-prod n8n update:workflow --all --active=true && docker compose restart n8n-prod`
+
+<!-- ============================================================ -->
+
 ## Table of Contents
 
 1. [Architecture Overview](#architecture-overview)
