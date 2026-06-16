@@ -60,3 +60,7 @@ local.properties
 # Corporate CA certs (local-only, never commit)
 certs/*
 !certs/.gitkeep
+
+# Firebase service account (secret — never commit)
+firebase-service-account.json
+brielmarnysos-1dc68-*.json
