@@ -118,9 +118,9 @@ tasks.register("launchAll") {
         fun localProp(key: String, default: String = ""): String =
             System.getenv(key) ?: localProps.getProperty(key) ?: default
 
-        val n8nDir = file("${rootProject.projectDir}/../n8n")
+        val n8nDir = file("${rootProject.projectDir}/../DoclingBillReader")
         if (!n8nDir.exists()) {
-            throw GradleException("n8n directory not found at ${n8nDir.absolutePath}")
+            throw GradleException("DoclingBillReader directory not found at ${n8nDir.absolutePath}")
         }
 
         val processes = mutableListOf<Process>()
@@ -252,6 +252,18 @@ tasks.register("launchAll") {
 
         val backendMainClass = application.mainClass.get()
         val runtimeClasspath = sourceSets.getByName("main").runtimeClasspath.asPath
+
+        // Firebase service account must match the project the app authenticates against
+        // (brielmarnysos-1dc68). Falling back to machine default credentials uses the wrong
+        // project (bmweb-a0a70) and breaks ID token verification.
+        val firebaseServiceAccountPath = localProp(
+            "FIREBASE_SERVICE_ACCOUNT_PATH",
+            file("${rootProject.projectDir}/../brielmarnysos-1dc68-firebase-adminsdk-fbsvc-3e2586a86a.json").absolutePath
+        )
+        if (!file(firebaseServiceAccountPath).exists()) {
+            throw GradleException("Firebase service account file not found at: $firebaseServiceAccountPath. Set FIREBASE_SERVICE_ACCOUNT_PATH in local.properties.")
+        }
+
         val backendProcess = startProcess(
             name = "backend",
             directory = rootProject.projectDir,
@@ -260,6 +272,7 @@ tasks.register("launchAll") {
                 "DB_URL" to localProp("DB_URL", "jdbc:postgresql://localhost:5432/bm_backend?sslmode=disable"),
                 "DB_USER" to localProp("DB_USER"),
                 "DB_PASSWORD" to localProp("DB_PASSWORD"),
+                "FIREBASE_SERVICE_ACCOUNT_PATH" to firebaseServiceAccountPath,
             ),
         )
 
