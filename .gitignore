@@ -57,3 +57,7 @@ tmp/
 
 ### Local dev config ###
 local.properties
+
+### Corporate CA certs (local-only, never commit) ###
+certs/*
+!certs/.gitkeep
