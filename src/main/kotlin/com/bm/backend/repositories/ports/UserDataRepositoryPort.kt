@@ -16,6 +16,21 @@ interface UserDataRepositoryPort {
         photoURL: String?,
         providerIds: List<String>,
         tokenIssuedAt: Instant,
-        tokenExpiresAt: Instant
+        tokenExpiresAt: Instant,
+        phoneUuid: String? = null
     )
+
+    /**
+     * Returns the device identifier currently bound to [uid], or `null` when
+     * no row exists yet or no device has been bound.
+     */
+    fun findPhoneUuid(uid: String): String?
+
+    /**
+     * Administrative operation: unbinds the device from every account matching
+     * [email] (compared case-insensitively against the decrypted value), so a
+     * replacement device can bind on the next login. Returns the number of
+     * rows updated.
+     */
+    fun clearPhoneUuidByEmail(email: String): Int
 }
