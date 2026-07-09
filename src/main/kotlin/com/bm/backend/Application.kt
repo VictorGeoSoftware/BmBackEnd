@@ -5,12 +5,15 @@ import com.bm.backend.repositories.PostgresUserConsumptionRepository
 import com.bm.backend.repositories.UserDataRepository
 import com.bm.backend.repositories.UserActivityRepository
 import com.bm.backend.routes.priceTableRoutes
+import com.bm.backend.routes.adminRoutes
 import com.bm.backend.routes.authRoutes
 import com.bm.backend.routes.userActivityRoutes
 import com.bm.backend.routes.userConsumptionRoutes
 import com.bm.backend.routes.userDataRoutes
 import com.bm.backend.security.DataMigration
 import com.bm.backend.security.EncryptionUtils
+import com.bm.backend.services.AccessControlService
+import com.bm.backend.services.AdminAuthService
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.FirebasePriceUpdatesNotifier
 import com.bm.backend.services.ComparatorReportPdfService
@@ -85,6 +88,8 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
     )
     val userDataService = UserDataService(userDataRepository)
     val userActivityService = UserActivityService(userActivityRepository)
+    val accessControlService = AccessControlService.fromEnv()
+    val adminAuthService = AdminAuthService.fromEnv()
     
     routing {
         get("/") {
@@ -121,9 +126,10 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
         route("/api/v1") {
             priceTableRoutes(priceTableService, externalApiService, priceUpdatesNotifier)
             userConsumptionRoutes(userConsumptionService, jobService, comparatorReportPdfService)
-            userDataRoutes(userDataService)
+            userDataRoutes(userDataService, accessControlService)
             userActivityRoutes(userActivityService)
             authRoutes(userActivityService)
+            adminRoutes(userDataService, adminAuthService)
         }
     }
 }

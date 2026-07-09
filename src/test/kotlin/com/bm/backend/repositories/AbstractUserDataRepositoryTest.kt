@@ -38,7 +38,8 @@ abstract class AbstractUserDataRepositoryTest {
             photoURL = "https://example.com/a.png",
             providerIds = listOf("google.com", "password"),
             tokenIssuedAt = Instant.ofEpochSecond(1_000L),
-            tokenExpiresAt = Instant.ofEpochSecond(2_000L)
+            tokenExpiresAt = Instant.ofEpochSecond(2_000L),
+            phoneUuid = null
         )
         val raw = transaction {
             UserDataDb.selectAll().single().let {
@@ -60,14 +61,16 @@ abstract class AbstractUserDataRepositoryTest {
             uid = "uid-1", email = "alice@example.com", displayName = "Alice",
             photoURL = null, providerIds = listOf("password"),
             tokenIssuedAt = Instant.ofEpochSecond(1_000L),
-            tokenExpiresAt = Instant.ofEpochSecond(2_000L)
+            tokenExpiresAt = Instant.ofEpochSecond(2_000L),
+            phoneUuid = null
         )
         Thread.sleep(2)
         repository.upsertUserData(
             uid = "uid-1", email = "alice+new@example.com", displayName = "Alice 2",
             photoURL = null, providerIds = listOf("password", "google.com"),
             tokenIssuedAt = Instant.ofEpochSecond(3_000L),
-            tokenExpiresAt = Instant.ofEpochSecond(4_000L)
+            tokenExpiresAt = Instant.ofEpochSecond(4_000L),
+            phoneUuid = null
         )
         val (createdAt, updatedAt, providerIds, decryptedEmail) = transaction {
             UserDataDb.selectAll().single().let { row ->
@@ -92,7 +95,8 @@ abstract class AbstractUserDataRepositoryTest {
             uid = "uid-2", email = null, displayName = null, photoURL = null,
             providerIds = emptyList(),
             tokenIssuedAt = Instant.ofEpochSecond(1L),
-            tokenExpiresAt = Instant.ofEpochSecond(2L)
+            tokenExpiresAt = Instant.ofEpochSecond(2L),
+            phoneUuid = null
         )
         val (email, displayName, photoURL) = transaction {
             UserDataDb.selectAll().single().let {
@@ -102,5 +106,68 @@ abstract class AbstractUserDataRepositoryTest {
         kotlin.test.assertNull(email)
         kotlin.test.assertNull(displayName)
         kotlin.test.assertNull(photoURL)
+    }
+
+    @Test
+    fun `upsertUserData keeps the first registered phone_uuid (first-device-wins)`() {
+        repository.upsertUserData(
+            uid = "uid-3", email = "bob@example.com", displayName = "Bob", photoURL = null,
+            providerIds = listOf("google.com"),
+            tokenIssuedAt = Instant.ofEpochSecond(1L),
+            tokenExpiresAt = Instant.ofEpochSecond(2L),
+            phoneUuid = "device-a"
+        )
+        repository.upsertUserData(
+            uid = "uid-3", email = "bob@example.com", displayName = "Bob", photoURL = null,
+            providerIds = listOf("google.com"),
+            tokenIssuedAt = Instant.ofEpochSecond(3L),
+            tokenExpiresAt = Instant.ofEpochSecond(4L),
+            phoneUuid = "device-b"
+        )
+        val storedPhoneUuid = transaction {
+            UserDataDb.selectAll().single()[UserDataDb.phoneUuid]
+        }
+        assertEquals("device-a", storedPhoneUuid, "the first registered device must be retained")
+    }
+
+    @Test
+    fun `findPhoneUuid returns null when unbound and the stored value once bound`() {
+        kotlin.test.assertNull(repository.findPhoneUuid("missing"), "unknown uid must return null")
+
+        repository.upsertUserData(
+            uid = "uid-4", email = "carol@example.com", displayName = "Carol", photoURL = null,
+            providerIds = listOf("google.com"),
+            tokenIssuedAt = Instant.ofEpochSecond(1L),
+            tokenExpiresAt = Instant.ofEpochSecond(2L),
+            phoneUuid = null
+        )
+        kotlin.test.assertNull(repository.findPhoneUuid("uid-4"), "row without a device must return null")
+
+        repository.upsertUserData(
+            uid = "uid-4", email = "carol@example.com", displayName = "Carol", photoURL = null,
+            providerIds = listOf("google.com"),
+            tokenIssuedAt = Instant.ofEpochSecond(3L),
+            tokenExpiresAt = Instant.ofEpochSecond(4L),
+            phoneUuid = "device-c"
+        )
+        assertEquals("device-c", repository.findPhoneUuid("uid-4"))
+    }
+
+    @Test
+    fun `clearPhoneUuidByEmail unbinds the matching account and reports the count`() {
+        repository.upsertUserData(
+            uid = "uid-5", email = "Dave@Example.com", displayName = "Dave", photoURL = null,
+            providerIds = listOf("google.com"),
+            tokenIssuedAt = Instant.ofEpochSecond(1L),
+            tokenExpiresAt = Instant.ofEpochSecond(2L),
+            phoneUuid = "device-d"
+        )
+
+        assertEquals(0, repository.clearPhoneUuidByEmail("someone-else@example.com"))
+        assertEquals("device-d", repository.findPhoneUuid("uid-5"))
+
+        // Email match is case-insensitive against the decrypted value.
+        assertEquals(1, repository.clearPhoneUuidByEmail("dave@example.com"))
+        kotlin.test.assertNull(repository.findPhoneUuid("uid-5"), "binding must be cleared after reset")
     }
 }
