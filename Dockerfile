@@ -3,6 +3,18 @@ FROM gradle:8.5-jdk17 AS build
 
 WORKDIR /app
 
+# Optional corporate CA trust for HTTPS (Maven Central, Gradle plugin portal).
+# No-op on networks without SSL inspection (production VPS: certs/ holds only
+# .gitkeep). Imports into the JVM truststore because Gradle ignores the OS store.
+COPY certs/ /usr/local/share/ca-certificates/extra/
+RUN update-ca-certificates || true; \
+    for c in /usr/local/share/ca-certificates/extra/*.crt; do \
+      [ -e "$c" ] || continue; \
+      keytool -importcert -noprompt -trustcacerts \
+        -alias "corp-$(basename "$c")" -file "$c" \
+        -keystore "$JAVA_HOME/lib/security/cacerts" -storepass changeit || true; \
+    done
+
 # Copy gradle files first for better caching
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY gradle ./gradle
@@ -20,6 +32,13 @@ RUN gradle shadowJar --no-daemon
 FROM eclipse-temurin:17-jre-alpine
 
 WORKDIR /app
+
+# Optional corporate CA trust (no-op on the VPS). Append corporate PEM certs to
+# the system bundle BEFORE apk so the HTTPS package fetch validates behind a
+# TLS-inspecting proxy.
+COPY certs/ /tmp/corp-certs/
+RUN cat /tmp/corp-certs/*.crt >> /etc/ssl/certs/ca-certificates.crt 2>/dev/null || true; \
+    rm -rf /tmp/corp-certs
 
 # Install curl for healthchecks
 RUN apk add --no-cache curl

@@ -1,0 +1,35 @@
+### B&M backend — IntelliJ HTTP Client
+### Run any request with the green ▶ gutter icon.
+### Pick the environment (prod/qa) from the dropdown next to ▶,
+### values come from http-client.env.json.
+
+### Health check
+GET {{baseUrl}}/health
+
+> {%
+    client.test("health is up", function () {
+        client.assert(response.status === 200, "expected 200");
+    });
+%}
+
+### Upload a price-proposal PDF (full chain: backend -> Docling OCR -> Postgres)
+### No Firebase auth required. Adjust the file path as needed.
+POST {{baseUrl}}/api/v1/upload-price-proposal
+Content-Type: multipart/form-data; boundary=----BMBoundary
+
+------BMBoundary
+Content-Disposition: form-data; name="file"; filename="table1.pdf"
+Content-Type: application/pdf
+
+< ../../Facturas/Precios Total/table1.pdf
+------BMBoundary--
+
+> {%
+    client.test("upload accepted", function () {
+        client.assert(response.status === 201, "expected 201, got " + response.status);
+        client.assert(response.body.success === true, "success should be true");
+    });
+%}
+
+### Fetch stored price-table results
+GET {{baseUrl}}/api/v1/price-table-results
