@@ -6,48 +6,26 @@ on:
       - main
   workflow_dispatch:  # Allow manual trigger
 
+# The backend now runs as Docker containers (bm-backend-prod / bm-backend-qa)
+# orchestrated by the BmInfra compose project on the VPS. This workflow pulls
+# the latest code on the server and rebuilds the image there — no JAR is built
+# on the runner, and no systemd units are touched anymore.
+
 jobs:
   deploy:
-    name: Build and Deploy to Server
+    name: Deploy to VPS (Docker)
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up JDK 17
-        uses: actions/setup-java@v4
-        with:
-          java-version: '17'
-          distribution: 'temurin'
-          cache: 'gradle'
-      
-      - name: Grant execute permission for gradlew
-        run: chmod +x gradlew
-      
-      - name: Build with Gradle
-        run: ./gradlew clean shadowJar --no-daemon
-      
-      - name: Verify JAR was created
-        run: |
-          if [ ! -f build/libs/bm-backend-1.0-all.jar ]; then
-            echo "Error: JAR file not found!"
-            exit 1
-          fi
-          ls -lh build/libs/
-      
       - name: Setup SSH
         run: |
           mkdir -p ~/.ssh
           echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H 217.154.181.175 >> ~/.ssh/known_hosts
-      
-      - name: Deploy to Server
+
+      - name: Deploy on server
         env:
-          DB_URL: ${{ secrets.DB_URL }}
-          DB_USER: ${{ secrets.DB_USER }}
-          DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
           BM_AUTH_EMAIL_ALLOWLIST: ${{ secrets.BM_AUTH_EMAIL_ALLOWLIST }}
         run: |
           # Fail fast if the production allowlist is not configured. Without it the
@@ -57,47 +35,43 @@ jobs:
             exit 1
           fi
 
-          # Create build/libs directory on server
-          ssh root@217.154.181.175 "mkdir -p /root/BmBackEnd/build/libs"
-          
-          # Copy JAR to correct location
-          scp build/libs/bm-backend-1.0-all.jar root@217.154.181.175:/root/BmBackEnd/build/libs/
-          
-          # Copy resources
-          scp -r src/main/resources root@217.154.181.175:/root/BmBackEnd/
-          
-          # Write systemd override with database environment variables from secrets
-          ssh root@217.154.181.175 "mkdir -p /etc/systemd/system/bm-backend.service.d && cat > /etc/systemd/system/bm-backend.service.d/override.conf << ENVEOF
-          [Service]
-          Environment=\"KTOR_ENV=production\"
-          Environment=\"DB_URL=${DB_URL}\"
-          Environment=\"DB_USER=${DB_USER}\"
-          Environment=\"DB_PASSWORD=${DB_PASSWORD}\"
-          Environment=\"FIREBASE_SERVICE_ACCOUNT_PATH=/root/BmBackEnd/firebase-service-account.json\"
-          Environment=\"BM_AUTH_EMAIL_ALLOWLIST=${BM_AUTH_EMAIL_ALLOWLIST}\"
-          ENVEOF"
-          
-          # Reload systemd and restart service
-          ssh root@217.154.181.175 "systemctl daemon-reload && systemctl restart bm-backend"
-          
-          # Wait for service to start
-          sleep 5
-          
-          # Check service status
-          ssh root@217.154.181.175 "systemctl status bm-backend --no-pager"
-      
-      - name: Health Check
+          ssh root@217.154.181.175 "set -e
+            echo '📦 Pulling latest BmBackEnd...'
+            cd /opt/bm/BmBackEnd
+            git fetch origin
+            git reset --hard origin/main
+
+            cd /opt/bm/BmInfra
+
+            # Sync the allowlist from the GitHub secret (source of truth) into
+            # the VPS .env consumed by docker compose.
+            if grep -q '^BM_AUTH_EMAIL_ALLOWLIST=' .env; then
+              sed -i 's|^BM_AUTH_EMAIL_ALLOWLIST=.*|BM_AUTH_EMAIL_ALLOWLIST=${BM_AUTH_EMAIL_ALLOWLIST}|' .env
+            else
+              echo 'BM_AUTH_EMAIL_ALLOWLIST=${BM_AUTH_EMAIL_ALLOWLIST}' >> .env
+            fi
+
+            echo '🐳 Rebuilding backend image...'
+            docker compose build backend-prod
+
+            echo '🔄 Recreating backend containers (PROD + QA share the image)...'
+            docker compose up -d backend-prod backend-qa
+          "
+
+      - name: Health check
         run: |
-          # Wait for application to be ready
-          sleep 10
-          
-          # Test health endpoint
+          sleep 15
+
+          echo "Checking PROD backend..."
           curl -f http://217.154.181.175:8081/health || exit 1
-          
+
+          echo "Checking QA backend..."
+          curl -f http://217.154.181.175:9081/health || exit 1
+
           echo "✅ Deployment successful!"
-      
-      - name: Notify on Failure
+
+      - name: Notify on failure
         if: failure()
         run: |
-          echo "❌ Deployment failed! Check the logs above."
-          ssh root@217.154.181.175 "journalctl -u bm-backend -n 100 --no-pager" || true
+          echo "❌ Deployment failed! Recent backend-prod logs:"
+          ssh root@217.154.181.175 "cd /opt/bm/BmInfra && docker compose logs --tail=100 backend-prod" || true
