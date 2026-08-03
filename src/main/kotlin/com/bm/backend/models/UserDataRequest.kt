@@ -8,5 +8,6 @@ data class UserDataRequest(
     val email: String? = null,
     val displayName: String? = null,
     val photoURL: String? = null,
-    val providerIds: List<String> = emptyList()
+    val providerIds: List<String> = emptyList(),
+    val phoneUuid: String? = null
 )

@@ -48,7 +48,15 @@ jobs:
           DB_URL: ${{ secrets.DB_URL }}
           DB_USER: ${{ secrets.DB_USER }}
           DB_PASSWORD: ${{ secrets.DB_PASSWORD }}
+          BM_AUTH_EMAIL_ALLOWLIST: ${{ secrets.BM_AUTH_EMAIL_ALLOWLIST }}
         run: |
+          # Fail fast if the production allowlist is not configured. Without it the
+          # backend boots with the allowlist DISABLED and would allow every account.
+          if [ -z "${BM_AUTH_EMAIL_ALLOWLIST}" ]; then
+            echo "::error::BM_AUTH_EMAIL_ALLOWLIST secret is empty. Add it in repo Settings -> Secrets and variables -> Actions (comma-separated emails) before deploying."
+            exit 1
+          fi
+
           # Create build/libs directory on server
           ssh root@217.154.181.175 "mkdir -p /root/BmBackEnd/build/libs"
           
@@ -66,6 +74,7 @@ jobs:
           Environment=\"DB_USER=${DB_USER}\"
           Environment=\"DB_PASSWORD=${DB_PASSWORD}\"
           Environment=\"FIREBASE_SERVICE_ACCOUNT_PATH=/root/BmBackEnd/firebase-service-account.json\"
+          Environment=\"BM_AUTH_EMAIL_ALLOWLIST=${BM_AUTH_EMAIL_ALLOWLIST}\"
           ENVEOF"
           
           # Reload systemd and restart service
