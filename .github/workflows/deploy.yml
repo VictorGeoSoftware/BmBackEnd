@@ -35,6 +35,11 @@ jobs:
             exit 1
           fi
 
+          # The secret may be multi-line (one email per line, possibly with
+          # trailing commas). Normalize to a single comma-separated line —
+          # embedded newlines would otherwise break the sed command below.
+          ALLOWLIST=$(printf '%s' "${BM_AUTH_EMAIL_ALLOWLIST}" | tr '\n' ',' | tr -s ',' | sed 's/^,//; s/,$//')
+
           ssh root@217.154.181.175 "set -e
             echo '📦 Pulling latest BmBackEnd...'
             cd /opt/bm/BmBackEnd
@@ -46,9 +51,9 @@ jobs:
             # Sync the allowlist from the GitHub secret (source of truth) into
             # the VPS .env consumed by docker compose.
             if grep -q '^BM_AUTH_EMAIL_ALLOWLIST=' .env; then
-              sed -i 's|^BM_AUTH_EMAIL_ALLOWLIST=.*|BM_AUTH_EMAIL_ALLOWLIST=${BM_AUTH_EMAIL_ALLOWLIST}|' .env
+              sed -i 's|^BM_AUTH_EMAIL_ALLOWLIST=.*|BM_AUTH_EMAIL_ALLOWLIST=${ALLOWLIST}|' .env
             else
-              echo 'BM_AUTH_EMAIL_ALLOWLIST=${BM_AUTH_EMAIL_ALLOWLIST}' >> .env
+              echo 'BM_AUTH_EMAIL_ALLOWLIST=${ALLOWLIST}' >> .env
             fi
 
             echo '🐳 Rebuilding backend image...'
