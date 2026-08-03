@@ -70,8 +70,12 @@ jobs:
           echo "Checking PROD backend..."
           curl -f http://217.154.181.175:8081/health || exit 1
 
-          echo "Checking QA backend..."
-          curl -f http://217.154.181.175:9081/health || exit 1
+          # QA is not exposed externally yet (port 9081 is not opened in ufw),
+          # so this check would time out from the runner even when the QA
+          # backend is healthy. Non-blocking until QA goes external.
+          echo "Checking QA backend (non-blocking — not exposed externally)..."
+          curl -f -m 10 http://217.154.181.175:9081/health \
+            || echo "::warning::QA backend not reachable externally (expected — port 9081 closed in ufw)"
 
           echo "✅ Deployment successful!"
 
