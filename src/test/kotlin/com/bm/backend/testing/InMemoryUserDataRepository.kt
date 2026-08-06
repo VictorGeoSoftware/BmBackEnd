@@ -52,4 +52,20 @@ class InMemoryUserDataRepository : UserDataRepositoryPort {
         }
         return count
     }
+
+    override fun findUidByEmail(email: String): String? {
+        val target = email.trim().lowercase()
+        return rows.entries
+            .firstOrNull { (_, row) -> row.email?.trim()?.lowercase() == target }
+            ?.key
+    }
+
+    override fun deleteByEmail(email: String): Int {
+        val target = email.trim().lowercase()
+        val matchingUids = rows.entries
+            .filter { (_, row) -> row.email?.trim()?.lowercase() == target }
+            .map { it.key }
+        matchingUids.forEach { rows.remove(it) }
+        return matchingUids.size
+    }
 }

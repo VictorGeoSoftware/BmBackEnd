@@ -1,12 +1,14 @@
 package com.bm.backend
 
 import com.bm.backend.database.DatabaseFactory
+import com.bm.backend.repositories.GrantedUsersRepository
 import com.bm.backend.repositories.PostgresUserConsumptionRepository
 import com.bm.backend.repositories.UserDataRepository
 import com.bm.backend.repositories.UserActivityRepository
 import com.bm.backend.routes.priceTableRoutes
 import com.bm.backend.routes.adminRoutes
 import com.bm.backend.routes.authRoutes
+import com.bm.backend.routes.grantedUsersRoutes
 import com.bm.backend.routes.userActivityRoutes
 import com.bm.backend.routes.userConsumptionRoutes
 import com.bm.backend.routes.userDataRoutes
@@ -15,8 +17,11 @@ import com.bm.backend.security.EncryptionUtils
 import com.bm.backend.services.AccessControlService
 import com.bm.backend.services.AdminAuthService
 import com.bm.backend.services.ExternalApiService
+import com.bm.backend.services.FirebaseForceLogoutNotifier
 import com.bm.backend.services.FirebasePriceUpdatesNotifier
+import com.bm.backend.services.FirebaseUserAccountRevoker
 import com.bm.backend.services.ComparatorReportPdfService
+import com.bm.backend.services.GrantedUsersService
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.UserConsumptionService
 import com.bm.backend.services.UserDataService
@@ -88,8 +93,17 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
     )
     val userDataService = UserDataService(userDataRepository)
     val userActivityService = UserActivityService(userActivityRepository)
-    val accessControlService = AccessControlService.fromEnv()
+    val grantedUsersRepository = GrantedUsersRepository()
+    val accessControlService = AccessControlService(grantedUsersRepository)
     val adminAuthService = AdminAuthService.fromEnv()
+    val grantedUsersService = GrantedUsersService(
+        grantedUsersRepository = grantedUsersRepository,
+        userDataRepository = userDataRepository,
+        userActivityRepository = userActivityRepository,
+        userConsumptionRepository = userConsumptionRepository,
+        userAccountRevoker = FirebaseUserAccountRevoker(),
+        forceLogoutNotifier = FirebaseForceLogoutNotifier()
+    )
     
     routing {
         get("/") {
@@ -130,6 +144,7 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
             userActivityRoutes(userActivityService)
             authRoutes(userActivityService)
             adminRoutes(userDataService, adminAuthService)
+            grantedUsersRoutes(grantedUsersService, adminAuthService)
         }
     }
 }

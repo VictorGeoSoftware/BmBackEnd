@@ -5,6 +5,8 @@ import com.bm.backend.models.UserConsumption
 import com.bm.backend.repositories.ports.UserConsumptionRepositoryPort
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import org.jetbrains.exposed.sql.SqlExpressionBuilder
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import java.time.Instant
@@ -48,6 +50,12 @@ class PostgresUserConsumptionRepository : UserConsumptionRepositoryPort {
                 )
             )
         }
+    }
+
+    override fun deleteByUid(uid: String): Int = transaction {
+        val target = uid
+        val condition = with(SqlExpressionBuilder) { UserConsumptionDb.uid eq target }
+        UserConsumptionDb.deleteWhere { condition }
     }
 
     override fun getConsumptionReport(): UserConsumption? {

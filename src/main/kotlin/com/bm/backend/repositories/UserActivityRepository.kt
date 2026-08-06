@@ -5,6 +5,9 @@ import com.bm.backend.models.UserActivityFirstConnectionResponse
 import com.bm.backend.models.UserActivityUserResponse
 import com.bm.backend.repositories.ports.UserActivityRepositoryPort
 import org.jetbrains.exposed.sql.ResultRow
+import org.jetbrains.exposed.sql.SqlExpressionBuilder
+import org.jetbrains.exposed.sql.deleteWhere
+import org.jetbrains.exposed.sql.lowerCase
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import java.time.Instant
@@ -141,6 +144,12 @@ class UserActivityRepository : UserActivityRepositoryPort {
                     )
                 }
         }
+    }
+
+    override fun deleteByEmail(email: String): Int = transaction {
+        val target = email.trim().lowercase()
+        val condition = with(SqlExpressionBuilder) { UserActivityDb.email.lowerCase() eq target }
+        UserActivityDb.deleteWhere { condition }
     }
 
     private fun resolveMonthlyCount(row: ResultRow, currentMonthKey: String): Int {

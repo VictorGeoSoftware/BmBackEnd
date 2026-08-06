@@ -23,4 +23,11 @@ interface UserActivityRepositoryPort {
     fun getUsersActivity(): List<UserActivityUserResponse>
 
     fun getUsersFirstConnection(): List<UserActivityFirstConnectionResponse>
+
+    /**
+     * Administrative operation: permanently deletes the activity row for
+     * [email] (compared case-insensitively). Returns the number of rows
+     * deleted (0 or 1).
+     */
+    fun deleteByEmail(email: String): Int
 }

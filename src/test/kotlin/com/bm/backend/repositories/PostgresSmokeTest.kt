@@ -49,6 +49,7 @@ class PostgresSmokeTest {
             found
         }!!
         val expected = listOf(
+            "granted_users",
             "price_table_results",
             "tarifas_energia_base", "tarifas_energia_unica", "tarifas_potencia",
             "tax_settings",
