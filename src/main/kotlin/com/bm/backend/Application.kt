@@ -144,7 +144,7 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
             userActivityRoutes(userActivityService)
             authRoutes(userActivityService)
             adminRoutes(userDataService, adminAuthService)
-            grantedUsersRoutes(grantedUsersService, adminAuthService)
+            grantedUsersRoutes(grantedUsersService, accessControlService)
         }
     }
 }

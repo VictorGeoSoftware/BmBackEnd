@@ -27,6 +27,10 @@ class GrantedUsersRepositoryTest {
     @BeforeEach
     fun resetSchema() {
         PostgresTestSetup.resetSchema()
+        // V8 seeds the production allowlist; clear it so each test starts empty.
+        GrantedUsersRepository().findAll().forEach { grant ->
+            GrantedUsersRepository().deleteByEmail(grant.email)
+        }
     }
 
     @Test
