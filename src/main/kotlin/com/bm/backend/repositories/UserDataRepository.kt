@@ -3,6 +3,8 @@ package com.bm.backend.repositories
 import com.bm.backend.database.UserDataDb
 import com.bm.backend.repositories.ports.UserDataRepositoryPort
 import com.bm.backend.security.EncryptionUtils
+import org.jetbrains.exposed.sql.SqlExpressionBuilder
+import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.update
@@ -76,17 +78,7 @@ class UserDataRepository : UserDataRepositoryPort {
     }
 
     override fun clearPhoneUuidByEmail(email: String): Int = transaction {
-        val target = email.trim().lowercase()
-        // `email` is encrypted at rest with a random IV, so it cannot be matched
-        // with a SQL predicate; scan and compare decrypted values instead. The
-        // user_data table holds one row per tester, so this stays inexpensive.
-        val matchingIds = UserDataDb
-            .selectAll()
-            .mapNotNull { row ->
-                val encryptedEmail = row[UserDataDb.email] ?: return@mapNotNull null
-                val decrypted = runCatching { EncryptionUtils.decrypt(encryptedEmail) }.getOrNull()
-                if (decrypted?.trim()?.lowercase() == target) row[UserDataDb.id] else null
-            }
+        val matchingIds = findRowIdsByEmail(email)
 
         if (matchingIds.isEmpty()) {
             logger.info("AUDIT: Device binding reset requested but no account matched")
@@ -100,5 +92,40 @@ class UserDataRepository : UserDataRepositoryPort {
         }
         logger.info("AUDIT: Device binding reset for {} account(s)", updated)
         updated
+    }
+
+    override fun findUidByEmail(email: String): String? = transaction {
+        val matchingIds = findRowIdsByEmail(email)
+        if (matchingIds.isEmpty()) return@transaction null
+        UserDataDb
+            .selectAll()
+            .where { UserDataDb.id inList matchingIds }
+            .limit(1)
+            .firstOrNull()
+            ?.get(UserDataDb.uid)
+    }
+
+    override fun deleteByEmail(email: String): Int = transaction {
+        val matchingIds = findRowIdsByEmail(email)
+        if (matchingIds.isEmpty()) return@transaction 0
+        val condition = with(SqlExpressionBuilder) { UserDataDb.id inList matchingIds }
+        val deleted = UserDataDb.deleteWhere { condition }
+        logger.info("AUDIT: User data deleted for {} account(s)", deleted)
+        deleted
+    }
+
+    // `email` is encrypted at rest with a random IV, so it cannot be matched
+    // with a SQL predicate; scan and compare decrypted values instead. The
+    // user_data table holds one row per tester, so this stays inexpensive.
+    // Must be called inside a transaction.
+    private fun findRowIdsByEmail(email: String): List<Int> {
+        val target = email.trim().lowercase()
+        return UserDataDb
+            .selectAll()
+            .mapNotNull { row ->
+                val encryptedEmail = row[UserDataDb.email] ?: return@mapNotNull null
+                val decrypted = runCatching { EncryptionUtils.decrypt(encryptedEmail) }.getOrNull()
+                if (decrypted?.trim()?.lowercase() == target) row[UserDataDb.id].value else null
+            }
     }
 }

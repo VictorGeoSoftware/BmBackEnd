@@ -129,4 +129,12 @@ class InMemoryUserActivityRepository(
             )
         }
     }
+
+    override fun deleteByEmail(email: String): Int {
+        val target = email.trim().lowercase()
+        val key = rows.keys.firstOrNull { it.trim().lowercase() == target }
+            ?: return 0
+        rows.remove(key)
+        return 1
+    }
 }

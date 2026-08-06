@@ -15,4 +15,10 @@ interface UserConsumptionRepositoryPort {
     fun storeConsumptionData(consumptionReport: UserConsumption)
 
     fun getConsumptionReport(): UserConsumption?
+
+    /**
+     * Administrative operation: permanently deletes the consumption payload
+     * stored for [uid]. Returns the number of rows deleted (0 or 1).
+     */
+    fun deleteByUid(uid: String): Int
 }

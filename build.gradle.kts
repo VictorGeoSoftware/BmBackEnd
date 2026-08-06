@@ -264,8 +264,6 @@ tasks.register("launchAll") {
             throw GradleException("Firebase service account file not found at: $firebaseServiceAccountPath. Set FIREBASE_SERVICE_ACCOUNT_PATH in local.properties.")
         }
 
-        // Email allowlist: comma-separated emails from local.properties (mirrors the
-        // production GitHub secret). Empty/unset => allowlist disabled (all accounts allowed).
         val backendProcess = startProcess(
             name = "backend",
             directory = rootProject.projectDir,
@@ -275,7 +273,6 @@ tasks.register("launchAll") {
                 "DB_USER" to localProp("DB_USER"),
                 "DB_PASSWORD" to localProp("DB_PASSWORD"),
                 "FIREBASE_SERVICE_ACCOUNT_PATH" to firebaseServiceAccountPath,
-                "BM_AUTH_EMAIL_ALLOWLIST" to localProp("BM_AUTH_EMAIL_ALLOWLIST"),
             ),
         )
 

@@ -1,0 +1,12 @@
+-- V8: Seed granted_users with the production allowlist previously provided via
+-- the BM_AUTH_EMAIL_ALLOWLIST environment variable / GitHub secret.
+--
+-- IMPORTANT: uncomment and fill in the INSERT below with the current production
+-- allowlist BEFORE deploying the DB-backed access control, otherwise every
+-- account will be locked out (the policy fails closed when the table is empty).
+-- Emails are stored normalized: trimmed and lowercase.
+
+-- INSERT INTO granted_users (email) VALUES
+--     ('user1@example.com'),
+--     ('user2@example.com')
+-- ON CONFLICT (email) DO NOTHING;
