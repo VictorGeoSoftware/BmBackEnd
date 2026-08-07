@@ -106,12 +106,8 @@ jobs:
         if: github.ref == 'refs/heads/qa'
         run: |
           sleep 15
-          # QA is not exposed externally yet (port 9081 is not opened in ufw),
-          # so this check would time out from the runner even when the QA
-          # backend is healthy. Non-blocking until api.qa.* goes live.
-          echo "Checking QA backend (non-blocking — not exposed externally)..."
-          curl -f -m 10 http://217.154.181.175:9081/health \
-            || echo "::warning::QA backend not reachable externally (expected — port 9081 closed in ufw)"
+          echo "Checking QA backend..."
+          curl -f https://api.qa.poweredbyadvisors.com/health || exit 1
           echo "✅ QA deployment successful!"
 
       - name: Notify on failure (PROD)
