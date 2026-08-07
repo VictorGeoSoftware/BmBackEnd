@@ -1,15 +1,20 @@
-name: Deploy to Production
+name: Deploy
 
 on:
   push:
     branches:
-      - main
+      - main   # -> PROD (bm/backend:prod, backend-prod container)
+      - qa     # -> QA   (bm/backend:qa,   backend-qa container)
   workflow_dispatch:  # Allow manual trigger
 
 # The backend now runs as Docker containers (bm-backend-prod / bm-backend-qa)
 # orchestrated by the BmInfra compose project on the VPS. This workflow pulls
 # the latest code on the server and rebuilds the image there — no JAR is built
 # on the runner, and no systemd units are touched anymore.
+#
+# PROD and QA are fully decoupled: each branch deploys only its own image tag
+# and container. PROD code lives in /opt/bm/BmBackEnd (main), QA code in
+# /opt/bm/BmBackEnd-qa (qa branch).
 
 jobs:
   deploy:
@@ -24,7 +29,8 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H 217.154.181.175 >> ~/.ssh/known_hosts
 
-      - name: Deploy on server
+      - name: Deploy PROD on server
+        if: github.ref == 'refs/heads/main'
         env:
           BM_AUTH_EMAIL_ALLOWLIST: ${{ secrets.BM_AUTH_EMAIL_ALLOWLIST }}
         run: |
@@ -41,7 +47,7 @@ jobs:
           ALLOWLIST=$(printf '%s' "${BM_AUTH_EMAIL_ALLOWLIST}" | tr '\n' ',' | tr -s ',' | sed 's/^,//; s/,$//')
 
           ssh root@217.154.181.175 "set -e
-            echo '📦 Pulling latest BmBackEnd...'
+            echo '📦 Pulling latest BmBackEnd (main)...'
             cd /opt/bm/BmBackEnd
             git fetch origin
             git reset --hard origin/main
@@ -56,31 +62,66 @@ jobs:
               echo 'BM_AUTH_EMAIL_ALLOWLIST=${ALLOWLIST}' >> .env
             fi
 
-            echo '🐳 Rebuilding backend image...'
+            echo '🐳 Rebuilding PROD backend image (bm/backend:prod)...'
             docker compose build backend-prod
 
-            echo '🔄 Recreating backend containers (PROD + QA share the image)...'
-            docker compose up -d backend-prod backend-qa
+            echo '🔄 Recreating PROD backend container...'
+            docker compose up -d backend-prod
           "
 
-      - name: Health check
+      - name: Deploy QA on server
+        if: github.ref == 'refs/heads/qa'
+        run: |
+          ssh root@217.154.181.175 "set -e
+            # QA gets its own checkout so the qa branch never touches the
+            # main checkout used by PROD builds.
+            if [ ! -d /opt/bm/BmBackEnd-qa ]; then
+              echo '📥 Cloning BmBackEnd (qa branch) into /opt/bm/BmBackEnd-qa...'
+              git clone -b qa https://github.com/VictorGeoSoftware/BmBackEnd.git /opt/bm/BmBackEnd-qa
+            fi
+
+            echo '📦 Pulling latest BmBackEnd (qa)...'
+            cd /opt/bm/BmBackEnd-qa
+            git fetch origin
+            git reset --hard origin/qa
+
+            cd /opt/bm/BmInfra
+
+            echo '🐳 Rebuilding QA backend image (bm/backend:qa)...'
+            docker compose build backend-qa
+
+            echo '🔄 Recreating QA backend container...'
+            docker compose up -d backend-qa
+          "
+
+      - name: Health check (PROD)
+        if: github.ref == 'refs/heads/main'
         run: |
           sleep 15
-
           echo "Checking PROD backend..."
           curl -f http://217.154.181.175:8081/health || exit 1
+          echo "✅ PROD deployment successful!"
 
+      - name: Health check (QA)
+        if: github.ref == 'refs/heads/qa'
+        run: |
+          sleep 15
           # QA is not exposed externally yet (port 9081 is not opened in ufw),
           # so this check would time out from the runner even when the QA
-          # backend is healthy. Non-blocking until QA goes external.
+          # backend is healthy. Non-blocking until api.qa.* goes live.
           echo "Checking QA backend (non-blocking — not exposed externally)..."
           curl -f -m 10 http://217.154.181.175:9081/health \
             || echo "::warning::QA backend not reachable externally (expected — port 9081 closed in ufw)"
+          echo "✅ QA deployment successful!"
 
-          echo "✅ Deployment successful!"
-
-      - name: Notify on failure
-        if: failure()
+      - name: Notify on failure (PROD)
+        if: failure() && github.ref == 'refs/heads/main'
         run: |
-          echo "❌ Deployment failed! Recent backend-prod logs:"
+          echo "❌ PROD deployment failed! Recent backend-prod logs:"
           ssh root@217.154.181.175 "cd /opt/bm/BmInfra && docker compose logs --tail=100 backend-prod" || true
+
+      - name: Notify on failure (QA)
+        if: failure() && github.ref == 'refs/heads/qa'
+        run: |
+          echo "❌ QA deployment failed! Recent backend-qa logs:"
+          ssh root@217.154.181.175 "cd /opt/bm/BmInfra && docker compose logs --tail=100 backend-qa" || true
