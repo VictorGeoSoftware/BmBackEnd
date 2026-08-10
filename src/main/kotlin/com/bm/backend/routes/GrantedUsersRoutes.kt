@@ -4,10 +4,9 @@ import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.GrantedUserAddRequest
 import com.bm.backend.models.GrantedUserListResponse
 import com.bm.backend.models.GrantedUserMutationResponse
-import com.bm.backend.services.AccessControlService
+import com.bm.backend.services.AdminAccessControlService
 import com.bm.backend.services.GrantedUsersService
 import io.ktor.http.HttpStatusCode
-import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.application
 import io.ktor.server.application.call
 import io.ktor.server.application.log
@@ -23,16 +22,16 @@ import io.ktor.server.routing.post
  * "Usuarios" dashboard.
  *
  * Authorization: the caller must present a valid Firebase ID token whose
- * account is itself granted (its email exists in `granted_users`). Any granted
- * user can manage grants; ungranted callers are rejected with 403, mirroring
- * the login policy.
+ * account is on the admin allowlist (`admin_users`). Only admins can manage
+ * grants; non-admin callers (including regular granted app users) are
+ * rejected with 403.
  */
 fun Route.grantedUsersRoutes(
     grantedUsersService: GrantedUsersService,
-    accessControlService: AccessControlService
+    adminAccessControlService: AdminAccessControlService
 ) {
     get("/admin/granted-users") {
-        if (!call.requireGrantedFirebaseUser(accessControlService, "list granted users")) return@get
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "list granted users") == null) return@get
 
         try {
             call.respond(
@@ -52,7 +51,7 @@ fun Route.grantedUsersRoutes(
     }
 
     post("/admin/granted-users") {
-        if (!call.requireGrantedFirebaseUser(accessControlService, "add granted user")) return@post
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "add granted user") == null) return@post
 
         try {
             val request = call.receive<GrantedUserAddRequest>()
@@ -88,7 +87,7 @@ fun Route.grantedUsersRoutes(
     }
 
     delete("/admin/granted-users/{email}") {
-        if (!call.requireGrantedFirebaseUser(accessControlService, "delete granted user")) return@delete
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "delete granted user") == null) return@delete
 
         try {
             when (val result = grantedUsersService.deleteGrant(call.parameters["email"])) {
@@ -121,30 +120,4 @@ fun Route.grantedUsersRoutes(
             )
         }
     }
-}
-
-/**
- * Requires a Firebase-authenticated caller whose account is granted access.
- * Responds and returns false when the request is not authorized.
- */
-private suspend fun ApplicationCall.requireGrantedFirebaseUser(
-    accessControlService: AccessControlService,
-    action: String
-): Boolean {
-    val authenticatedUser = requireAuthenticatedFirebaseUser() ?: return false
-
-    if (!accessControlService.isEmailAllowed(authenticatedUser.email)) {
-        application.log.warn(
-            "AUDIT: Non-granted account attempted to {} uid={} email={}",
-            action,
-            authenticatedUser.uid,
-            authenticatedUser.email
-        )
-        respond(
-            HttpStatusCode.Forbidden,
-            ErrorResponse(message = "Esta cuenta no está autorizada para gestionar usuarios.")
-        )
-        return false
-    }
-    return true
 }

@@ -1,11 +1,13 @@
 package com.bm.backend
 
 import com.bm.backend.database.DatabaseFactory
+import com.bm.backend.repositories.AdminUsersRepository
 import com.bm.backend.repositories.GrantedUsersRepository
 import com.bm.backend.repositories.PostgresUserConsumptionRepository
 import com.bm.backend.repositories.UserDataRepository
 import com.bm.backend.repositories.UserActivityRepository
 import com.bm.backend.routes.priceTableRoutes
+import com.bm.backend.routes.adminAccessRoutes
 import com.bm.backend.routes.adminRoutes
 import com.bm.backend.routes.authRoutes
 import com.bm.backend.routes.grantedUsersRoutes
@@ -15,6 +17,7 @@ import com.bm.backend.routes.userDataRoutes
 import com.bm.backend.security.DataMigration
 import com.bm.backend.security.EncryptionUtils
 import com.bm.backend.services.AccessControlService
+import com.bm.backend.services.AdminAccessControlService
 import com.bm.backend.services.AdminAuthService
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.FirebaseForceLogoutNotifier
@@ -95,6 +98,8 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
     val userActivityService = UserActivityService(userActivityRepository)
     val grantedUsersRepository = GrantedUsersRepository()
     val accessControlService = AccessControlService(grantedUsersRepository)
+    val adminUsersRepository = AdminUsersRepository()
+    val adminAccessControlService = AdminAccessControlService(adminUsersRepository)
     val adminAuthService = AdminAuthService.fromEnv()
     val grantedUsersService = GrantedUsersService(
         grantedUsersRepository = grantedUsersRepository,
@@ -144,7 +149,8 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
             userActivityRoutes(userActivityService)
             authRoutes(userActivityService)
             adminRoutes(userDataService, adminAuthService)
-            grantedUsersRoutes(grantedUsersService, accessControlService)
+            adminAccessRoutes(adminAccessControlService)
+            grantedUsersRoutes(grantedUsersService, adminAccessControlService)
         }
     }
 }
