@@ -103,6 +103,12 @@ object GrantedUsersDb : IntIdTable("granted_users") {
     val createdAt = timestamp("created_at")
 }
 
+// Table for accounts allowed into the BmWeb dashboard and /admin/* endpoints
+object AdminUsersDb : IntIdTable("admin_users") {
+    val email = varchar("email", 255).uniqueIndex()
+    val createdAt = timestamp("created_at")
+}
+
 // Table for persisted user consumption data (JSONB)
 object UserConsumptionDb : IntIdTable("user_consumption") {
     val uid = varchar("uid", 128).uniqueIndex()

@@ -2,11 +2,14 @@ package com.bm.backend.routes
 
 import com.bm.backend.firebase.FirebaseAdminFactory
 import com.bm.backend.models.ErrorResponse
+import com.bm.backend.services.AdminAccessControlService
 import com.google.firebase.auth.FirebaseAuth
 import com.google.firebase.auth.FirebaseAuthException
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.application
+import io.ktor.server.application.log
 import io.ktor.server.response.respond
 import java.time.Instant
 
@@ -60,4 +63,31 @@ suspend fun ApplicationCall.requireAuthenticatedFirebaseUser(): AuthenticatedFir
         )
         null
     }
+}
+
+/**
+ * Requires a Firebase-authenticated caller whose account is on the admin
+ * allowlist (`admin_users`). Responds and returns null when the request is
+ * not authorized.
+ */
+suspend fun ApplicationCall.requireAdminFirebaseUser(
+    adminAccessControlService: AdminAccessControlService,
+    action: String
+): AuthenticatedFirebaseUser? {
+    val authenticatedUser = requireAuthenticatedFirebaseUser() ?: return null
+
+    if (!adminAccessControlService.isAdmin(authenticatedUser.email)) {
+        application.log.warn(
+            "AUDIT: Non-admin account attempted to {} uid={} email={}",
+            action,
+            authenticatedUser.uid,
+            authenticatedUser.email
+        )
+        respond(
+            HttpStatusCode.Forbidden,
+            ErrorResponse(message = "Esta cuenta no está autorizada para acceder al panel de administración.")
+        )
+        return null
+    }
+    return authenticatedUser
 }
