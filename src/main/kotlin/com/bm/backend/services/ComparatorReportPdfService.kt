@@ -26,9 +26,19 @@ class ComparatorReportPdfService {
         val writer = PdfWriter.getInstance(document, outputStream)
 
         document.open()
-        addTitle(document, writer, request)
-        addSupplyData(document, request)
-        addComparisonTable(document, request)
+
+        val proposalPages = request.proposals
+            .chunked(MAX_PROPOSALS_PER_PAGE)
+            .ifEmpty { listOf(emptyList()) }
+        proposalPages.forEachIndexed { pageIndex, proposalsForPage ->
+            if (pageIndex > 0) {
+                document.newPage()
+            }
+            addTitle(document, writer, request)
+            addSupplyData(document, request)
+            addComparisonTable(document, request, proposalsForPage)
+        }
+
         document.close()
 
         return outputStream.toByteArray()
@@ -113,10 +123,14 @@ class ComparatorReportPdfService {
         document.add(infoTable)
     }
 
-    private fun addComparisonTable(document: Document, request: ComparatorReportPdfRequest) {
+    private fun addComparisonTable(
+        document: Document,
+        request: ComparatorReportPdfRequest,
+        proposals: List<ComparatorReportProposal>
+    ) {
         val columns = mutableListOf<ComparatorReportColumn>()
         columns.add(request.customerConditions)
-        columns.addAll(request.proposals.map { proposal ->
+        columns.addAll(proposals.map { proposal ->
             ComparatorReportColumn(
                 title = proposal.title,
                 powerTermItems = proposal.powerTermItems,
@@ -131,17 +145,16 @@ class ComparatorReportPdfService {
         })
 
         val table = PdfPTable(2 + columns.size).apply {
-            widthPercentage = 100f
             keepTogether = true
             isSplitLate = false
+            horizontalAlignment = Element.ALIGN_LEFT
             setSpacingAfter(12f)
-            val widths = MutableList(2 + columns.size) { 1f }
-            widths[0] = 1.7f
-            widths[1] = 1.15f
-            if (columns.isNotEmpty()) {
-                widths[2] = 1.25f
-            }
-            setWidths(widths.toFloatArray())
+            val widths = FloatArray(2 + columns.size) { COLUMN_WIDTH_PROPOSAL }
+            widths[0] = COLUMN_WIDTH_SIDE
+            widths[1] = COLUMN_WIDTH_CONSUMPTION
+            widths[2] = COLUMN_WIDTH_CUSTOMER
+            setTotalWidth(widths)
+            setLockedWidth(true)
         }
 
         table.addCell(buildHeaderCell(request.tariffName, COLOR_HIGHLIGHT))
@@ -207,7 +220,7 @@ class ComparatorReportPdfService {
             emphasize = true
         )
 
-        addSavingsRow(table, request.proposals)
+        addSavingsRow(table, proposals)
 
         document.add(table)
     }
@@ -385,6 +398,16 @@ class ComparatorReportPdfService {
     }
 
     private companion object {
+        const val MAX_PROPOSALS_PER_PAGE = 7
+
+        // Absolute, locked column widths (points) so the user-data columns keep the
+        // exact same width regardless of how many proposal columns are rendered.
+        // Ratios preserve the previous relative layout (1.7 / 1.15 / 1.25 / 1.0).
+        const val COLUMN_WIDTH_PROPOSAL = 72f
+        const val COLUMN_WIDTH_SIDE = 122.4f
+        const val COLUMN_WIDTH_CONSUMPTION = 82.8f
+        const val COLUMN_WIDTH_CUSTOMER = 90f
+
         const val TITLE_BAR_HEIGHT = 29f
         const val TITLE_ICON_SIZE = 52f
         const val TITLE_LABEL_PADDING = 5f
