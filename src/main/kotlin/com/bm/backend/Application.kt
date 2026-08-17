@@ -2,6 +2,7 @@ package com.bm.backend
 
 import com.bm.backend.database.DatabaseFactory
 import com.bm.backend.repositories.AdminUsersRepository
+import com.bm.backend.repositories.CollectedPricesRepository
 import com.bm.backend.repositories.GrantedUsersRepository
 import com.bm.backend.repositories.PostgresUserConsumptionRepository
 import com.bm.backend.repositories.UserDataRepository
@@ -10,6 +11,7 @@ import com.bm.backend.routes.priceTableRoutes
 import com.bm.backend.routes.adminAccessRoutes
 import com.bm.backend.routes.adminRoutes
 import com.bm.backend.routes.authRoutes
+import com.bm.backend.routes.collectedPricesRoutes
 import com.bm.backend.routes.grantedUsersRoutes
 import com.bm.backend.routes.userActivityRoutes
 import com.bm.backend.routes.userConsumptionRoutes
@@ -19,6 +21,7 @@ import com.bm.backend.security.EncryptionUtils
 import com.bm.backend.services.AccessControlService
 import com.bm.backend.services.AdminAccessControlService
 import com.bm.backend.services.AdminAuthService
+import com.bm.backend.services.CollectedPricesService
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.FirebaseForceLogoutNotifier
 import com.bm.backend.services.FirebasePriceUpdatesNotifier
@@ -109,6 +112,8 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
         userAccountRevoker = FirebaseUserAccountRevoker(),
         forceLogoutNotifier = FirebaseForceLogoutNotifier()
     )
+    val collectedPricesRepository = CollectedPricesRepository()
+    val collectedPricesService = CollectedPricesService(collectedPricesRepository)
     
     routing {
         get("/") {
@@ -151,6 +156,7 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
             adminRoutes(userDataService, adminAuthService)
             adminAccessRoutes(adminAccessControlService)
             grantedUsersRoutes(grantedUsersService, adminAccessControlService)
+            collectedPricesRoutes(collectedPricesService, adminAccessControlService)
         }
     }
 }
