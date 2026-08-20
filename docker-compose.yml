@@ -32,8 +32,18 @@ services:
       - "8081:8081"
     volumes:
       - ./logs:/app/logs
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       - KTOR_ENV=production
+      # Local dev: human-readable logs. QA/PROD use LOG_FORMAT=json (BmInfra).
+      - BM_ENV=local
+      - SERVICE_NAME=bm-backend
+      - LOG_FORMAT=text
+      - LOG_LEVEL=INFO
       - DB_VENDOR=postgres
       - DB_URL=jdbc:postgresql://postgres:5432/bm_backend
       - DB_USER=bm_app

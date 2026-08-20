@@ -1,6 +1,11 @@
 package com.bm.backend
 
 import com.bm.backend.database.DatabaseFactory
+import com.bm.backend.models.ErrorResponse
+import com.bm.backend.observability.DeploymentInfo
+import com.bm.backend.plugins.REQUEST_ID_MDC_KEY
+import com.bm.backend.plugins.RequestIdPlugin
+import com.bm.backend.plugins.requestId
 import com.bm.backend.repositories.AdminUsersRepository
 import com.bm.backend.repositories.CollectedPricesRepository
 import com.bm.backend.repositories.GrantedUsersRepository
@@ -32,17 +37,21 @@ import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.UserConsumptionService
 import com.bm.backend.services.UserDataService
 import com.bm.backend.services.UserActivityService
+import com.bm.backend.services.ValidationException
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.metrics.micrometer.*
+import io.ktor.server.plugins.callloging.*
 import io.ktor.server.plugins.contentnegotiation.*
 import io.ktor.server.plugins.ratelimit.*
 import io.ktor.server.plugins.statuspages.*
+import io.ktor.server.request.*
 import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import io.micrometer.prometheusmetrics.PrometheusConfig
 import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
 import kotlinx.serialization.json.Json
+import org.slf4j.event.Level
 import kotlin.time.Duration.Companion.seconds
 
 fun main(args: Array<String>) {
@@ -51,6 +60,12 @@ fun main(args: Array<String>) {
 
 fun Application.configurePlugins(): PrometheusMeterRegistry {
     val prometheusMeterRegistry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
+    // Tag every metric with the environment so one Prometheus/Grafana can serve
+    // both backend-prod and backend-qa without mixing their series.
+    prometheusMeterRegistry.config().commonTags(
+        "env", DeploymentInfo.environment,
+        "service", DeploymentInfo.serviceName,
+    )
 
     // Install plugins
     install(ContentNegotiation) {
@@ -60,15 +75,55 @@ fun Application.configurePlugins(): PrometheusMeterRegistry {
         })
     }
 
+    // Must be installed before CallLogging so the id exists when the MDC is built.
+    install(RequestIdPlugin)
+
+    install(CallLogging) {
+        level = Level.INFO
+        // Exposed to every log statement made while handling the call.
+        mdc(REQUEST_ID_MDC_KEY) { it.requestId }
+        mdc("method") { it.request.httpMethod.value }
+        mdc("path") { it.request.path() }
+        // Health and metrics are polled continuously by Docker and Prometheus;
+        // logging them would drown the real traffic in Loki.
+        filter { call: ApplicationCall ->
+            val path = call.request.path()
+            !path.startsWith("/health") && path != "/metrics"
+        }
+    }
+
     install(MicrometerMetrics) {
         registry = prometheusMeterRegistry
     }
 
     install(StatusPages) {
+        // Validation failures are expected, caller-fixable and safe to echo back.
+        exception<ValidationException> { call, cause ->
+            call.application.log.warn("Validation failed: {}", cause.message)
+            call.respond(
+                io.ktor.http.HttpStatusCode.BadRequest,
+                ErrorResponse(
+                    message = cause.message ?: "Invalid request",
+                    requestId = call.requestId,
+                )
+            )
+        }
+        // Last-resort handler. Anything reaching here is a bug: log it with the
+        // stack trace (previously it was silently swallowed) and return a generic
+        // message, since `cause.message` can leak SQL fragments and file paths.
         exception<Throwable> { call, cause ->
+            call.application.log.error(
+                "Unhandled exception while processing {} {}",
+                call.request.httpMethod.value,
+                call.request.path(),
+                cause,
+            )
             call.respond(
                 io.ktor.http.HttpStatusCode.InternalServerError,
-                mapOf("error" to (cause.message ?: "Internal server error"))
+                ErrorResponse(
+                    message = "Internal server error",
+                    requestId = call.requestId,
+                )
             )
         }
     }
@@ -163,6 +218,13 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
 
 
 fun Application.module() {
+    log.info(
+        "Starting {} (env={}, logFormat={}, logLevel={})",
+        DeploymentInfo.serviceName,
+        DeploymentInfo.environment,
+        System.getenv("LOG_FORMAT") ?: "text",
+        System.getenv("LOG_LEVEL") ?: "INFO",
+    )
     initEncryption()
     DatabaseFactory.init()
     DataMigration.encryptExistingUserData()

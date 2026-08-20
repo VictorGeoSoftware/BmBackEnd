@@ -47,6 +47,9 @@ dependencies {
     
     // Logging - Updated to latest stable
     implementation("ch.qos.logback:logback-classic:1.5.7")
+    // Structured JSON logging (enabled with LOG_FORMAT=json) so Loki/Grafana can
+    // query log fields instead of regex-matching plain text.
+    implementation("net.logstash.logback:logstash-logback-encoder:8.0")
     
     // Validation
     implementation("io.ktor:ktor-server-request-validation:2.3.12")

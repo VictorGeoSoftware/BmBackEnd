@@ -1,6 +1,8 @@
 package com.bm.backend.services
 
 import com.bm.backend.models.*
+import com.bm.backend.plugins.REQUEST_ID_HEADER
+import com.bm.backend.plugins.REQUEST_ID_MDC_KEY
 import io.ktor.client.*
 import io.ktor.client.call.*
 import io.ktor.client.engine.cio.*
@@ -11,6 +13,7 @@ import io.ktor.client.request.forms.*
 import io.ktor.http.*
 import io.ktor.serialization.kotlinx.json.*
 import kotlinx.serialization.json.*
+import org.slf4j.MDC
 import java.io.File
 
 class ExternalApiService {
@@ -22,6 +25,12 @@ class ExternalApiService {
     }
     
     private val client = HttpClient(CIO) {
+        // Forward the correlation id of the inbound call to Docling / n8n so a
+        // single bill upload can be traced across all services in Loki.
+        install(DefaultRequest) {
+            MDC.get(REQUEST_ID_MDC_KEY)?.let { header(REQUEST_ID_HEADER, it) }
+        }
+
         // Configure reasonable timeouts for external API calls
         install(HttpTimeout) {
             requestTimeoutMillis = 600_000 // 2 minutes (sufficient for Docling + N8N)
