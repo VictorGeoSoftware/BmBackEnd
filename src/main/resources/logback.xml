@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  BM Backend logging configuration.
+
+  Controlled entirely by environment variables so that the same artifact runs in
+  local / QA / PROD without code changes:
+
+    LOG_FORMAT   text (default) | json      -> json in QA + PROD, text locally
+    LOG_LEVEL    INFO (default) | DEBUG ...  -> root log level
+    BM_ENV       local (default) | qa | prod -> emitted as a field on every line
+    SERVICE_NAME bm-backend (default)        -> emitted as a field on every line
+
+  Console appender only, on purpose: Docker captures stdout and Promtail ships it
+  to Loki. Writing log files inside the container would grow unbounded and
+  duplicate what Docker already stores.
+
+  The root <appender-ref ref="${LOG_FORMAT}"/> relies on Logback substituting the
+  variable into the ref attribute, so the appender names below MUST stay exactly
+  "text" and "json".
+-->
+<configuration>
+
+    <property name="LOG_FORMAT" value="${LOG_FORMAT:-text}"/>
+    <property name="LOG_LEVEL" value="${LOG_LEVEL:-INFO}"/>
+    <property name="BM_ENV" value="${BM_ENV:-local}"/>
+    <property name="SERVICE_NAME" value="${SERVICE_NAME:-bm-backend}"/>
+
+    <!-- Human-readable, for local development. -->
+    <appender name="text" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder>
+            <pattern>%d{HH:mm:ss.SSS} %-5level [%thread] %logger{36} [req=%X{requestId:-none}] - %msg%n</pattern>
+        </encoder>
+    </appender>
+
+    <!-- One JSON object per line, for Loki / Grafana. -->
+    <appender name="json" class="ch.qos.logback.core.ConsoleAppender">
+        <encoder class="net.logstash.logback.encoder.LogstashEncoder">
+            <!-- MDC (requestId, method, path, status) is included by default. -->
+            <customFields>{"service":"${SERVICE_NAME}","env":"${BM_ENV}"}</customFields>
+            <fieldNames>
+                <timestamp>timestamp</timestamp>
+                <version>[ignore]</version>
+                <levelValue>[ignore]</levelValue>
+                <level>level</level>
+                <logger>logger</logger>
+                <thread>thread</thread>
+                <message>message</message>
+                <stackTrace>stack_trace</stackTrace>
+            </fieldNames>
+        </encoder>
+    </appender>
+
+    <!--
+      Noise control. These libraries are extremely chatty at DEBUG and would
+      dominate Loki storage and hide the lines that matter.
+    -->
+    <logger name="io.netty" level="WARN"/>
+    <logger name="io.ktor.server.engine" level="INFO"/>
+    <logger name="org.jetbrains.exposed" level="INFO"/>
+    <!-- Exposed logs every statement under this logger name when at DEBUG. -->
+    <logger name="Exposed" level="INFO"/>
+    <logger name="com.zaxxer.hikari" level="INFO"/>
+    <logger name="org.postgresql" level="WARN"/>
+    <logger name="org.flywaydb" level="INFO"/>
+    <logger name="com.google.api" level="WARN"/>
+    <logger name="com.google.auth" level="WARN"/>
+
+    <root level="${LOG_LEVEL}">
+        <appender-ref ref="${LOG_FORMAT}"/>
+    </root>
+
+</configuration>
