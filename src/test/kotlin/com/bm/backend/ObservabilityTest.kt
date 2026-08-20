@@ -168,4 +168,39 @@ class ObservabilityTest {
         assertEquals("iva must be greater than or equal to 0", error.message)
         assertFalse(error.success)
     }
+
+    // ---------- log message hygiene ----------
+
+    /**
+     * Ktor's default CallLogging formatter colourises output with ANSI escape
+     * codes. Under LOG_FORMAT=json those escapes end up inside the JSON
+     * "message" field, rendering as garbage in Grafana and breaking exact-match
+     * Loki queries. Access log lines must stay plain text.
+     */
+    @Test
+    fun `access log lines contain no ANSI escape codes`() = testApplication {
+        val logger = org.slf4j.LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME)
+            as ch.qos.logback.classic.Logger
+        val appender = ch.qos.logback.core.read.ListAppender<ch.qos.logback.classic.spi.ILoggingEvent>()
+        appender.start()
+        logger.addAppender(appender)
+        try {
+            observabilityTestApp {
+                get("/ping") { call.respondText("pong") }
+            }
+
+            client.get("/ping")
+
+            val accessLines = appender.list
+                .map { it.formattedMessage }
+                .filter { it.contains("/ping") }
+            assertTrue(accessLines.isNotEmpty(), "expected an access log line for /ping")
+            accessLines.forEach { line ->
+                assertFalse(line.contains('\u001B'), "ANSI escape leaked into log line: $line")
+            }
+        } finally {
+            logger.detachAppender(appender)
+            appender.stop()
+        }
+    }
 }

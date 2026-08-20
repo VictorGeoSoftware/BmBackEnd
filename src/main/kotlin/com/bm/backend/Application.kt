@@ -84,6 +84,14 @@ fun Application.configurePlugins(): PrometheusMeterRegistry {
         mdc(REQUEST_ID_MDC_KEY) { it.requestId }
         mdc("method") { it.request.httpMethod.value }
         mdc("path") { it.request.path() }
+        // Ktor's default formatter colourises the status and method with ANSI
+        // escape codes. Harmless on a dev terminal, but with LOG_FORMAT=json the
+        // raw escapes are embedded in the JSON "message" field, which renders as
+        // garbage in Grafana and breaks exact-match Loki queries. Format plainly.
+        format { call ->
+            val status = call.response.status()?.value?.toString() ?: "unhandled"
+            "${call.request.httpMethod.value} ${call.request.path()} -> $status"
+        }
         // Health and metrics are polled continuously by Docker and Prometheus;
         // logging them would drown the real traffic in Loki.
         filter { call: ApplicationCall ->
