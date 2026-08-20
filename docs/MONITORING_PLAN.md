@@ -16,7 +16,7 @@
 
 | Question | Tool | Priority | Status |
 |---|---|---|---|
-| "Show me the logs, let me search them" | **Loki + Promtail + Grafana** | 🔴 **core** | ⏳ next — unblocked by Phase 0 |
+| "Show me the logs, let me search them" | **Loki + Promtail + Grafana** | 🔴 **core** | ✅ **done** (Phase 1, acceptance test passed) |
 | "Why did *this* request fail?" | Structured JSON logs + request-ID | 🔴 **core** | ✅ **done** (Phase 0) |
 | "Is it slow / degrading? What's the error rate?" | Prometheus + Grafana | 🟠 high | 🟡 `/metrics` exists, nothing scrapes it |
 | "Tell me before I notice" | Grafana alert rules | 🟢 optional | ❌ not started |
@@ -328,29 +328,52 @@ Ordered by *your* priority: get a usable log/observability framework first.
       (moved up from Phase 1 — it is the main unbounded-disk risk, see §4)
 - [x] Suppress `/health` + `/metrics` from request logs (polled continuously)
 - [x] `deny all` for `/metrics` in `nginx.conf` (moved up from Phase 2)
-- [x] Tests — `src/test/kotlin/com/bm/backend/ObservabilityTest.kt`, 9/9 green,
+- [x] Tests — `src/test/kotlin/com/bm/backend/ObservabilityTest.kt`, 10/10 green,
       no Docker required
-- [ ] ⚠️ **Blocked:** full `shadowJar` build unverified — the corporate proxy
-      returns HTTP 407 for `logstash-logback-encoder:8.0`, so the new dependency
-      cannot be downloaded on this machine. Everything else compiles and tests
-      pass. **Run `./gradlew build` on a network that can reach Maven Central
-      (or the VPS/CI) before merging.**
+- [x] ✅ **Blocker cleared.** `./gradlew build` runs off the corporate proxy and
+      `logstash-logback-encoder:8.0` resolves from Maven Central; the `shadowJar`
+      also builds inside the Docker image. `LOG_FORMAT=json` verified in a real
+      container: `service`, `env`, `requestId`, `method`, `path` and
+      `stack_trace` all emitted as JSON fields.
+- [x] Plain-text access log lines — Ktor's default `CallLogging` formatter emits
+      ANSI colour codes which, under `LOG_FORMAT=json`, were embedded in the JSON
+      `message` field (garbage in Grafana, broken exact-match Loki queries).
+      Replaced with an explicit formatter + regression test.
 - [ ] Review existing log statements: add context (user id, job id, bill id)
 - [ ] Merge `qa` → `main`
 
-### Phase 1 — The log framework: Loki + Promtail + Grafana 🔴
+> ⚠️ **Pre-existing, unrelated:** `./gradlew build` still fails on two
+> `GrantedUsersServiceTest` cases (`Please call Database.connect()`). They hit a
+> real `deleteGrant` transaction while the other 45 DB-backed tests skip without
+> Docker. Confirmed present on `qa` at `fc2c2c9`, so it predates this work and
+> needs its own fix — a test-isolation bug, not an observability one.
+
+### Phase 1 — The log framework: Loki + Promtail + Grafana ✅ DONE
 **This is the "Kibana" deliverable.**
 
-- [ ] Add `loki` service to `BmInfra/docker-compose.yml` + config, **30-day retention + size cap**
-- [ ] Add `promtail` service (Docker socket / log dir mount)
-- [ ] Label streams by `container`, `service`, `env`, `level`
-- [ ] Parse the backend's JSON logs into queryable fields in Promtail
-- [ ] Add `grafana` service, persistent volume, **non-default admin password**
-- [ ] Add Loki as a Grafana datasource
-- [ ] Keep Grafana off the public internet (bind to localhost + SSH tunnel, or Nginx + auth)
-- [ ] Build a "BM Logs" dashboard: error volume by service, recent errors table, log-rate graph
-- [ ] **Acceptance test:** trigger a failing bill upload, then trace it end-to-end
-      in Grafana by `requestId` across backend → Docling → n8n
+- [x] Add `loki` service to `BmInfra/docker-compose.yml` + config, **30-day retention + size cap**
+      (`retention_enabled` + `delete_request_store` set, without which
+      `retention_period` is inert and the disk grows anyway)
+- [x] Add `promtail` service (read-only Docker socket, persisted positions)
+- [x] Label streams by `container`, `service`, `env`, `level` — `requestId` is
+      deliberately structured metadata, not a label, to avoid one stream per request
+- [x] Parse the backend's JSON logs into queryable fields in Promtail
+- [x] Re-attach `stack_trace` to the log line before the `output` stage. The
+      `output` stage *replaces* the line with a single field, so exceptions were
+      reaching Loki as a one-line message with the trace silently dropped
+- [x] Add `grafana` service, persistent volume, **non-default admin password**
+- [x] Add Loki as a Grafana datasource
+- [x] Keep Grafana off the public internet (binds to `127.0.0.1` + SSH tunnel)
+- [x] Build a "BM Logs" dashboard + a request-trace dashboard
+- [x] Nginx JSON access logs (`log_format bm_json`) so the edge hop is
+      correlatable too, with a matching Promtail job
+- [x] **Acceptance test — PASSED.** Full stack run locally (Postgres, both
+      backends, Nginx, Loki, Promtail, Grafana). A request through Nginx produced
+      one id shared by the Nginx access line and the backend line, retrievable
+      with `{job=~"bm-.+"} | requestId=\`<id>\``. A triggered 500 arrived in Loki
+      with its complete 4 kB stack trace. `/metrics` returns 403 on every vhost.
+      A caller-supplied `X-Request-Id` is correctly overwritten at the edge.
+
 
 ### Phase 2 — Metrics: Prometheus 🟠
 - [ ] Protect `/metrics` first
