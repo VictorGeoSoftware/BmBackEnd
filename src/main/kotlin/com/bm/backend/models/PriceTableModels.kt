@@ -98,7 +98,14 @@ data class BatchProcessResponse(
 @Serializable
 data class ErrorResponse(
     val success: Boolean = false,
-    val message: String
+    val message: String,
+    /**
+     * Correlation id of the failing call. Optional (defaults to null) so all
+     * existing call sites keep working; populated by the global StatusPages
+     * handler so a user reporting an error can quote it and the matching
+     * server-side log lines can be found in Grafana/Loki.
+     */
+    val requestId: String? = null
 )
 
 @Serializable
