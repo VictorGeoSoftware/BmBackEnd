@@ -143,28 +143,16 @@ do with the failing deploy.
 **Fix:** prefer defaults (`${VAR:-sensible}`) over `:?` for anything not
 security-critical; document required vars in `env.example` as they are added.
 
-### 9. Any push to `main` redeploys PROD, including docs-only changes
+### 9. ~~Any push to `main` redeploys PROD, including docs-only changes~~ ✅ FIXED
 
-**Evidence:** `.github/workflows/deploy.yml` triggers on `push` to `main`/`qa`
-with **no `paths:` or `paths-ignore:` filter**.
+**Was:** `.github/workflows/deploy.yml` triggered on `push` to `main`/`qa` with
+no `paths:` or `paths-ignore:` filter, so editing a README rebuilt the image and
+recreated `bm-backend-prod` — a production restart for a change that cannot
+affect runtime, plus deploy history noisy enough to hide real deploys.
 
-**Impact:** editing a README or a doc rebuilds the image and recreates
-`bm-backend-prod`, causing a brief production restart for a change that cannot
-affect runtime. It also burns CI minutes and makes deploy history noisy, so a
-real deploy is harder to spot among trivial ones.
-
-**Fix:** add a filter, e.g.
-
-```yaml
-on:
-  push:
-    branches: [main, qa]
-    paths-ignore:
-      - '**.md'
-      - 'docs/**'
-```
-
-Keep `workflow_dispatch` so a deploy can still be forced manually.
+**Fixed:** added `paths-ignore` for `**.md`, `docs/**`, `.gitignore` and
+`LICENSE`. `workflow_dispatch` is retained so a deploy can still be forced by
+hand. Verified the workflow YAML parses and all keys resolve.
 
 ---
 

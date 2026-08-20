@@ -5,6 +5,15 @@ on:
     branches:
       - main   # -> PROD (bm/backend:prod, backend-prod container)
       - qa     # -> QA   (bm/backend:qa,   backend-qa container)
+    # Documentation cannot affect the running service, so skip the rebuild and
+    # container recreate for docs-only pushes. Without this, editing a README
+    # restarts PROD and buries real deploys in noise. Use workflow_dispatch to
+    # force a deploy regardless.
+    paths-ignore:
+      - '**.md'
+      - 'docs/**'
+      - '.gitignore'
+      - 'LICENSE'
   workflow_dispatch:  # Allow manual trigger
 
 # The backend now runs as Docker containers (bm-backend-prod / bm-backend-qa)
