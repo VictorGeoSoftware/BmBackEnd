@@ -201,7 +201,7 @@ is not worth the attack surface it adds. Fail-closed remains the right default.
 `AdminAuthService`'s KDoc. Behaviour is unchanged — admin endpoints still reject
 every request.
 
-### 13. An orphan `docling-api` container has run for 6 months
+### 13. ~~An orphan `docling-api` container has run for 6 months~~ ✅ FIXED
 
 **Evidence:** `docker ps -a` shows `docling-api  Up 6 months  docling-api`, with
 empty `com.docker.compose.service` and `com.docker.compose.project` labels —
@@ -213,7 +213,7 @@ commands, and was the direct cause of the Promtail/Loki retry storm (it had no
 Compose labels, so its log stream had no labels and Loki rejected every push).
 It cannot be serving traffic, since Compose's docling-api holds port 5000.
 
-**Fix:** `docker rm -f docling-api`. Already covered in spirit by
+**Fixed:** removed with `docker rm -f docling-api` (2026-08-24). Covered in spirit by
 `BmInfra/TODO.md:24` ("remove old deployment leftovers"). The Promtail config
 was hardened independently so that removing it is hygiene, not a dependency.
 
