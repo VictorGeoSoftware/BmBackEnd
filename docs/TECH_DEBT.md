@@ -126,6 +126,27 @@ Split them:
 - machine-facing -> shared secret, or restrict to the Docker network in Nginx
 - `/clear-all-data` -> admin-only, if it belongs in production at all
 
+**Confirmed against the running QA server**, not just read from code: an
+unauthenticated `POST /api/v1/batch-process-price-tables` returned **500**, not
+401 — the body was accepted, parsed and logged before failing on content. If
+anything gated the route the request would have been rejected before the body
+was read.
+
+**Caller mapping (already done, to inform the fix):**
+
+| Endpoint | Called by |
+|---|---|
+| `batch-process-price-tables` | neither BmWeb nor BmApp -> machine caller (n8n) |
+| `clear-all-data` | BmWeb (`api/price-proposals/clear-all-data`, sidebar) |
+| `upload-price-proposal` | BmWeb (`api/price-proposal/upload`) |
+| `price-table-results` | BmWeb (`api/price-proposals`) |
+| `fetch-total-prices` | BmWeb (`api/price-proposals/fetch-total-prices`) |
+
+So all but one are user-facing through BmWeb's Next.js server routes and can
+take Firebase auth; only `batch-process-price-tables` needs a machine-to-machine
+mechanism. Open question for the fix: whether BmWeb's server routes already
+forward the caller's Firebase ID token.
+
 Found incidentally while adding log context — it is unrelated to observability
 and outranks everything remaining in `MONITORING_PLAN.md`.
 
@@ -160,14 +181,25 @@ process, converting a brief dependency wobble into an outage.
 **Fix:** split `/health/live` (no dependency checks, for Docker) from
 `/health/ready` (current logic, for alerting). Tracked in Phase 2.
 
-### 6. Log statements carry no business context
+### 6. ~~Log statements carry no business context~~ ✅ FIXED
 
-**Impact:** logs are structured and correlated by `requestId`, but individual
-statements still lack user id, job id and bill id, so questions like "everything
-that happened to this bill" are not answerable in Loki. Cheaper to fix *now*,
-before saved queries and dashboards are built against the current field shape.
+**Was:** logs were correlated by `requestId`, but individual statements carried
+no business identifiers, so "everything that happened to this job or user" was
+unanswerable. Route logging used string interpolation (`"Job $jobId completed"`),
+which is unqueryable and makes every occurrence a unique message string.
 
-**Fix:** last open item of Phase 0.
+**Fixed:** `StructuredArguments.kv()` for `userId`, `userEmail`, `jobId`,
+`fileName`, `payloadBytes` — JSON fields under `LOG_FORMAT=json`, `key=value` in
+text mode. Promtail extracts them as structured metadata. Messages are now
+constant strings, so occurrences can be grouped and counted.
+
+Also fixed two things found in the same pass: background consumption jobs lost
+`requestId` entirely (detached coroutine, no MDC), and `PriceTableRoutes` logged
+full request bodies and extraction payloads at INFO — unbounded Loki storage
+driven by request size, with document content going into log storage.
+
+**Verified in QA:** `"payloadBytes":13` with `requestId` returned as structured
+metadata from a Loki query.
 
 ### 7. Unbounded disk growth outside Docker logs
 

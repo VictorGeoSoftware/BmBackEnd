@@ -301,7 +301,7 @@ alert: it trains you to ignore the real one.
 
 Ordered by *your* priority: get a usable log/observability framework first.
 
-### Phase 0 — Make the logs worth collecting ✅ DONE (branch `qa`)
+### Phase 0 — Make the logs worth collecting ✅ COMPLETE
 **Prerequisite for everything else.**
 
 - [x] Add the `logstash-logback-encoder` dependency (JSON output) — `build.gradle.kts`
@@ -339,7 +339,19 @@ Ordered by *your* priority: get a usable log/observability framework first.
       ANSI colour codes which, under `LOG_FORMAT=json`, were embedded in the JSON
       `message` field (garbage in Grafana, broken exact-match Loki queries).
       Replaced with an explicit formatter + regression test.
-- [ ] Review existing log statements: add context (user id, job id, bill id)
+- [x] Review existing log statements: add context (user id, job id, bill id) —
+      `StructuredArguments.kv()` emits `userId`, `userEmail`, `jobId`,
+      `fileName` and `payloadBytes` as JSON fields *and* as `key=value` in text
+      mode. Promtail extracts them as structured metadata (high cardinality, so
+      deliberately not labels). Route logging moved off string interpolation, so
+      messages are constant strings and can be grouped and counted.
+      Background consumption jobs run in a detached
+      `CoroutineScope(Dispatchers.IO)`, where the MDC — and therefore
+      `requestId` — is gone; it is now captured before detaching and logged
+      explicitly, so async work stays joined to the request that started it.
+      Also stopped logging full request bodies and extraction payloads at INFO.
+      **Verified in QA:** a request produced
+      `"payloadBytes":13` + `requestId` as queryable structured metadata in Loki.
 - [x] Merge `qa` → `main` — done via squash-merge PRs (#57 into `qa`, #58 into
       `main`), so the two branches carry different SHAs for identical content.
       `git merge-base --is-ancestor origin/qa origin/main` therefore reports
