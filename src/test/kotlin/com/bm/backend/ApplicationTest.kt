@@ -73,6 +73,65 @@ class ApplicationTest {
     }
 
     @Test
+    fun `liveness probe reports alive without checking dependencies`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
+        application {
+            testApplicationModule()
+        }
+        client.get("/health/live").apply {
+            assertEquals(HttpStatusCode.OK, status)
+            val response = Json.decodeFromString<JsonObject>(bodyAsText())
+            assertEquals("alive", response["status"]?.jsonPrimitive?.content)
+            // Liveness must not leak a dependency status, or operators will
+            // start treating it as readiness again.
+            assertTrue(response["database"] == null)
+        }
+    }
+
+    @Test
+    fun `readiness probe reports database connectivity`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
+        application {
+            testApplicationModule()
+        }
+        client.get("/health/ready").apply {
+            assertEquals(HttpStatusCode.OK, status)
+            val response = Json.decodeFromString<JsonObject>(bodyAsText())
+            assertEquals("healthy", response["status"]?.jsonPrimitive?.content)
+            assertEquals("connected", response["database"]?.jsonPrimitive?.content)
+        }
+    }
+
+    @Test
+    fun `health stays a byte-compatible alias of health ready`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
+        application {
+            testApplicationModule()
+        }
+
+        // Deploy workflows and Docker healthchecks still call /health. If the
+        // alias ever diverges from /health/ready, CI breaks on the next deploy.
+        val legacy = Json.decodeFromString<JsonObject>(client.get("/health").bodyAsText())
+        val ready = Json.decodeFromString<JsonObject>(client.get("/health/ready").bodyAsText())
+
+        assertEquals(ready.keys, legacy.keys)
+        assertEquals(
+            ready["status"]?.jsonPrimitive?.content,
+            legacy["status"]?.jsonPrimitive?.content
+        )
+        assertEquals(
+            ready["database"]?.jsonPrimitive?.content,
+            legacy["database"]?.jsonPrimitive?.content
+        )
+    }
+
+    @Test
     fun `price table results rejects unauthenticated callers`() = testApplication {
         environment {
             config = io.ktor.server.config.MapApplicationConfig()

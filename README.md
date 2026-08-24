@@ -54,7 +54,9 @@ chmod +x deploy-remote.sh
 ## 🔌 API Endpoints
 
 ### Health & Status
-- `GET /health` - Health check
+- `GET /health/live` - Liveness: process is up, no dependency checks (used by Docker healthchecks)
+- `GET /health/ready` - Readiness: 200 when the database is reachable, 503 otherwise
+- `GET /health` - Alias of `/health/ready`, kept for backwards compatibility
 - `GET /` - Service info
 
 ### Price Tables

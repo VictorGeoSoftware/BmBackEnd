@@ -61,9 +61,12 @@ USER bmapp
 # Expose the application port
 EXPOSE 8081
 
-# Health check
+# Liveness only. Docker restarts the container when this fails, so it must not
+# depend on Postgres: a database blip would otherwise restart a perfectly
+# healthy backend, and a restart cannot fix someone else's database.
+# Readiness ("can we serve traffic?") lives at /health/ready.
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD curl -f http://localhost:8081/health || exit 1
+    CMD curl -f http://localhost:8081/health/live || exit 1
 
 # Run the application
 ENTRYPOINT ["java", "-jar", "app.jar"]

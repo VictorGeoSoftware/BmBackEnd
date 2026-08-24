@@ -9,6 +9,7 @@ import com.bm.backend.plugins.requestId
 import com.bm.backend.repositories.AdminUsersRepository
 import com.bm.backend.repositories.CollectedPricesRepository
 import com.bm.backend.repositories.ExposedTransactionRunner
+import com.bm.backend.repositories.ExposedDatabaseHealthCheck
 import com.bm.backend.repositories.GrantedUsersRepository
 import com.bm.backend.repositories.PostgresUserConsumptionRepository
 import com.bm.backend.repositories.UserDataRepository
@@ -19,6 +20,7 @@ import com.bm.backend.routes.adminRoutes
 import com.bm.backend.routes.authRoutes
 import com.bm.backend.routes.collectedPricesRoutes
 import com.bm.backend.routes.grantedUsersRoutes
+import com.bm.backend.routes.healthRoutes
 import com.bm.backend.routes.userActivityRoutes
 import com.bm.backend.routes.userConsumptionRoutes
 import com.bm.backend.routes.userDataRoutes
@@ -34,6 +36,7 @@ import com.bm.backend.services.FirebasePriceUpdatesNotifier
 import com.bm.backend.services.FirebaseUserAccountRevoker
 import com.bm.backend.services.ComparatorReportPdfService
 import com.bm.backend.services.GrantedUsersService
+import com.bm.backend.services.HealthService
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.UserConsumptionService
 import com.bm.backend.services.UserDataService
@@ -179,6 +182,7 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
     )
     val collectedPricesRepository = CollectedPricesRepository()
     val collectedPricesService = CollectedPricesService(collectedPricesRepository)
+    val healthService = HealthService(ExposedDatabaseHealthCheck())
     
     routing {
         get("/") {
@@ -193,24 +197,7 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
             }
         }
 
-        get("/health") {
-            val dbHealthy = try {
-                org.jetbrains.exposed.sql.transactions.transaction {
-                    exec("SELECT 1") { it.next() }
-                }
-                true
-            } catch (_: Exception) {
-                false
-            }
-            val status = if (dbHealthy) "healthy" else "degraded"
-            val httpStatus = if (dbHealthy) io.ktor.http.HttpStatusCode.OK
-                else io.ktor.http.HttpStatusCode.ServiceUnavailable
-            call.respond(httpStatus, mapOf(
-                "status" to status,
-                "database" to if (dbHealthy) "connected" else "unreachable",
-                "timestamp" to java.time.Instant.now().toString()
-            ))
-        }
+        healthRoutes(healthService)
 
         route("/api/v1") {
             priceTableRoutes(
