@@ -98,6 +98,11 @@ added in Phase 0 protects only the paths that go *through* Nginx.
 **Fix:** Phase 2 — bearer token or a separate internal port, and close
 8081/9081 at the firewall. Tracked in `MONITORING_PLAN.md` §Phase 2.
 
+⚠️ **Coupling to watch:** both deploy workflows health-check
+`http://217.154.181.175:8081/health` over the public interface. Closing 8081 at
+the firewall will break CI unless the check is moved to an SSH-tunnelled
+`curl` or to `docker compose exec` first. Sequence that change carefully.
+
 ### 5. `/health` conflates liveness and readiness
 
 **Evidence:** `Application.kt:194` returns 503 when the DB is unreachable, and
