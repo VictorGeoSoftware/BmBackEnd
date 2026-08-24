@@ -73,23 +73,26 @@ it on developer machines and try to bind privileged ports. Either rename to
 three deploy workflows), or keep it and treat the copy in
 `BmInfra/docs/DEPLOY_OBSERVABILITY.md` as the backup of record.
 
-### 3. `./gradlew build` fails on `qa`
+### 3. ~~`./gradlew build` fails on `qa`~~ ✅ FIXED
 
-**Evidence:** two failures in `GrantedUsersServiceTest`
-(`deleteGrant wipes all user data…`, `deleteGrant skips token revocation…`) with
+**Was:** two `GrantedUsersServiceTest` cases failed with
 `IllegalStateException: Please call Database.connect()` at
-`GrantedUsersService.kt:92`. Reproduced on `qa` at `fc2c2c9`, i.e. it predates
-the observability work.
+`GrantedUsersService.kt:92`, so a green build could not be used as a merge gate.
 
-**Impact:** these two tests execute a real `deleteGrant` transaction while the
-other 45 DB-backed tests skip cleanly without Docker. Because the build is red
-regardless, **a green build cannot be used as a merge gate** — which removes the
-main automated safety net before deploying to PROD.
+**Root cause was architectural, not a test defect.** `GrantedUsersService`
+called Exposed's `transaction { }` directly, reaching past the repository layer
+into persistence — contrary to the Clean Architecture boundary in `AGENTS.md`.
+The test is a genuine unit test with in-memory repositories and correctly needs
+no Docker; it failed because the service bypassed those repositories entirely.
 
-**Fix:** give them the same Docker/Testcontainers guard the other DB tests use,
-or provide the transaction manager they assume.
+**Fixed:** introduced `TransactionRunnerPort` alongside the existing repository
+ports, with `ExposedTransactionRunner` in the infrastructure layer and
+`DirectTransactionRunner` for tests. `GrantedUsersService` no longer imports
+Exposed — it was the only service that did. Added an assertion that the
+four-table wipe runs as exactly one unit of work, so the atomicity guarantee is
+now covered rather than merely implied.
 
----
+**Verified:** `./gradlew build` green — 112 tests, 0 failures, 0 skipped.
 
 ## 🟠 Medium
 
@@ -232,7 +235,7 @@ server handles worst.
 **Fix:** run under gunicorn as the docstring already assumes, sizing workers
 against the ML memory footprint.
 
-### 17. `qa` is behind `main` — QA is not a faithful rehearsal of PROD
+### 17. ~~`qa` is behind `main` — QA is not a faithful rehearsal of PROD~~ ✅ FIXED
 
 **Evidence:** `git diff origin/qa origin/main -- src/` shows
 `AdminAuthService.kt` differing by 14 lines: the admin-logging change was
@@ -243,8 +246,8 @@ identical, with only environment variables differing — otherwise QA stops bein
 a rehearsal of PROD and changes reach production untested. Divergence also
 accumulates: the next `qa` → `main` merge has to reconcile it.
 
-**Fix:** merge `main` into `qa` (pushing to `qa` triggers the QA deploy, which
-is the point). Then treat "commit to `main` directly" as the exception it
+**Fixed:** merged `main` into `qa` and pushed (2026-08-24); `git diff origin/qa
+origin/main -- src/` is now empty. Then treat "commit to `main` directly" as the exception it
 should be — the workflow in §5 is develop on `qa`, validate, promote.
 
 ### 15. Branch names contain typos

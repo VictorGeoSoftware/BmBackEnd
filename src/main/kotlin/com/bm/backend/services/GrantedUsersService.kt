@@ -2,10 +2,10 @@ package com.bm.backend.services
 
 import com.bm.backend.models.GrantedUserResponse
 import com.bm.backend.repositories.ports.GrantedUsersRepositoryPort
+import com.bm.backend.repositories.ports.TransactionRunnerPort
 import com.bm.backend.repositories.ports.UserActivityRepositoryPort
 import com.bm.backend.repositories.ports.UserConsumptionRepositoryPort
 import com.bm.backend.repositories.ports.UserDataRepositoryPort
-import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
 
 /**
@@ -22,7 +22,8 @@ class GrantedUsersService(
     private val userActivityRepository: UserActivityRepositoryPort,
     private val userConsumptionRepository: UserConsumptionRepositoryPort,
     private val userAccountRevoker: UserAccountRevoker,
-    private val forceLogoutNotifier: ForceLogoutNotifier
+    private val forceLogoutNotifier: ForceLogoutNotifier,
+    private val transactionRunner: TransactionRunnerPort
 ) {
     private val logger = LoggerFactory.getLogger(GrantedUsersService::class.java)
 
@@ -89,7 +90,7 @@ class GrantedUsersService(
 
         // Unit of work spanning the four user tables; the repository methods
         // join this transaction (Exposed reuses the thread-local transaction).
-        transaction {
+        transactionRunner.inTransaction {
             if (uid != null) {
                 userConsumptionRepository.deleteByUid(uid)
             }

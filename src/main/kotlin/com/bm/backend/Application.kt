@@ -8,6 +8,7 @@ import com.bm.backend.plugins.RequestIdPlugin
 import com.bm.backend.plugins.requestId
 import com.bm.backend.repositories.AdminUsersRepository
 import com.bm.backend.repositories.CollectedPricesRepository
+import com.bm.backend.repositories.ExposedTransactionRunner
 import com.bm.backend.repositories.GrantedUsersRepository
 import com.bm.backend.repositories.PostgresUserConsumptionRepository
 import com.bm.backend.repositories.UserDataRepository
@@ -173,7 +174,8 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
         userActivityRepository = userActivityRepository,
         userConsumptionRepository = userConsumptionRepository,
         userAccountRevoker = FirebaseUserAccountRevoker(),
-        forceLogoutNotifier = FirebaseForceLogoutNotifier()
+        forceLogoutNotifier = FirebaseForceLogoutNotifier(),
+        transactionRunner = ExposedTransactionRunner()
     )
     val collectedPricesRepository = CollectedPricesRepository()
     val collectedPricesService = CollectedPricesService(collectedPricesRepository)

@@ -1,5 +1,6 @@
 package com.bm.backend.services
 
+import com.bm.backend.testing.DirectTransactionRunner
 import com.bm.backend.testing.InMemoryGrantedUsersRepository
 import com.bm.backend.testing.InMemoryUserActivityRepository
 import com.bm.backend.testing.InMemoryUserConsumptionRepository
@@ -35,6 +36,7 @@ class GrantedUsersServiceTest {
     private lateinit var userConsumptionRepository: InMemoryUserConsumptionRepository
     private lateinit var userAccountRevoker: RecordingUserAccountRevoker
     private lateinit var forceLogoutNotifier: RecordingForceLogoutNotifier
+    private lateinit var transactionRunner: DirectTransactionRunner
     private lateinit var service: GrantedUsersService
 
     @BeforeEach
@@ -45,13 +47,15 @@ class GrantedUsersServiceTest {
         userConsumptionRepository = InMemoryUserConsumptionRepository()
         userAccountRevoker = RecordingUserAccountRevoker()
         forceLogoutNotifier = RecordingForceLogoutNotifier()
+        transactionRunner = DirectTransactionRunner()
         service = GrantedUsersService(
             grantedUsersRepository = grantedUsersRepository,
             userDataRepository = userDataRepository,
             userActivityRepository = userActivityRepository,
             userConsumptionRepository = userConsumptionRepository,
             userAccountRevoker = userAccountRevoker,
-            forceLogoutNotifier = forceLogoutNotifier
+            forceLogoutNotifier = forceLogoutNotifier,
+            transactionRunner = transactionRunner
         )
     }
 
@@ -135,6 +139,10 @@ class GrantedUsersServiceTest {
         // Firebase sessions revoked and force-logout broadcast sent
         assertEquals(listOf("uid-123"), userAccountRevoker.revokedUids)
         assertEquals(listOf("tester@example.com"), forceLogoutNotifier.notifiedEmails)
+
+        // The four-table wipe must happen as ONE unit of work: a partial delete
+        // would leave an account able to authenticate with its data half gone.
+        assertEquals(1, transactionRunner.executions)
     }
 
     @Test
