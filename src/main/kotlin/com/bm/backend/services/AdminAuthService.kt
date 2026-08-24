@@ -10,7 +10,12 @@ import java.security.MessageDigest
  *
  * When the variable is unset the admin API is disabled and every request is
  * denied, so a misconfigured deployment never exposes unauthenticated
- * administrative actions. Set the env var to activate, e.g.:
+ * administrative actions.
+ *
+ * PROD deliberately leaves it unset: BmWeb access is limited to two named
+ * operators and granting a user is a rare, manual database action, so running
+ * a shared-secret admin API is not worth the surface it adds. Set the env var
+ * to activate, e.g.:
  *
  *     BM_ADMIN_TOKEN=some-long-random-secret
  */
@@ -25,8 +30,14 @@ class AdminAuthService(
         if (enabled) {
             logger.info("Admin API ENABLED (shared-secret token configured)")
         } else {
-            logger.warn(
-                "Admin API DISABLED ({} not set). Admin endpoints will reject all requests.",
+            // INFO, not WARN: leaving the token unset is the intended
+            // configuration. Access to BmWeb is limited to two named operators,
+            // and adding a user is a rare, manual SQL action — so the admin API
+            // is deliberately not activated in PROD. Logging this as a warning
+            // every boot put a permanent entry in the Grafana warnings panel,
+            // which is how a warning that actually matters gets overlooked.
+            logger.info(
+                "Admin API not enabled ({} unset) — admin endpoints will reject all requests.",
                 ENV_ADMIN_TOKEN
             )
         }

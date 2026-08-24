@@ -16,8 +16,8 @@
 
 | Question | Tool | Priority | Status |
 |---|---|---|---|
-| "Show me the logs, let me search them" | **Loki + Promtail + Grafana** | 🔴 **core** | ✅ **done** (Phase 1, acceptance test passed) |
-| "Why did *this* request fail?" | Structured JSON logs + request-ID | 🔴 **core** | ✅ **done** (Phase 0) |
+| "Show me the logs, let me search them" | **Loki + Promtail + Grafana** | 🔴 **core** | ✅ **done & deployed** (Phase 1, verified in PROD 2026-08-20) |
+| "Why did *this* request fail?" | Structured JSON logs + request-ID | 🔴 **core** | ✅ **done & deployed** (Phase 0) |
 | "Is it slow / degrading? What's the error rate?" | Prometheus + Grafana | 🟠 high | 🟡 `/metrics` exists, nothing scrapes it |
 | "Tell me before I notice" | Grafana alert rules | 🟢 optional | ❌ not started |
 | "Is the whole VPS unreachable?" | External watchdog (off-box) | 🔵 last | ❌ not started |
@@ -340,7 +340,10 @@ Ordered by *your* priority: get a usable log/observability framework first.
       `message` field (garbage in Grafana, broken exact-match Loki queries).
       Replaced with an explicit formatter + regression test.
 - [ ] Review existing log statements: add context (user id, job id, bill id)
-- [ ] Merge `qa` → `main`
+- [x] Merge `qa` → `main` — done via squash-merge PRs (#57 into `qa`, #58 into
+      `main`), so the two branches carry different SHAs for identical content.
+      `git merge-base --is-ancestor origin/qa origin/main` therefore reports
+      "not an ancestor"; compare trees, not history, when checking parity.
 
 > ⚠️ **Pre-existing, unrelated:** `./gradlew build` still fails on two
 > `GrantedUsersServiceTest` cases (`Please call Database.connect()`). They hit a
@@ -367,12 +370,17 @@ Ordered by *your* priority: get a usable log/observability framework first.
 - [x] Build a "BM Logs" dashboard + a request-trace dashboard
 - [x] Nginx JSON access logs (`log_format bm_json`) so the edge hop is
       correlatable too, with a matching Promtail job
-- [x] **Acceptance test — PASSED.** Full stack run locally (Postgres, both
-      backends, Nginx, Loki, Promtail, Grafana). A request through Nginx produced
-      one id shared by the Nginx access line and the backend line, retrievable
-      with `{job=~"bm-.+"} | requestId=\`<id>\``. A triggered 500 arrived in Loki
-      with its complete 4 kB stack trace. `/metrics` returns 403 on every vhost.
-      A caller-supplied `X-Request-Id` is correctly overwritten at the edge.
+- [x] **Acceptance test — PASSED locally and in PRODUCTION.**
+      Locally: full stack (Postgres, both backends, Nginx, Loki, Promtail,
+      Grafana); a triggered 500 arrived in Loki with its complete 4 kB stack
+      trace; `/metrics` returned 403 on every vhost; a caller-supplied
+      `X-Request-Id` was correctly overwritten at the edge.
+      **On the VPS (2026-08-20):** a request through Nginx produced one id
+      (`a5a9cd70…`) shared by the Nginx access line and the backend line,
+      retrieved with ``{job=~"bm-.+"} | requestId=`<id>` `` returning both
+      `job="bm-nginx"` and `job="bm-backend"`. Promtail discovered every
+      container unaided — `bm-backend`, `bm-nginx` and `bm-infra` (Postgres,
+      Docling, n8n) were all ingesting within seconds of first start.
 
 
 ### Phase 2 — Metrics: Prometheus 🟠
