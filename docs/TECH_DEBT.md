@@ -196,13 +196,27 @@ PROD startup logged `Admin API DISABLED (BM_ADMIN_TOKEN not set)` as a **WARN**
 on every boot, leaving it ambiguous whether the admin API was deliberately off
 or misconfigured — and putting a permanent entry in Grafana's warnings panel.
 
-**Decision:** deliberately off. BmWeb access is limited to two named operators,
-and granting a user is a rare, manual SQL action, so a shared-secret admin API
-is not worth the attack surface it adds. Fail-closed remains the right default.
+**Scope is narrower than the log message suggests.** There are two independent
+admin mechanisms, and this one gates a single endpoint:
 
-**Fixed:** downgraded to INFO with the rationale recorded in
-`AdminAuthService`'s KDoc. Behaviour is unchanged — admin endpoints still reject
-every request.
+| Mechanism | Gates | PROD |
+|---|---|---|
+| `requireAdminFirebaseUser` | granted-users CRUD, collected prices, access checks | working |
+| `AdminAuthService` (`BM_ADMIN_TOKEN`) | `POST /admin/reset-device-binding` only | disabled |
+
+So day-to-day user management through BmWeb is unaffected — it authenticates
+Firebase admin users, not this shared secret. The only capability unavailable in
+PROD is resetting a user's device binding, which would otherwise have to be done
+with a manual `user_data` update.
+
+**Decision:** leave unset. A shared-secret API is not worth the surface for one
+rarely-used operation. Fail-closed remains the right default.
+
+**Fixed:** downgraded to INFO with the rationale in `AdminAuthService`'s KDoc.
+Behaviour unchanged.
+
+⚠️ Revisit if device-binding resets become frequent: the current alternative is
+hand-editing the database, which is riskier than the API it replaces.
 
 ### 13. ~~An orphan `docling-api` container has run for 6 months~~ ✅ FIXED
 
