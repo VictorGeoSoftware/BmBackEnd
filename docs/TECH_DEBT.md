@@ -187,12 +187,19 @@ executes, and `ObservabilityTest` covers behaviour that cannot occur in
 production. Harmless as defence-in-depth, but do not read that test as evidence
 the production path works.
 
-### 12. `BM_ADMIN_TOKEN` is not set in PROD
+### 12. ~~`BM_ADMIN_TOKEN` is not set in PROD~~ ✅ RESOLVED (as intended)
 
-PROD startup logs: `Admin API DISABLED (BM_ADMIN_TOKEN not set). Admin endpoints
-will reject all requests.` Likely intentional, but it is a WARN on every boot in
-production and should be confirmed as a decision rather than an oversight — if
-intentional, silence it; if not, it is a silently disabled feature.
+PROD startup logged `Admin API DISABLED (BM_ADMIN_TOKEN not set)` as a **WARN**
+on every boot, leaving it ambiguous whether the admin API was deliberately off
+or misconfigured — and putting a permanent entry in Grafana's warnings panel.
+
+**Decision:** deliberately off. BmWeb access is limited to two named operators,
+and granting a user is a rare, manual SQL action, so a shared-secret admin API
+is not worth the attack surface it adds. Fail-closed remains the right default.
+
+**Fixed:** downgraded to INFO with the rationale recorded in
+`AdminAuthService`'s KDoc. Behaviour is unchanged — admin endpoints still reject
+every request.
 
 ### 13. Branch names contain typos
 
