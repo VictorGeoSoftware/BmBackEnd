@@ -18,8 +18,8 @@
 |---|---|---|---|
 | "Show me the logs, let me search them" | **Loki + Promtail + Grafana** | 🔴 **core** | ✅ **done & deployed** (Phase 1, verified in PROD 2026-08-20) |
 | "Why did *this* request fail?" | Structured JSON logs + request-ID | 🔴 **core** | ✅ **done & deployed** (Phase 0) |
-| "Is it slow / degrading? What's the error rate?" | Prometheus + Grafana | 🟠 high | 🟡 `/metrics` exists, nothing scrapes it |
-| "Tell me before I notice" | Grafana alert rules | 🟢 optional | ❌ not started |
+| "Is it slow / degrading? What's the error rate?" | Prometheus + Grafana | 🟠 high | ⏸️ **deferred** — `/metrics` exists and is now token-protected, nothing scrapes it (see Phase 2) |
+| "Tell me before I notice" | Grafana alert rules | 🟢 optional | ❌ not started — blocked on Prometheus |
 | "Is the whole VPS unreachable?" | External watchdog (off-box) | 🔵 last | ❌ not started |
 | "Which exception, grouped, with stack trace?" | Sentry | 🟢 optional | ❌ not started |
 | Build & deploy | GitHub Actions | — | ✅ already done (`.github/workflows/deploy.yml`) |
@@ -27,6 +27,14 @@
 **One-line plan:** make the logs structured → put Loki + Grafana on the VPS →
 add Prometheus for the numeric side → add alerts later, cheaply, in the Grafana
 that already exists.
+
+> **Status (Aug 2026): the core goal is met and the project is being stopped
+> here.** Phases 0 and 1 are done and deployed, which fully covers the primary
+> goal above. **Phase 2 (Prometheus) is deferred indefinitely** and **Phase 3
+> (disk hygiene) is closed** — measurement showed the problem it targeted did
+> not exist. Phase 4 is blocked on Phase 2. The preparatory items that were
+> worth doing regardless (token on `/metrics`, `/health` live/ready split) are
+> complete. See Phase 2 and Phase 3 for the reasoning.
 
 ---
 
@@ -87,13 +95,17 @@ capabilities, and they are **not** substitutes:
 | Item | Location | Notes |
 |---|---|---|
 | Micrometer + Prometheus registry | `src/main/kotlin/com/bm/backend/Application.kt:63` | `MicrometerMetrics` plugin installed |
-| `/metrics` endpoint | `Application.kt:123` | Returns `prometheusMeterRegistry.scrape()` |
-| `/health` with real DB check | `Application.kt:131` | Returns 503 + `"degraded"` when DB unreachable — good pattern |
-| Docker healthchecks | `BmInfra/docker-compose.yml` | On all backends + Docling services |
+| `/metrics` endpoint | `routes/MetricsRoutes.kt` | Bearer-token protected (`METRICS_TOKEN`), fails closed when unset |
+| `/health/live` + `/health/ready` | `routes/HealthRoutes.kt` | Split; `/health` kept as an alias of `/health/ready` |
+| Docker healthchecks | `BmInfra/docker-compose.yml` | On all backends + Docling services; backends target `/health/live` |
 | `restart: unless-stopped` | `BmInfra/docker-compose.yml` | On every service |
 | CI/CD | `.github/workflows/deploy.yml` | GitHub Actions |
 
-**The gap:** nothing consumes any of it, and the logs themselves are unstructured.
+**The gap (as of the original review):** nothing consumes any of it, and the
+logs themselves are unstructured. *Phases 0 + 1 resolved the logging half:
+logs are now structured JSON, correlated by request ID, and shipped to Loki.
+The metrics half is unresolved by choice — Prometheus is deferred, so nothing
+scrapes `/metrics` yet.*
 
 ---
 
@@ -120,7 +132,7 @@ only as useful as what we feed it.
    guesswork. **This is the single highest-value feature for log analysis** — it
    is what turns "a wall of log lines" into "the story of one request".
 
-4. **`/metrics` is unauthenticated and rate-limited.**
+4. **`/metrics` is unauthenticated and rate-limited.** ✅ *Fixed (Aug 2026)*
    - Nginx (`BmInfra/nginx/nginx.conf`) does not proxy `/metrics` — good — but
      `backend-prod` publishes port `8081` straight to the host, so it is
      internet-reachable if the firewall allows 8081. It leaks endpoint names and
@@ -128,7 +140,17 @@ only as useful as what we feed it.
    - It also sits behind the global `RateLimit` (`Application.kt:76`,
      100 req/min), which a scraper plus normal traffic can trip.
 
-5. **`/health` conflates liveness and readiness.** It returns 503 when the DB is
+   *Resolution:* bearer token added (`MetricsAuthService`, fails closed), and
+   the limiter rescoped from `global` to `/api/v1` so scrapes and healthchecks
+   no longer spend the API budget. Closing ports 8081/9081 is still open —
+   see TECH_DEBT #4.
+
+   ⚠️ *Correction:* the "100 req/min" above understated the problem. Ktor's
+   default rate-limit key is `Unit`, so that budget is shared by **all callers
+   combined**, not per client. Tracked as TECH_DEBT #19.
+
+5. **`/health` conflates liveness and readiness.** ✅ *Fixed (Aug 2026)*
+   It returns 503 when the DB is
    down — correct for *readiness*, but Docker's healthcheck uses it, so a
    transient DB blip makes Docker restart a perfectly healthy process. Split:
    - `/health/live` → "the process responds", no dependency checks → Docker
@@ -137,6 +159,10 @@ only as useful as what we feed it.
 6. **Unbounded log files.** `BmBackend/docker-compose.yml` mounts
    `./logs:/app/logs`; fine locally, but unrotated files on the VPS grow forever.
    Prefer stdout-only (Promtail collects it) plus Docker log rotation.
+
+   ⚠️ *Correction:* this mount is local-dev only — it is **not** in
+   `BmInfra/docker-compose.yml`, so it never applied to the VPS. Docker log
+   rotation was added in Phase 0 regardless. See TECH_DEBT #7.
 
 ---
 
@@ -162,18 +188,22 @@ forget about, and it degrades gracefully rather than cliff-edging.
 | Source | Bounded today? | Fix |
 |---|---|---|
 | **Docker `json-file` logs** | ❌ **unbounded by default** — the classic killer | `max-size: 10m`, `max-file: 3` on every service |
-| `docling-temp` / `docling-uploads` | ❌ no eviction policy — uploaded PDFs + intermediates accumulate | scheduled cleanup of files older than N days |
+| `docling-temp` / `docling-uploads` | ✅ **measured 0 B** — the code writes to `tempfile.gettempdir()`, never to these volumes; `/tmp` measured 8 K | none needed (see Phase 3) |
 | Loki chunks | ❌ until configured | 30-day retention + size cap |
 | Prometheus TSDB | ❌ until configured | 90-day retention + size cap |
-| `docling-models` | ✅ bounded, but large | leave alone |
+| `docling-models` | ✅ bounded, but large | leave alone. `HF_HOME` now points here so the ~500 MB model cache persists across redeploys instead of being re-downloaded into the container layer |
+| Docker build cache | ⚠️ grows with every CI build | `docker builder prune`; 5.6 GB reclaimed Aug 2026. Beware `docker system df`, which counts `SHARED` records and overstated this as 62.9 GB |
 | Postgres WAL | ✅ unless archiving is misconfigured | monitor |
 
 ### Agreed budget (VPS is 720 GB NVMe)
 
 - **Prometheus: 90 days** (~10–20 GB) — long history is what makes "was it also
-  slow last month?" answerable
-- **Loki: 30 days** (~10–30 GB depending on volume)
+  slow last month?" answerable *(not in effect — Phase 2 deferred)*
+- **Loki: 30 days** (~10–30 GB depending on volume) — in effect since Phase 1
 - Total ≈ **30–50 GB, under 7% of the disk**
+
+*Actual, measured Aug 2026: 111 G used of 697 G (16%), of which `loki-data` is
+11.8 MB. The projections above are comfortably conservative.*
 
 ### And still alert on disk
 
@@ -395,17 +425,43 @@ Ordered by *your* priority: get a usable log/observability framework first.
       Docling, n8n) were all ingesting within seconds of first start.
 
 
-### Phase 2 — Metrics: Prometheus 🟠
-- [ ] Protect `/metrics` first
-  - [ ] Move it outside the global `RateLimit` scope
-  - [ ] Bearer token (`METRICS_TOKEN`) or bind to a separate internal port
+### Phase 2 — Metrics: Prometheus ⏸️ DEFERRED
+
+> **Decision (Aug 2026): Prometheus itself is deferred indefinitely.** The two
+> preparatory items below — securing `/metrics` and splitting the health
+> endpoints — were worth doing on their own merits and are **done**. The
+> remaining Prometheus work (~3–5 days) is not being started.
+>
+> **Rationale.** The stated need is *"track logs when a query or process has
+> gone wrong"*, which Phases 0 + 1 already deliver: structured JSON logs,
+> `requestId` correlated end-to-end from Nginx through the backend to Docling
+> and n8n, full stack traces on unhandled exceptions, 30-day retention,
+> searchable in Grafana. Prometheus answers a *different* question — "how is
+> the system behaving over time?" — and adds nothing to that need.
+>
+> Its real value is as the substrate for Phase 4 alerting, plus trend and
+> capacity analysis. Neither is currently a bottleneck: disk sits at 16% of
+> 697 G, and the alert the plan called out as most important (disk > 85%) is
+> guarding a threshold that is years away at current growth.
+>
+> **Revisit when** any of these become true: alerting is genuinely wanted; a
+> performance problem appears that the logs cannot explain; traffic grows
+> enough that capacity planning matters; or disk passes ~50%.
+
+- [x] Protect `/metrics` first
+  - [x] Move it outside the global `RateLimit` scope
+  - [x] Bearer token (`METRICS_TOKEN`) or bind to a separate internal port
   - [x] Explicit `deny` for `/metrics` in `nginx.conf` *(done in Phase 0)*
   - [ ] Close host ports 8081/9081 on the VPS firewall; route public traffic via Nginx
-- [ ] Split the health endpoints
-  - [ ] `GET /health/live` — no dependency checks
-  - [ ] `GET /health/ready` — current DB check logic
-  - [ ] Keep `GET /health` as an alias for `/health/ready` (backwards compatible)
-  - [ ] Point Docker healthchecks at `/health/live`
+        *(still open — needs the CI health-check coupling in TECH_DEBT #4 sequenced first)*
+- [x] Split the health endpoints
+  - [x] `GET /health/live` — no dependency checks
+  - [x] `GET /health/ready` — current DB check logic
+  - [x] Keep `GET /health` as an alias for `/health/ready` (backwards compatible)
+  - [x] Point Docker healthchecks at `/health/live`
+
+*Deferred below this line:*
+
 - [ ] Add `prometheus` service + `prometheus.yml`, **90-day retention**, 15s scrape
   - [ ] Targets: `backend-prod:8081`, `backend-qa:8081`, labelled by `env`
 - [ ] Add `node-exporter` (host CPU / RAM / **disk**)
@@ -416,13 +472,44 @@ Ordered by *your* priority: get a usable log/observability framework first.
 - [ ] Custom BM dashboard: request rate, error rate, p95 latency, upload throughput, job queue depth
 - [ ] Add business metrics in the backend: bills processed, Docling failures, n8n webhook failures, job durations
 
-### Phase 3 — Disk hygiene 🟠
-- [ ] Scheduled cleanup for `docling-temp` / `docling-uploads` (files older than N days)
-- [ ] Verify Loki + Prometheus retention actually enforce their size caps
-- [ ] Remove or rotate the `./logs:/app/logs` host mount on the VPS
-- [ ] Grafana panel: disk usage trend over 30 days
+> ⚠️ **Note for whoever picks this up:** `/metrics` now **fails closed**. With
+> `METRICS_TOKEN` unset it returns 401 to every caller, so the first Prometheus
+> scrape will fail until the token is set in `.env` and passed to the scrape
+> job as a bearer credential.
 
-### Phase 4 — Alerting 🟢 *(optional — small increment once Grafana exists)*
+### Phase 3 — Disk hygiene ✅ CLOSED — the problem did not exist
+
+**Measured on the VPS (Aug 2026) before implementing anything, and every
+premise of this phase turned out to be false:**
+
+| Item as planned | Measured |
+|---|---|
+| Scheduled cleanup for `docling-temp` / `docling-uploads` | Both volumes **0 B** — the code never writes to them (`UPLOAD_FOLDER = tempfile.gettempdir()`); `/tmp` measured 8 K with no leaked files |
+| Remove/rotate `./logs:/app/logs` on the VPS | Already absent — that mount exists only in the local-dev `BmBackEnd/docker-compose.yml` |
+| Loki + Prometheus size caps | Loki caps configured in Phase 1; Prometheus n/a (deferred) |
+
+Disk: **111 G used of 697 G (16%)**. A `docker builder prune` reclaimed 6 GB and
+two orphaned unprefixed `docling-temp` / `docling-uploads` volumes were deleted.
+
+Beware `docker system df`, which reported "Build cache usage: 62.9GB" — most of
+those records are `SHARED` with live images and not reclaimable. The prune's own
+`Total: 5.6GB` was the honest number.
+
+- [x] ~~Scheduled cleanup for `docling-temp` / `docling-uploads`~~ — not needed, volumes are empty
+- [x] ~~Remove or rotate the `./logs:/app/logs` host mount on the VPS~~ — already not present
+- [ ] Grafana panel: disk usage trend over 30 days *(needs node-exporter → Phase 2, deferred)*
+- [ ] Optional: weekly `docker builder prune -f --filter until=168h` timer, so the question does not come back
+
+See TECH_DEBT #7 for the full write-up, including the residual (non-leaking)
+`finally` gap in the customer-data server.
+
+### Phase 4 — Alerting 🟢 *(blocked on Phase 2, which is deferred)*
+
+> Every rule in §8 is a Prometheus rule, so this phase cannot start while
+> Phase 2 is deferred. The one exception worth knowing: **disk > 85%** could be
+> done today with a cron + Telegram webhook and no Prometheus at all — but disk
+> is at 16%, so there is nothing to alert on yet.
+
 - [ ] Configure a Telegram (or email) contact point in Grafana
 - [ ] **Disk > 85%** rule first — the one that matters most
 - [ ] Add the §8 rules incrementally, PROD-paging / QA-notify
@@ -448,3 +535,6 @@ Ordered by *your* priority: get a usable log/observability framework first.
 | Grafana exposure | localhost + SSH tunnel vs Nginx + auth | ⏳ open |
 | External watchdog | UptimeRobot / Cloudflare Worker / skip | ⏳ open, **deferred to Phase 5** |
 | Sentry | Yes / no; hosted vs self-hosted | ⏳ open |
+| **Prometheus (Phase 2)** | Build now / defer | ✅ **RESOLVED — deferred indefinitely.** Phases 0+1 already answer the actual need ("why did this fail?"). Revisit when alerting is wanted, when a problem appears that logs cannot explain, or when disk passes ~50%. See Phase 2 |
+| **Disk hygiene (Phase 3)** | Build cleanup job / close | ✅ **RESOLVED — closed, not built.** Measured first: the target volumes are empty and `/tmp` is clean. See Phase 3 and TECH_DEBT #7 |
+| **Rate limit policy** | Shared bucket / per-IP / per-user | ⏸️ **DEFERRED — accepted risk (~20 users short term).** One 100 req/min bucket shared by *all* callers (Ktor's default `Unit` key); at 20 concurrent users that is 5 req/min each. Tripwire: `{service="bm-backend", env="prod"} \|= "429"`. When fixed, key on the Firebase UID, not the IP — mobile CGNAT means many users share one IP. See TECH_DEBT #19 |

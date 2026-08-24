@@ -132,6 +132,66 @@ class ApplicationTest {
     }
 
     @Test
+    fun `metrics endpoint rejects unauthenticated callers`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
+        application {
+            testApplicationModule()
+        }
+        // METRICS_TOKEN is unset under test, so the endpoint must fail closed.
+        client.get("/metrics").apply {
+            assertEquals(HttpStatusCode.Unauthorized, status)
+        }
+        client.get("/metrics") {
+            header("Authorization", "Bearer guessed-token")
+        }.apply {
+            assertEquals(HttpStatusCode.Unauthorized, status)
+        }
+    }
+
+    @Test
+    fun `probes are not consumed by the api rate limiter`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
+        application {
+            testApplicationModule()
+        }
+
+        // The limiter allows 100 requests per minute and is shared across all
+        // callers. Before the split it was global, so infrastructure polling
+        // competed with real traffic for that budget and a 429 on a Docker
+        // healthcheck would have restarted a healthy container.
+        repeat(150) {
+            assertEquals(HttpStatusCode.OK, client.get("/health/live").status)
+        }
+        assertEquals(HttpStatusCode.OK, client.get("/health").status)
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/metrics").status)
+    }
+
+    @Test
+    fun `api routes are still rate limited after the limiter was rescoped`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
+        application {
+            testApplicationModule()
+        }
+
+        // Guards against the obvious way to break this change: moving the
+        // limiter off `global` and forgetting to apply it to /api/v1, which
+        // would silently remove rate limiting from every real endpoint.
+        var sawTooManyRequests = false
+        repeat(150) {
+            if (client.get("/api/v1/price-table-results").status == HttpStatusCode.TooManyRequests) {
+                sawTooManyRequests = true
+            }
+        }
+        assertTrue(sawTooManyRequests, "Expected /api/v1 traffic to hit the rate limit")
+    }
+
+    @Test
     fun `price table results rejects unauthenticated callers`() = testApplication {
         environment {
             config = io.ktor.server.config.MapApplicationConfig()

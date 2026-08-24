@@ -21,6 +21,7 @@ import com.bm.backend.routes.authRoutes
 import com.bm.backend.routes.collectedPricesRoutes
 import com.bm.backend.routes.grantedUsersRoutes
 import com.bm.backend.routes.healthRoutes
+import com.bm.backend.routes.metricsRoutes
 import com.bm.backend.routes.userActivityRoutes
 import com.bm.backend.routes.userConsumptionRoutes
 import com.bm.backend.routes.userDataRoutes
@@ -37,6 +38,7 @@ import com.bm.backend.services.FirebaseUserAccountRevoker
 import com.bm.backend.services.ComparatorReportPdfService
 import com.bm.backend.services.GrantedUsersService
 import com.bm.backend.services.HealthService
+import com.bm.backend.services.MetricsAuthService
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.UserConsumptionService
 import com.bm.backend.services.UserDataService
@@ -61,6 +63,9 @@ import kotlin.time.Duration.Companion.seconds
 fun main(args: Array<String>) {
     io.ktor.server.netty.EngineMain.main(args)
 }
+
+/** Name of the rate limiter applied to the `/api/v1` route group. */
+val API_RATE_LIMIT = RateLimitName("api")
 
 fun Application.configurePlugins(): PrometheusMeterRegistry {
     val prometheusMeterRegistry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
@@ -141,7 +146,41 @@ fun Application.configurePlugins(): PrometheusMeterRegistry {
     }
 
     install(RateLimit) {
-        global {
+        // Scoped to the API routes rather than `global { }`. A global limiter
+        // also covers `/`, `/health*` and `/metrics`, which means continuous
+        // infrastructure polling (Docker healthchecks every 30s, and a
+        // Prometheus scrape every 15s once Phase 2 lands) spends the same
+        // budget as real user traffic — and a 429 on a healthcheck would
+        // restart a healthy container.
+        //
+        // The limit and window are unchanged; only the set of routes it
+        // applies to has narrowed.
+        //
+        // ⚠️ KNOWN LIMITATION — this bucket is SHARED BY ALL CALLERS.
+        //
+        // No `requestKey` is set, and Ktor's default key is `Unit`:
+        //
+        //     "By default, the key is a [Unit], so all requests share the same
+        //      Rate-Limit."  — RateLimitProviderConfig.kt:105 (Ktor 2.3.12)
+        //
+        // So this is 100 requests per minute for the WHOLE BACKEND, not per
+        // client. With N users active at once each effectively gets 100/N per
+        // minute: at 20 users that is 5 requests/min each, which one screen
+        // opening several endpoints can exhaust on its own.
+        //
+        // It is also the only rate limiting anywhere in the stack — there is
+        // no `limit_req` in BmInfra/nginx/nginx.conf.
+        //
+        // Deliberately left as-is (Aug 2026): the user base is ~20 in the short
+        // term. If 429s start appearing in Loki
+        //     {service="bm-backend", env="prod"} |= "429"
+        // or users report the app failing under light load, THIS IS WHY.
+        //
+        // Fix: set `requestKey`. Prefer the Firebase UID over the client IP —
+        // mobile clients sit behind carrier-grade NAT (many users share one IP)
+        // and change IP when switching Wi-Fi/cellular (one user, many IPs), so
+        // an IP key is both too coarse and too fine. See TECH_DEBT.md #19.
+        register(API_RATE_LIMIT) {
             rateLimiter(limit = 100, refillPeriod = 60.seconds)
         }
     }
@@ -183,37 +222,34 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
     val collectedPricesRepository = CollectedPricesRepository()
     val collectedPricesService = CollectedPricesService(collectedPricesRepository)
     val healthService = HealthService(ExposedDatabaseHealthCheck())
+    val metricsAuthService = MetricsAuthService.fromEnv()
     
     routing {
         get("/") {
             call.respond(mapOf("message" to "Price Table Backend Service is running"))
         }
 
-        get("/metrics") {
-            if (prometheusMeterRegistry != null) {
-                call.respondText(prometheusMeterRegistry.scrape())
-            } else {
-                call.respond(io.ktor.http.HttpStatusCode.NotFound, "Metrics not configured")
-            }
-        }
+        metricsRoutes(metricsAuthService, prometheusMeterRegistry)
 
         healthRoutes(healthService)
 
-        route("/api/v1") {
-            priceTableRoutes(
-                priceTableService,
-                externalApiService,
-                priceUpdatesNotifier,
-                adminAccessControlService
-            )
-            userConsumptionRoutes(userConsumptionService, jobService, comparatorReportPdfService)
-            userDataRoutes(userDataService, accessControlService)
-            userActivityRoutes(userActivityService)
-            authRoutes(userActivityService)
-            adminRoutes(userDataService, adminAuthService)
-            adminAccessRoutes(adminAccessControlService)
-            grantedUsersRoutes(grantedUsersService, adminAccessControlService)
-            collectedPricesRoutes(collectedPricesService, adminAccessControlService)
+        rateLimit(API_RATE_LIMIT) {
+            route("/api/v1") {
+                priceTableRoutes(
+                    priceTableService,
+                    externalApiService,
+                    priceUpdatesNotifier,
+                    adminAccessControlService
+                )
+                userConsumptionRoutes(userConsumptionService, jobService, comparatorReportPdfService)
+                userDataRoutes(userDataService, accessControlService)
+                userActivityRoutes(userActivityService)
+                authRoutes(userActivityService)
+                adminRoutes(userDataService, adminAuthService)
+                adminAccessRoutes(adminAccessControlService)
+                grantedUsersRoutes(grantedUsersService, adminAccessControlService)
+                collectedPricesRoutes(collectedPricesService, adminAccessControlService)
+            }
         }
     }
 }

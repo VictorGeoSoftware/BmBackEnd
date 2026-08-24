@@ -57,6 +57,7 @@ chmod +x deploy-remote.sh
 - `GET /health/live` - Liveness: process is up, no dependency checks (used by Docker healthchecks)
 - `GET /health/ready` - Readiness: 200 when the database is reachable, 503 otherwise
 - `GET /health` - Alias of `/health/ready`, kept for backwards compatibility
+- `GET /metrics` - Prometheus metrics. Requires `Authorization: Bearer $METRICS_TOKEN`; returns 401 when `METRICS_TOKEN` is unset
 - `GET /` - Service info
 
 ### Price Tables

@@ -135,36 +135,150 @@ price table screen until updated. Accepted deliberately — a feature flag was
 built to stage this and then removed, on the grounds that a flag which never
 gets flipped is permanent debt in the auth path.
 
+### 19. 🔴 The rate limiter is one shared 100 req/min bucket for the entire backend — ⏸️ DEFERRED, accepted risk
+
+**Evidence:** `Application.kt` installed
+`global { rateLimiter(limit = 100, refillPeriod = 60.seconds) }`. Ktor 2.3.12's
+`RateLimitProviderConfig.kt:105` documents the default key:
+
+> *"By default, the key is a `Unit`, so all requests share the same
+> Rate-Limit."*
+
+No `requestKey` was configured, so the limit is **not** per client. All callers
+draw from a single 100-requests-per-minute bucket.
+
+**Confirmed to be the only rate limiting in the stack:** there is no
+`limit_req` / `limit_conn` in `BmInfra/nginx/nginx.conf`,
+`nginx-bm-backend.conf` or `deploy-remote.sh`, and no Flask limiter in
+DoclingBillReader. Nothing backstops it.
+
+**Impact:** two dimensions, both bad.
+- *Availability:* a handful of concurrent users can exhaust the budget for
+  everyone. Each BmApp screen that issues several calls consumes a
+  disproportionate share.
+- *Security:* as abuse protection it is close to useless — a single attacker
+  trivially denies service to all legitimate users, which is a cheaper attack
+  than the one the limit was meant to prevent.
+
+**Partially mitigated:** the limiter was moved off `global` onto a named
+provider scoped to `/api/v1`, so `/`, `/health*` and `/metrics` no longer spend
+the budget — previously a Docker healthcheck or a Prometheus scrape competed
+with real traffic, and a 429 on a healthcheck would have restarted a healthy
+container. Limit and window are unchanged. Two tests pin this: probes are not
+limited, and `/api/v1` still is.
+
+**Fix (needs a decision, not just code):** set `requestKey` to the caller
+identity and raise the limit to something defensible per client.
+
+**⏸️ DEFERRED (Aug 2026) — accepted risk, with a tripwire.** The short-term user
+base is ~20, and the proper fix is a policy decision rather than a code change.
+The reasoning and the symptom are recorded in a comment directly above the
+`register(API_RATE_LIMIT)` block in `Application.kt`, so whoever hits this does
+not have to rediscover it.
+
+**Know the arithmetic before assuming ~20 users is safe.** The bucket is shared,
+so each concurrent user effectively gets `100 / N` requests per minute:
+
+| Concurrent users | Requests/min each |
+|---|---|
+| 5 | 20 |
+| 10 | 10 |
+| **20** | **5** |
+
+At 20 active users that is **5 requests/min each**. A single BmApp screen that
+calls 4–5 endpoints on open consumes a user's whole minute, and 20 users opening
+the app simultaneously spend the entire budget at once. This may already be
+happening rather than being a future risk.
+
+**Tripwire — check before assuming it is fine:**
+
+```
+{service="bm-backend", env="prod"} |= "429"
+```
+
+Empty ⇒ the deferral is safe. Non-empty ⇒ users are already being throttled and
+are experiencing it as "the app is broken".
+
+**Cheap interim mitigation if that query is not empty:** raise `limit = 100` to
+~2000. One line, no design decision needed. It keeps the shared-bucket shape —
+still wrong in principle, still weak as abuse protection — but removes the
+availability risk while the real fix waits.
+
+**When fixing properly, prefer the Firebase UID over the client IP.** An IP key
+is the obvious choice and the wrong one here, because BmApp is mobile:
+
+- **Many users, one IP.** Mobile carriers use carrier-grade NAT (CGNAT), so
+  thousands of subscribers share a small pool of public IPv4 addresses. Two
+  users on the same carrier can appear as the same IP — which recreates exactly
+  the shared-bucket problem this item is about, just smaller. Office Wi-Fi has
+  the same effect.
+- **One user, many IPs.** Switching Wi-Fi ↔ cellular changes the IP instantly;
+  so do tower handoffs and DHCP renewals. A user's bucket silently resets as
+  they move, defeating the limit.
+- IPv6 usually gives a device its own address, but carriers rotate prefixes, so
+  it is not a guarantee either.
+
+The Firebase UID is stable, gives exactly one bucket per user, and is immune to
+both CGNAT and network switching. Unauthenticated endpoints are a small set and
+can fall back to an IP key.
+
+If an IP key is used anywhere, note that the backend sits behind Nginx, so
+`remoteHost` is the proxy for every request. It must read the forwarded client
+IP — and trust `X-Forwarded-For` **only** from Nginx, or a caller can spoof the
+header and mint an unlimited bucket per request.
+
 ## 🟠 Medium
 
-### 4. `/metrics` is unauthenticated and host-exposed
+### 4. `/metrics` is unauthenticated and host-exposed — 🟡 PARTIALLY FIXED
 
-**Evidence:** `Application.kt:186` serves `prometheusMeterRegistry.scrape()`
-with no token or auth check. `BmInfra/docker-compose.yml` publishes
-`8081:8081` (prod) and `9081:8081` (qa) directly to the host.
+**Was:** `Application.kt:186` served `prometheusMeterRegistry.scrape()` with no
+token or auth check, while `BmInfra/docker-compose.yml` publishes `8081:8081`
+(prod) and `9081:8081` (qa) directly to the host. The `deny all` added in
+Phase 0 protects only the paths that go *through* Nginx, so the host ports
+bypassed it entirely.
 
-**Impact:** if the VPS firewall permits those ports, endpoint names and traffic
-volumes are readable from the internet, bypassing Nginx entirely. The `deny all`
-added in Phase 0 protects only the paths that go *through* Nginx.
+**Fixed (auth):** `MetricsAuthService` now requires
+`Authorization: Bearer $METRICS_TOKEN`, compared in constant time. It **fails
+closed** — with `METRICS_TOKEN` unset the endpoint returns 401 to everyone,
+which is the correct setting until Prometheus is actually deployed. The var is
+wired into both backend services in `BmInfra/docker-compose.yml` and documented
+in `env.example`. Covered by `MetricsAuthServiceTest` plus a route test
+asserting an unauthenticated `GET /metrics` is rejected.
 
-**Fix:** Phase 2 — bearer token or a separate internal port, and close
-8081/9081 at the firewall. Tracked in `MONITORING_PLAN.md` §Phase 2.
+**Still open (firewall):** ports 8081/9081 remain published to the host. The
+endpoint no longer leaks without a token, so this is now defence-in-depth
+rather than an open door.
 
 ⚠️ **Coupling to watch:** both deploy workflows health-check
 `http://217.154.181.175:8081/health` over the public interface. Closing 8081 at
 the firewall will break CI unless the check is moved to an SSH-tunnelled
 `curl` or to `docker compose exec` first. Sequence that change carefully.
 
-### 5. `/health` conflates liveness and readiness
+### 5. ~~`/health` conflates liveness and readiness~~ ✅ FIXED
 
-**Evidence:** `Application.kt:194` returns 503 when the DB is unreachable, and
-Docker's healthcheck targets it.
+**Was:** a single `/health` returned 503 when the DB was unreachable, and
+Docker's healthcheck targeted it — so a transient DB blip made Docker restart
+an otherwise healthy process, converting a brief dependency wobble into an
+outage that a restart cannot fix.
 
-**Impact:** a transient DB blip makes Docker restart an otherwise healthy
-process, converting a brief dependency wobble into an outage.
+**Fixed:** `/health/live` (no dependency checks) and `/health/ready` (DB check)
+now exist, with `/health` retained as a byte-compatible alias of `/health/ready`
+so deploy workflows, Nginx and scripts keep working unchanged. All four Docker
+healthchecks (`BmBackEnd/Dockerfile`, `BmBackEnd/docker-compose.yml`,
+`BmInfra/docker-compose.yml` ×2) now target `/health/live`.
 
-**Fix:** split `/health/live` (no dependency checks, for Docker) from
-`/health/ready` (current logic, for alerting). Tracked in Phase 2.
+Implemented behind `DatabaseHealthPort` / `ExposedDatabaseHealthCheck` +
+`HealthService`, following the `TransactionRunnerPort` pattern from item 3 —
+the health route was the last place in the codebase where the transport layer
+imported Exposed directly, which `AGENTS.md` forbids.
+
+Also fixed in passing: the old DB check swallowed the exception with
+`catch (_: Exception)`, so an outage produced a bare 503 with nothing in the
+logs to explain it. It now logs at WARN with the stack trace.
+
+**Tests:** `HealthServiceTest` (including one asserting liveness never calls the
+database, via a call counter) and four route tests, one of which pins `/health`
+to `/health/ready` so the alias cannot silently drift and break CI.
 
 ### 6. ~~Log statements carry no business context~~ ✅ FIXED
 
@@ -186,15 +300,40 @@ driven by request size, with document content going into log storage.
 **Verified in QA:** `"payloadBytes":13` with `requestId` returned as structured
 metadata from a Loki query.
 
-### 7. Unbounded disk growth outside Docker logs
+### 7. ~~Unbounded disk growth outside Docker logs~~ ✅ CLOSED — was not a real issue
 
-**Evidence:** `docling-temp` / `docling-uploads` volumes have no eviction
-policy; `BmBackEnd/docker-compose.yml` still mounts `./logs:/app/logs`.
+**This entry was wrong.** It was written from reading `docker-compose.yml`
+rather than the code, and every claim in it was measured false (Aug 2026):
 
-**Impact:** Docker log rotation (Phase 0) capped the largest risk, but uploaded
-PDFs and intermediates still accumulate indefinitely.
+| Claim | Measured reality |
+|---|---|
+| `docling-temp` / `docling-uploads` accumulate uploads | **0 B, both.** Nothing has ever been written to them |
+| Uploaded PDFs and intermediates persist | `/tmp` in both Docling containers: **8 K**, no leaked files |
+| `BmBackEnd/docker-compose.yml` mounts `./logs:/app/logs` on the VPS | That file is local-dev only; the mount is **not** in `BmInfra/docker-compose.yml` |
 
-**Fix:** Phase 3.
+Root cause of the mistake: all three Flask servers set
+`UPLOAD_FOLDER = tempfile.gettempdir()`
+(`docling_customer_data_extraction_api_server.py:48`,
+`docling_price_tables_extraction_api_server.py:41`), so uploads never touch the
+mounted volumes at all. And cleanup *does* exist on every request path — the
+price-tables server is `finally`-guarded; the customer-data server duplicates
+the delete across the success and `except` branches.
+
+**Disk at time of writing: 111 G used of 697 G (16%).** A `docker builder prune`
+reclaimed 6 GB. Note that `docker system df` reported "Build cache usage:
+62.9GB", which is misleading — most of those records are `SHARED` with live
+images and are not reclaimable; the prune's own `Total: 5.6GB` was the honest
+figure.
+
+**Residual, low priority:** the customer-data server's delete is not in a
+`finally`, so an abnormal exit (gunicorn `--timeout 300` worker kill, OOM)
+could leak a file, and there is no sweeper as a backstop. Not currently
+leaking. Its failure path also uses `print()` rather than the logger, so a
+repeated delete failure would be invisible in Loki.
+
+**Lesson:** measure before building. Implementing Phase 3 as originally
+specified would have produced a cleanup cron job for two permanently empty
+directories.
 
 ### 8. A missing env var breaks *all three* deploy pipelines
 
