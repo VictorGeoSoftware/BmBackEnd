@@ -201,13 +201,44 @@ is not worth the attack surface it adds. Fail-closed remains the right default.
 `AdminAuthService`'s KDoc. Behaviour is unchanged — admin endpoints still reject
 every request.
 
-### 13. Branch names contain typos
+### 13. An orphan `docling-api` container has run for 6 months
+
+**Evidence:** `docker ps -a` shows `docling-api  Up 6 months  docling-api`, with
+empty `com.docker.compose.service` and `com.docker.compose.project` labels —
+i.e. it predates the Docker migration and is not managed by Compose. The
+Compose-managed one is `bminfra-docling-api-1`.
+
+**Impact:** it consumes RAM indefinitely, is invisible to `docker compose`
+commands, and was the direct cause of the Promtail/Loki retry storm (it had no
+Compose labels, so its log stream had no labels and Loki rejected every push).
+It cannot be serving traffic, since Compose's docling-api holds port 5000.
+
+**Fix:** `docker rm -f docling-api`. Already covered in spirit by
+`BmInfra/TODO.md:24` ("remove old deployment leftovers"). The Promtail config
+was hardened independently so that removing it is hygiene, not a dependency.
+
+### 14. Docling runs Flask's development server in production
+
+**Evidence:** `Dockerfile` runs `CMD ["python", "docling_..._api_server.py"]`
+and the script ends in `app.run(host='0.0.0.0', port=port, debug=False)`.
+Meanwhile the module docstring in the same file describes running under
+``gunicorn --preload`` — so the code and the deployment disagree.
+
+**Impact:** Werkzeug's built-in server is explicitly not intended for
+production use. Docling is on the critical path for every bill upload, and PDF
+extraction is CPU-heavy and long-running, which is exactly the workload the dev
+server handles worst.
+
+**Fix:** run under gunicorn as the docstring already assumes, sizing workers
+against the ML memory footprint.
+
+### 15. Branch names contain typos
 
 `feature/implemeting-monitorization-phase0` (BmBackEnd) and
 `feature/implementing-obesrvability-phase0` (BmInfra). Cosmetic, but they will
 appear in history and PR links permanently.
 
-### 14. Benign Micrometer warning on every boot
+### 16. Benign Micrometer warning on every boot
 
 `A MeterFilter is being configured after a Meter has been registered…` — the
 `env`/`service` common tags are registered after the JVM meters. Verified
