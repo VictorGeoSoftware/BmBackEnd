@@ -94,6 +94,41 @@ now covered rather than merely implied.
 
 **Verified:** `./gradlew build` green — 112 tests, 0 failures, 0 skipped.
 
+### 18. 🔴 `PriceTableRoutes` exposes 8 endpoints with no authentication
+
+**Evidence:** `PriceTableRoutes.kt` contains no `requireAuthenticatedFirebaseUser`,
+`requireAdminFirebaseUser` or `adminAuthService` call, and `Application.kt`
+installs no `Authentication` plugin and wraps nothing in `authenticate { }`.
+Every other route file gates its endpoints (7 files, all covered).
+
+Unauthenticated endpoints, all reachable through Nginx on `/api/v1/`:
+
+| Endpoint | Effect |
+|---|---|
+| `DELETE /clear-all-data` | deletes all price table data |
+| `DELETE /price-table-results` | deletes selected proposals |
+| `POST /batch-process-price-tables` | writes price data |
+| `POST /upload-price-proposal` | uploads + stores an extracted PDF |
+| `POST /fetch-total-prices` (x2) | triggers the n8n workflow |
+| `GET /price-table-results` | reads price data |
+| `GET /price-table-tax-settings` | reads tax config |
+
+**Impact:** as written, anyone who can reach the host can wipe the price tables.
+Not verified against the running server — confirming it means destroying data.
+Check safely with a read: `curl -o /dev/null -w '%{http_code}'
+http://<host>:8091/api/v1/price-table-results` (200 = unauthenticated).
+
+**Fix requires a decision, not just a patch.** Some of these are plausibly
+machine-to-machine (`/batch-process-price-tables` accepts raw Docling
+extraction JSON, so n8n likely calls it), and n8n holds no Firebase token.
+Split them:
+- user-facing -> `requireAuthenticatedFirebaseUser`, as everywhere else
+- machine-facing -> shared secret, or restrict to the Docker network in Nginx
+- `/clear-all-data` -> admin-only, if it belongs in production at all
+
+Found incidentally while adding log context — it is unrelated to observability
+and outranks everything remaining in `MONITORING_PLAN.md`.
+
 ## 🟠 Medium
 
 ### 4. `/metrics` is unauthenticated and host-exposed
