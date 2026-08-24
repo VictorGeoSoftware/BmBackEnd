@@ -15,24 +15,32 @@ be re-checked when it is fixed.
 
 ## 🔴 High
 
-### 1. BmInfra has no deployment automation
+### 1. ~~BmInfra has no deployment automation~~ ✅ FIXED
 
-**Evidence:** `BmBackEnd/.github/workflows/deploy.yml` runs
-`cd /opt/bm/BmInfra` and then `docker compose build` — with no `git fetch` or
-`git pull` for that repo anywhere in the workflow. `DoclingBillReader`'s
-workflow does the same.
+**Was:** `BmBackEnd/.github/workflows/deploy.yml` ran `cd /opt/bm/BmInfra` then
+`docker compose build`, with no `git fetch`/`git pull` for that repo anywhere.
+`DoclingBillReader`'s workflow did the same. Application code was continuously
+deployed; infrastructure config was not. The failure mode was not a broken
+deploy but a **green** one running stale config.
 
-**Impact:** application code is continuously deployed; infrastructure config is
-not. The failure mode is not a broken deploy — it is a **green** deploy running
-stale config. Merging observability to `main` rebuilt the backend correctly
-while Compose still lacked `LOG_FORMAT=json`, and nothing reported a problem.
-Git is not the source of truth for infrastructure; the only way to know what the
-VPS runs is to SSH in and read the files.
+**Fixed:** `BmInfra/.github/workflows/deploy.yml` now triggers on push to
+`master` and syncs the VPS itself. Putting the pull inside BmBackEnd's workflow
+would *not* have fixed it — infra changes would still only land incidentally,
+whenever backend code happened to be pushed next.
 
-**Fix:** mirror the BmBackEnd block — `git fetch` + `git reset --hard
-origin/master` for `/opt/bm/BmInfra`, plus `docker compose up -d loki promtail
-grafana`. Safe to automate: the tracked tree on the VPS was confirmed clean, and
-`reset --hard` leaves untracked files (see §2) alone.
+Safety properties: refuses to run if tracked files were hand-edited on the VPS;
+validates with `docker compose config` before applying; `--no-build` so
+application images stay owned by their own repos; `up -d` is idempotent.
+Bind-mounted configs (Loki, Promtail, Grafana dashboards, `nginx.conf`) are
+reloaded explicitly, since changing a file's *contents* does not change the
+container spec and `up -d` alone would leave them running stale.
+
+**It proved its worth on the first run.** `docling-price-tables`, `n8n-prod` and
+`n8n-qa` were recreated: nothing depends on them, so the manual
+`up -d backend-prod backend-qa nginx` during deployment had never included them,
+and they had been running for four days **without log rotation** — the largest
+disk risk in `MONITORING_PLAN.md` §4. Nothing had reported it.
+
 
 ### 2. The VPS has an untracked `docker-compose.override.yml`
 
