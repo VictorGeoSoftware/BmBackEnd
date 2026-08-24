@@ -1,6 +1,7 @@
 package com.bm.backend.routes
 
 import com.bm.backend.models.*
+import com.bm.backend.plugins.requestId
 import com.bm.backend.services.ComparatorReportPdfService
 import com.bm.backend.services.JobService
 import com.bm.backend.services.UserConsumptionService
@@ -15,6 +16,7 @@ import io.ktor.utils.io.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import net.logstash.logback.argument.StructuredArguments.kv
 import java.io.File
 import java.nio.file.Files
 
@@ -119,11 +121,20 @@ fun Route.userConsumptionRoutes(
             // Create a job and return immediately
             val jobId = jobService.createJob(ownerUid = authenticatedUser.uid)
             val pdfFile = tempFile!!
-            
+            // Captured before detaching: the background coroutine below runs
+            // outside the call scope, where the MDC (and therefore requestId)
+            // is gone. Logging it explicitly keeps the async work joined to the
+            // request that started it.
+            val ownerUid = authenticatedUser.uid
+            val originRequestId = call.requestId
+
             // Process asynchronously in background
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    call.application.log.info("Starting background processing for job: $jobId")
+                    call.application.log.info(
+                        "Consumption report job started {} {} {}",
+                        kv("jobId", jobId), kv("userId", ownerUid), kv("requestId", originRequestId)
+                    )
                     jobService.updateJobStatus(jobId, JobStatus.PROCESSING, progress = 0)
                     
                     // Process the PDF through the orchestration flow
@@ -131,10 +142,16 @@ fun Route.userConsumptionRoutes(
                     
                     // Mark job as completed
                     jobService.completeJob(jobId, response)
-                    call.application.log.info("Job $jobId completed successfully")
-                    
+                    call.application.log.info(
+                        "Consumption report job completed {} {} {}",
+                        kv("jobId", jobId), kv("userId", ownerUid), kv("requestId", originRequestId)
+                    )
+
                 } catch (e: Exception) {
-                    call.application.log.error("Job $jobId failed: ${e.message}", e)
+                    call.application.log.error(
+                        "Consumption report job failed {} {} {}",
+                        kv("jobId", jobId), kv("userId", ownerUid), kv("requestId", originRequestId), e
+                    )
                     jobService.failJob(jobId, e.message ?: "Unknown error")
                 } finally {
                     // Clean up temp file
@@ -176,19 +193,33 @@ fun Route.userConsumptionRoutes(
             }
 
             val jobId = jobService.createJob(ownerUid = authenticatedUser.uid)
+            // See the PDF flow above: captured before detaching, because the
+            // background coroutine has no MDC and would otherwise lose the
+            // link back to this request.
+            val ownerUid = authenticatedUser.uid
+            val originRequestId = call.requestId
 
             CoroutineScope(Dispatchers.IO).launch {
                 try {
-                    call.application.log.info("Starting background CUPS processing for job: $jobId")
+                    call.application.log.info(
+                        "CUPS consumption job started {} {} {}",
+                        kv("jobId", jobId), kv("userId", ownerUid), kv("requestId", originRequestId)
+                    )
                     jobService.updateJobStatus(jobId, JobStatus.PROCESSING, progress = 0)
 
                     val response = userConsumptionService.processConsumptionReportFromCups(normalizedCupsCode)
 
                     jobService.completeJob(jobId, response)
-                    call.application.log.info("CUPS job $jobId completed successfully")
+                    call.application.log.info(
+                        "CUPS consumption job completed {} {} {}",
+                        kv("jobId", jobId), kv("userId", ownerUid), kv("requestId", originRequestId)
+                    )
 
                 } catch (e: Exception) {
-                    call.application.log.error("CUPS job $jobId failed: ${e.message}", e)
+                    call.application.log.error(
+                        "CUPS consumption job failed {} {} {}",
+                        kv("jobId", jobId), kv("userId", ownerUid), kv("requestId", originRequestId), e
+                    )
                     jobService.failJob(jobId, e.message ?: "Unknown error")
                 }
             }

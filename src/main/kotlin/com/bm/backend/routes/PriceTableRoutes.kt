@@ -13,6 +13,7 @@ import io.ktor.server.response.*
 import io.ktor.server.routing.*
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import net.logstash.logback.argument.StructuredArguments.kv
 import java.io.File
 import java.nio.file.Files
 
@@ -23,9 +24,15 @@ fun Route.priceTableRoutes(
 ) {
     post("/batch-process-price-tables") {
         try {
-            // Get raw request body for debugging
             val rawBody = call.receiveText()
-            call.application.log.info("Received request body: $rawBody")
+            // Log the size, never the payload. This ran at INFO with the whole
+            // body inline "for debugging"; with logs now shipped to Loki and
+            // retained 30 days that is unbounded storage driven by request size,
+            // and it puts extracted document content into log storage.
+            call.application.log.info(
+                "Batch price tables request received {}",
+                kv("payloadBytes", rawBody.length)
+            )
 
             // Parse with the same normalization strategy used by upload-price-proposal flow.
             // Accepts either backend PriceTableResponse JSON or raw Docling extraction JSON.
@@ -227,8 +234,10 @@ fun Route.priceTableRoutes(
             }
 
             val extractedResponse = externalApiService.extractPriceTablesFromPdf(tempFile!!)
+            // Summary only — the full extraction JSON used to be logged inline.
             call.application.log.info(
-                "Extracted price tables response for file ${uploadedFileName ?: tempFile!!.name}: ${Json.encodeToString(extractedResponse)}"
+                "Price tables extracted from PDF {}",
+                kv("fileName", uploadedFileName ?: tempFile!!.name)
             )
 
             val storageResponse = priceTableService.processBatchPriceTables(listOf(extractedResponse))

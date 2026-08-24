@@ -6,6 +6,7 @@ import com.bm.backend.repositories.ports.TransactionRunnerPort
 import com.bm.backend.repositories.ports.UserActivityRepositoryPort
 import com.bm.backend.repositories.ports.UserConsumptionRepositoryPort
 import com.bm.backend.repositories.ports.UserDataRepositoryPort
+import net.logstash.logback.argument.StructuredArguments.kv
 import org.slf4j.LoggerFactory
 
 /**
@@ -43,10 +44,10 @@ class GrantedUsersService(
         val email = normalize(rawEmail) ?: return AddGrantResult.InvalidEmail
         val inserted = grantedUsersRepository.insert(email)
         if (!inserted) {
-            logger.info("AUDIT: Grant add skipped, already exists email={}", email)
+            logger.info("AUDIT: Grant add skipped, already exists {}", kv("userEmail", email))
             return AddGrantResult.AlreadyExists(email)
         }
-        logger.info("AUDIT: Grant added email={}", email)
+        logger.info("AUDIT: Grant added {}", kv("userEmail", email))
         return AddGrantResult.Added(email)
     }
 
@@ -98,7 +99,10 @@ class GrantedUsersService(
             userDataRepository.deleteByEmail(email)
             grantedUsersRepository.deleteByEmail(email)
         }
-        logger.info("AUDIT: Grant deleted with full data wipe email={} uid={}", email, uid)
+        logger.info(
+            "AUDIT: Grant deleted with full data wipe {} {}",
+            kv("userEmail", email), kv("userId", uid)
+        )
 
         forceLogoutNotifier.notifyForceLogout(email)
         return DeleteGrantResult.Deleted(email)
