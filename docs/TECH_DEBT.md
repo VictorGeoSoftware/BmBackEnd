@@ -94,61 +94,46 @@ now covered rather than merely implied.
 
 **Verified:** `./gradlew build` green — 112 tests, 0 failures, 0 skipped.
 
-### 18. 🔴 `PriceTableRoutes` exposes 8 endpoints with no authentication
+### 18. ~~🔴 `PriceTableRoutes` exposes 8 endpoints with no authentication~~ ✅ FIXED
 
-**Evidence:** `PriceTableRoutes.kt` contains no `requireAuthenticatedFirebaseUser`,
-`requireAdminFirebaseUser` or `adminAuthService` call, and `Application.kt`
-installs no `Authentication` plugin and wraps nothing in `authenticate { }`.
-Every other route file gates its endpoints (7 files, all covered).
+**Was:** `PriceTableRoutes.kt` contained no auth call of any kind — the only
+route file without one — and no global `Authentication` plugin covered it. All
+eight endpoints were reachable through Nginx on `/api/v1/`, including
+`DELETE /clear-all-data`. Confirmed against QA rather than inferred: an
+unauthenticated POST returned **500, not 401**, meaning the body was accepted,
+parsed and logged before failing on content.
 
-Unauthenticated endpoints, all reachable through Nginx on `/api/v1/`:
+**Fixed** across four repositories, gated by caller:
 
-| Endpoint | Effect |
+| Endpoint | Gate |
 |---|---|
-| `DELETE /clear-all-data` | deletes all price table data |
-| `DELETE /price-table-results` | deletes selected proposals |
-| `POST /batch-process-price-tables` | writes price data |
-| `POST /upload-price-proposal` | uploads + stores an extracted PDF |
-| `POST /fetch-total-prices` (x2) | triggers the n8n workflow |
-| `GET /price-table-results` | reads price data |
-| `GET /price-table-tax-settings` | reads tax config |
+| `clear-all-data`, `delete price-table-results`, `upload-price-proposal`, `fetch-total-prices` (x2), `price-table-tax-settings` (x2) | admin (`requireAdminFirebaseUser`) |
+| `GET /price-table-results` | authenticated — BmApp users are regular granted accounts, not admins |
+| `POST /batch-process-price-tables` | unchanged in code; `deny all` at the proxy |
 
-**Impact:** as written, anyone who can reach the host can wipe the price tables.
-Not verified against the running server — confirming it means destroying data.
-Check safely with a read: `curl -o /dev/null -w '%{http_code}'
-http://<host>:8091/api/v1/price-table-results` (200 = unauthenticated).
+`batch-process-price-tables` deliberately keeps no Firebase auth: the n8n
+workflow posts to `http://backend-prod:8081/...` over the internal Docker
+network and holds no token. Adding auth there would have broken price fetching —
+caught during implementation. Blocking it at the proxy closes external access
+because that internal path never traverses Nginx.
 
-**Fix requires a decision, not just a patch.** Some of these are plausibly
-machine-to-machine (`/batch-process-price-tables` accepts raw Docling
-extraction JSON, so n8n likely calls it), and n8n holds no Firebase token.
-Split them:
-- user-facing -> `requireAuthenticatedFirebaseUser`, as everywhere else
-- machine-facing -> shared secret, or restrict to the Docker network in Nginx
-- `/clear-all-data` -> admin-only, if it belongs in production at all
+BmWeb forwards the caller's token (`authFetch` client-side,
+`authorizationHeader` in route handlers, both centralised so a new call site
+cannot silently omit it). BmApp now sends a token on `getPriceTableResults()`,
+the one call in `PriceTableApi` that did not.
 
-**Confirmed against the running QA server**, not just read from code: an
-unauthenticated `POST /api/v1/batch-process-price-tables` returned **500**, not
-401 — the body was accepted, parsed and logged before failing on content. If
-anything gated the route the request would have been rejected before the body
-was read.
+`ApplicationTest` asserted the old anonymous-read contract and failed on the
+change — the regression net working — and now asserts 401.
 
-**Caller mapping (already done, to inform the fix):**
+**Residual risk:** ports 8081/9081 remain published to the host, so direct
+access bypasses the proxy. Every endpoint now requires a token regardless, so
+only `batch-process-price-tables` is reachable that way. Closing those ports is
+**#4**, which needs sequencing because both CI health checks use 8081.
 
-| Endpoint | Called by |
-|---|---|
-| `batch-process-price-tables` | neither BmWeb nor BmApp -> machine caller (n8n) |
-| `clear-all-data` | BmWeb (`api/price-proposals/clear-all-data`, sidebar) |
-| `upload-price-proposal` | BmWeb (`api/price-proposal/upload`) |
-| `price-table-results` | BmWeb (`api/price-proposals`) |
-| `fetch-total-prices` | BmWeb (`api/price-proposals/fetch-total-prices`) |
-
-So all but one are user-facing through BmWeb's Next.js server routes and can
-take Firebase auth; only `batch-process-price-tables` needs a machine-to-machine
-mechanism. Open question for the fix: whether BmWeb's server routes already
-forward the caller's Firebase ID token.
-
-Found incidentally while adding log context — it is unrelated to observability
-and outranks everything remaining in `MONITORING_PLAN.md`.
+**Known consequence:** BmApp installs older than the token release fail on the
+price table screen until updated. Accepted deliberately — a feature flag was
+built to stage this and then removed, on the grounds that a flag which never
+gets flipped is permanent debt in the auth path.
 
 ## 🟠 Medium
 
