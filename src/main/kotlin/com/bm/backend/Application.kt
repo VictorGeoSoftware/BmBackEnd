@@ -213,7 +213,17 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
         }
 
         route("/api/v1") {
-            priceTableRoutes(priceTableService, externalApiService, priceUpdatesNotifier)
+            priceTableRoutes(
+                priceTableService,
+                externalApiService,
+                priceUpdatesNotifier,
+                adminAccessControlService,
+                // Default OFF: BmApp installs that predate the token change
+                // would otherwise be locked out. Set to true on the VPS once
+                // the mobile release has been adopted.
+                requirePriceTableResultsAuth =
+                    System.getenv("REQUIRE_PRICE_TABLE_RESULTS_AUTH")?.trim()?.lowercase() == "true"
+            )
             userConsumptionRoutes(userConsumptionService, jobService, comparatorReportPdfService)
             userDataRoutes(userDataService, accessControlService)
             userActivityRoutes(userActivityService)

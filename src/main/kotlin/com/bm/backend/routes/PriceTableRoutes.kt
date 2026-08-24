@@ -2,6 +2,7 @@ package com.bm.backend.routes
 
 import com.bm.backend.models.*
 import com.bm.backend.services.ExternalApiService
+import com.bm.backend.services.AdminAccessControlService
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.PriceUpdatesNotifier
 import com.bm.backend.services.ValidationException
@@ -20,9 +21,24 @@ import java.nio.file.Files
 fun Route.priceTableRoutes(
     priceTableService: PriceTableService,
     externalApiService: ExternalApiService,
-    priceUpdatesNotifier: PriceUpdatesNotifier
+    priceUpdatesNotifier: PriceUpdatesNotifier,
+    adminAccessControlService: AdminAccessControlService,
+    /**
+     * Enforcement of authentication on `GET /price-table-results` is gated
+     * because BmApp calls it and older installs send no token — turning it on
+     * before the mobile release has been adopted would lock those users out.
+     * Ship the code, flip the flag on the VPS when adoption is sufficient.
+     */
+     requirePriceTableResultsAuth: Boolean
 ) {
+    // NOTE: deliberately NOT Firebase-authenticated. This is a
+    // machine-to-machine endpoint: the n8n workflow posts here as
+    // http://backend-prod:8081/api/v1/batch-process-price-tables over the
+    // internal Docker network and holds no Firebase token. External access is
+    // blocked at the proxy instead (`deny all` in BmInfra/nginx/nginx.conf),
+    // which the internal call bypasses entirely.
     post("/batch-process-price-tables") {
+
         try {
             val rawBody = call.receiveText()
             // Log the size, never the payload. This ran at INFO with the whole
@@ -61,6 +77,10 @@ fun Route.priceTableRoutes(
     }
 
     get("/price-table-results") {
+        // BmApp (regular users, not admins) reads this, so authentication is
+        // enough — admin rights are not required.
+        if (requirePriceTableResultsAuth && call.requireAuthenticatedFirebaseUser() == null) return@get
+
         try {
             val tarifaType = call.request.queryParameters["tarifaType"]
             val response = priceTableService.getAllPriceTableResults(tarifaType)
@@ -74,6 +94,8 @@ fun Route.priceTableRoutes(
     }
 
     get("/price-table-tax-settings") {
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "read price table tax settings") == null) return@get
+
         try {
             val response = priceTableService.getTaxSettings()
             call.respond(HttpStatusCode.OK, response)
@@ -86,6 +108,8 @@ fun Route.priceTableRoutes(
     }
 
     patch("/price-table-tax-settings") {
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "update price table tax settings") == null) return@patch
+
         try {
             val request = call.receive<UpdateTaxSettingsRequest>()
             val response = priceTableService.updateTaxSettings(
@@ -114,6 +138,8 @@ fun Route.priceTableRoutes(
     }
 
     delete("/clear-all-data") {
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "clear all price table data") == null) return@delete
+
         try {
             val response = priceTableService.clearAllData()
             priceUpdatesNotifier.notify(
@@ -133,6 +159,8 @@ fun Route.priceTableRoutes(
     }
 
     post("/fetch-total-prices") {
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "trigger the total prices workflow") == null) return@post
+
         try {
             val response = externalApiService.triggerFetchTotalPricesWorkflow()
             call.respond(HttpStatusCode.OK, response)
@@ -150,6 +178,8 @@ fun Route.priceTableRoutes(
     }
 
     delete("/price-table-results") {
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "delete price proposals") == null) return@delete
+
         try {
             val request = call.receive<DeleteSelectedPriceTablesRequest>()
             val response = priceTableService.deleteSelectedPriceTables(request.ids)
@@ -178,6 +208,8 @@ fun Route.priceTableRoutes(
     }
 
     post("/fetch-total-prices") {
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "trigger the total prices workflow") == null) return@post
+
         try {
             val response = externalApiService.triggerFetchTotalPricesWorkflow()
             call.respond(HttpStatusCode.OK, response)
@@ -195,6 +227,8 @@ fun Route.priceTableRoutes(
     }
 
     post("/upload-price-proposal") {
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "upload a price proposal") == null) return@post
+
         var tempFile: File? = null
         var uploadedFileName: String? = null
 
