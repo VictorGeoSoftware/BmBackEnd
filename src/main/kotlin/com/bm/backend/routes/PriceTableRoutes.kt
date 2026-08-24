@@ -22,14 +22,7 @@ fun Route.priceTableRoutes(
     priceTableService: PriceTableService,
     externalApiService: ExternalApiService,
     priceUpdatesNotifier: PriceUpdatesNotifier,
-    adminAccessControlService: AdminAccessControlService,
-    /**
-     * Enforcement of authentication on `GET /price-table-results` is gated
-     * because BmApp calls it and older installs send no token — turning it on
-     * before the mobile release has been adopted would lock those users out.
-     * Ship the code, flip the flag on the VPS when adoption is sufficient.
-     */
-     requirePriceTableResultsAuth: Boolean
+    adminAccessControlService: AdminAccessControlService
 ) {
     // NOTE: deliberately NOT Firebase-authenticated. This is a
     // machine-to-machine endpoint: the n8n workflow posts here as
@@ -77,9 +70,9 @@ fun Route.priceTableRoutes(
     }
 
     get("/price-table-results") {
-        // BmApp (regular users, not admins) reads this, so authentication is
-        // enough — admin rights are not required.
-        if (requirePriceTableResultsAuth && call.requireAuthenticatedFirebaseUser() == null) return@get
+        // BmApp reads this and its users are regular granted accounts, so
+        // authentication is required but admin rights are not.
+        if (call.requireAuthenticatedFirebaseUser() == null) return@get
 
         try {
             val tarifaType = call.request.queryParameters["tarifaType"]

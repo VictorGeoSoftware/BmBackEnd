@@ -73,7 +73,7 @@ class ApplicationTest {
     }
 
     @Test
-    fun `test get price table results endpoint`() = testApplication {
+    fun `price table results rejects unauthenticated callers`() = testApplication {
         environment {
             config = io.ktor.server.config.MapApplicationConfig()
         }
@@ -81,10 +81,11 @@ class ApplicationTest {
             testApplicationModule()
         }
 
+        // This endpoint used to be readable with no credentials at all. It now
+        // requires an authenticated (not necessarily admin) caller, so an
+        // anonymous request must be rejected before it reaches the service.
         client.get("/api/v1/price-table-results").apply {
-            assertEquals(HttpStatusCode.OK, status)
-            val response = Json.decodeFromString<PriceTableResponse>(bodyAsText())
-            assertEquals(true, response.success)
+            assertEquals(HttpStatusCode.Unauthorized, status)
         }
     }
 
