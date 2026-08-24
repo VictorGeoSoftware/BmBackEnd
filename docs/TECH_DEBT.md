@@ -232,6 +232,21 @@ server handles worst.
 **Fix:** run under gunicorn as the docstring already assumes, sizing workers
 against the ML memory footprint.
 
+### 17. `qa` is behind `main` — QA is not a faithful rehearsal of PROD
+
+**Evidence:** `git diff origin/qa origin/main -- src/` shows
+`AdminAuthService.kt` differing by 14 lines: the admin-logging change was
+committed to `main` directly and never flowed back to `qa`.
+
+**Impact:** `MONITORING_PLAN.md` §5 requires the code on both branches to be
+identical, with only environment variables differing — otherwise QA stops being
+a rehearsal of PROD and changes reach production untested. Divergence also
+accumulates: the next `qa` → `main` merge has to reconcile it.
+
+**Fix:** merge `main` into `qa` (pushing to `qa` triggers the QA deploy, which
+is the point). Then treat "commit to `main` directly" as the exception it
+should be — the workflow in §5 is develop on `qa`, validate, promote.
+
 ### 15. Branch names contain typos
 
 `feature/implemeting-monitorization-phase0` (BmBackEnd) and

@@ -340,7 +340,10 @@ Ordered by *your* priority: get a usable log/observability framework first.
       `message` field (garbage in Grafana, broken exact-match Loki queries).
       Replaced with an explicit formatter + regression test.
 - [ ] Review existing log statements: add context (user id, job id, bill id)
-- [ ] Merge `qa` → `main`
+- [x] Merge `qa` → `main` — done via squash-merge PRs (#57 into `qa`, #58 into
+      `main`), so the two branches carry different SHAs for identical content.
+      `git merge-base --is-ancestor origin/qa origin/main` therefore reports
+      "not an ancestor"; compare trees, not history, when checking parity.
 
 > ⚠️ **Pre-existing, unrelated:** `./gradlew build` still fails on two
 > `GrantedUsersServiceTest` cases (`Please call Database.connect()`). They hit a
