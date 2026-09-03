@@ -200,25 +200,6 @@ fun Route.priceTableRoutes(
         }
     }
 
-    post("/fetch-total-prices") {
-        if (call.requireAdminFirebaseUser(adminAccessControlService, "trigger the total prices workflow") == null) return@post
-
-        try {
-            val response = externalApiService.triggerFetchTotalPricesWorkflow()
-            call.respond(HttpStatusCode.OK, response)
-        } catch (e: Exception) {
-            call.application.log.error("Error triggering Total prices workflow: ${e.message}", e)
-            call.respond(
-                HttpStatusCode.InternalServerError,
-                TriggerWorkflowResponse(
-                    success = false,
-                    message = "Failed to trigger Total prices workflow",
-                    details = e.message
-                )
-            )
-        }
-    }
-
     post("/upload-price-proposal") {
         if (call.requireAdminFirebaseUser(adminAccessControlService, "upload a price proposal") == null) return@post
 
