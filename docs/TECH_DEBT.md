@@ -227,6 +227,75 @@ If an IP key is used anywhere, note that the backend sits behind Nginx, so
 IP — and trust `X-Forwarded-For` **only** from Nginx, or a caller can spoof the
 header and mint an unlimited bucket per request.
 
+### 20. 🔴 App grants are checked only during user-data sync, not on every protected operation
+
+**Evidence:** Firebase authentication and application authorization are separate
+concerns, but most user-facing routes currently enforce only the former.
+`requireAuthenticatedFirebaseUser()` proves that the caller owns a valid
+Firebase account. The `granted_users` lookup in `AccessControlService`, which
+decides whether that account may use BmApp, is called only by
+`POST /api/v1/user-data`.
+
+Examples that require a Firebase token but do not check `granted_users` include
+`GET /price-table-results`, consumption/report operations, collected-price
+submission, activity mutations and logout. A caller can therefore skip the
+user-data sync and call those endpoints directly. Removing a grant also does not
+deny an already-issued Firebase ID token on those routes until the token expires.
+
+**Impact:** the allowlist is currently a login/UI gate rather than an API
+authorization boundary. This must be fixed before adding BASIC/PREMIUM tiers;
+otherwise premium checks in the client or login response could be bypassed by
+calling a premium endpoint directly.
+
+**Terminology and scope decision (Sep 2026):** keep the name `admin` for now,
+but it means a small set of company operators (initially the CEO and explicitly
+approved future staff) who work only in **BmWeb**, where business information and
+operations are managed. Admin access remains stored independently in
+`admin_users` and must not be represented as a BmApp subscription tier. A person
+being an admin does not implicitly make their BmApp account PREMIUM, and a
+PREMIUM user is never an admin merely because of that tier.
+
+**Required prerequisite for user tiers:** introduce one reusable route guard
+that combines Firebase identity verification with a fresh `granted_users`
+lookup. Apply it to every BmApp endpoint before capability-specific checks are
+added. Keep machine-to-machine callbacks, health endpoints and BmWeb admin
+routes under their own explicit authorization policies rather than forcing them
+through the BmApp grant policy.
+
+The grant lookup should return an access context (at minimum normalized email
+and tier), not only a Boolean. Feature routes can then require a named
+capability derived from the tier. The database remains the source of truth so
+grant removal and tier changes take effect on the next API request.
+
+**Token handling decision:** Firebase custom claims are not the initial source
+of truth for tiers. They remain embedded in ID tokens until clients refresh
+them, which makes upgrades and downgrades stale. Checking Firebase token
+revocation on every request could shorten the effect of account revocation, but
+it adds a remote verification cost and still does not replace the application
+grant/tier lookup. Central database authorization is therefore the necessary
+fix for this feature; revoked-token checking can be assessed separately as
+defence in depth.
+
+**Related identity hardening:** `UserDataRoutes` currently persists
+`request.email` in preference to the verified token email. The Firebase token
+email must be authoritative (or the request value must match it after
+normalization), because deletion, device reset and account lookup later rely on
+email. This should be corrected in the same prerequisite work.
+
+**Implementation order:**
+
+1. Add the central granted-user guard and route-level authorization tests.
+2. Store only the verified Firebase email during user-data sync.
+3. Add a non-null `BASIC`/`PREMIUM` tier to `granted_users`, with an explicit
+   migration policy for existing users.
+4. Return the tier/capabilities from a dedicated authenticated access endpoint.
+5. Enforce named capabilities on premium operations in the backend; client-side
+   visibility is UX only, never the security boundary.
+
+Do not reuse grant deletion for a PREMIUM-to-BASIC downgrade. Deleting a grant
+currently performs a full user-data wipe and Firebase refresh-token revocation;
+tier changes require a separate, non-destructive admin operation.
+
 ## 🟠 Medium
 
 ### 4. `/metrics` is unauthenticated and host-exposed — 🟡 PARTIALLY FIXED
