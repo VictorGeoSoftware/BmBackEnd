@@ -1,6 +1,7 @@
 package com.bm.backend.routes
 
 import com.bm.backend.models.*
+import com.bm.backend.services.AccessControlService
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.AdminAccessControlService
 import com.bm.backend.services.PriceTableService
@@ -22,6 +23,7 @@ fun Route.priceTableRoutes(
     priceTableService: PriceTableService,
     externalApiService: ExternalApiService,
     priceUpdatesNotifier: PriceUpdatesNotifier,
+    accessControlService: AccessControlService,
     adminAccessControlService: AdminAccessControlService
 ) {
     // NOTE: deliberately NOT Firebase-authenticated. This is a
@@ -70,9 +72,7 @@ fun Route.priceTableRoutes(
     }
 
     get("/price-table-results") {
-        // BmApp reads this and its users are regular granted accounts, so
-        // authentication is required but admin rights are not.
-        if (call.requireAuthenticatedFirebaseUser() == null) return@get
+        if (call.requireGrantedFirebaseUser(accessControlService) == null) return@get
 
         try {
             val tarifaType = call.request.queryParameters["tarifaType"]

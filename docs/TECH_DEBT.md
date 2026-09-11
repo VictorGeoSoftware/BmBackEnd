@@ -227,6 +227,51 @@ If an IP key is used anywhere, note that the backend sits behind Nginx, so
 IP — and trust `X-Forwarded-For` **only** from Nginx, or a caller can spoof the
 header and mint an unlimited bucket per request.
 
+### 20. ~~🔴 App grants were checked only during user-data sync~~ ✅ FIXED
+
+**Was:** Firebase authentication and application authorization were separate,
+but most BmApp routes enforced only the former. A valid Firebase account could
+skip `POST /api/v1/user-data`, where the only `granted_users` lookup lived, and
+call user-facing endpoints directly. Removing a grant therefore did not deny an
+already-issued Firebase ID token on those routes until the token expired.
+
+This had to be fixed before BASIC/PREMIUM tiers: client-side feature visibility
+or a tier returned at login is not an API authorization boundary.
+
+**Admin scope decision (Sep 2026):** keep the name `admin`, but it means a small
+set of company operators (initially the CEO and explicitly approved future
+staff) who work only in **BmWeb**, where business information and operations are
+managed. Admin access remains independently stored in `admin_users`; it is not
+a BmApp subscription tier. Admin status does not imply PREMIUM, and PREMIUM
+never implies admin access.
+
+**Fixed (Sep 2026):** added `requireGrantedFirebaseUser`, which combines
+Firebase token verification with a fresh database-backed grant check and
+returns the normalized, verified identity. Every BmApp route now uses this
+guard, including price-table reads, report/job operations, collected-price
+submission, activity mutations, logout and user-data sync. The n8n callbacks
+remain under their documented network policy, while BmWeb operations retain
+their independent admin policy.
+
+The two user-activity list endpoints, which expose business/user information to
+BmWeb, now require an `admin_users` account rather than remaining public.
+User-data sync also ignores the client-supplied email and persists the verified
+Firebase token email. Tests cover missing credentials (401), a valid but
+non-granted identity (403), normalized granted identity and spoofed request
+email prevention.
+
+**Token decision:** Firebase custom claims are not the initial source of truth
+for tiers because claims remain stale until clients refresh their ID tokens.
+Checking Firebase token revocation on every request could be added later as
+defence in depth, but it does not replace database authorization. A fresh grant
+lookup now makes removal effective on the next BmApp API request even while the
+Firebase token itself remains valid.
+
+**Remaining tier work:** add the non-null BASIC/PREMIUM tier to
+`granted_users`, expose an authenticated access response and enforce named
+capabilities in the backend. Tier updates must be separate from grant deletion,
+which currently performs a full user-data wipe and token revocation.
+
 ## 🟠 Medium
 
 ### 4. `/metrics` is unauthenticated and host-exposed — 🟡 PARTIALLY FIXED

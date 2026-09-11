@@ -15,11 +15,12 @@ import io.ktor.server.routing.post
 
 fun Route.userDataRoutes(
     userDataService: UserDataService,
-    accessControlService: AccessControlService
+    accessControlService: AccessControlService,
+    verifyToken: suspend (String) -> AuthenticatedFirebaseUser = ::verifyFirebaseIdToken
 ) {
     post("/user-data") {
         try {
-            val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@post
+            val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService, verifyToken) ?: return@post
             val request = call.receive<UserDataRequest>()
             val uid = request.uid
 
@@ -39,26 +40,10 @@ fun Route.userDataRoutes(
                 return@post
             }
 
-            if (!accessControlService.isEmailAllowed(authenticatedUser.email)) {
-                call.application.log.warn(
-                    "AUDIT: Rejected login for non-allowlisted account uid={} email={}",
-                    uid,
-                    authenticatedUser.email
-                )
-                call.respond(
-                    HttpStatusCode.Forbidden,
-                    ErrorResponse(
-                        message = "Esta cuenta no está autorizada para acceder a la aplicación. " +
-                            "Contacta con el equipo de administración."
-                    )
-                )
-                return@post
-            }
-
             try {
                 userDataService.upsertUserData(
                     uid = uid,
-                    email = request.email ?: authenticatedUser.email,
+                    email = authenticatedUser.email,
                     displayName = request.displayName ?: authenticatedUser.name,
                     photoURL = request.photoURL,
                     providerIds = request.providerIds,
