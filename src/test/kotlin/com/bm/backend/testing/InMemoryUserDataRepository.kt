@@ -41,6 +41,8 @@ class InMemoryUserDataRepository : UserDataRepositoryPort {
 
     override fun findPhoneUuid(uid: String): String? = rows[uid]?.phoneUuid
 
+    fun findEmail(uid: String): String? = rows[uid]?.email
+
     override fun clearPhoneUuidByEmail(email: String): Int {
         val target = email.trim().lowercase()
         var count = 0

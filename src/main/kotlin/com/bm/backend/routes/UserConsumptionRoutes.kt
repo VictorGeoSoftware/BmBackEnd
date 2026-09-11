@@ -4,6 +4,7 @@ import com.bm.backend.models.*
 import com.bm.backend.plugins.requestId
 import com.bm.backend.services.ComparatorReportPdfService
 import com.bm.backend.services.JobService
+import com.bm.backend.services.AccessControlService
 import com.bm.backend.services.UserConsumptionService
 import io.ktor.http.*
 import io.ktor.http.content.*
@@ -23,11 +24,12 @@ import java.nio.file.Files
 fun Route.userConsumptionRoutes(
     userConsumptionService: UserConsumptionService,
     jobService: JobService,
-    comparatorReportPdfService: ComparatorReportPdfService
+    comparatorReportPdfService: ComparatorReportPdfService,
+    accessControlService: AccessControlService
 ) {
     post("/reports/comparator-pdf") {
         try {
-            call.requireAuthenticatedFirebaseUser() ?: return@post
+            call.requireGrantedFirebaseUser(accessControlService) ?: return@post
             val request = call.receive<ComparatorReportPdfRequest>()
             val pdfBytes = comparatorReportPdfService.generate(request)
             val fileName = "comparativo_${System.currentTimeMillis()}.pdf"
@@ -75,7 +77,7 @@ fun Route.userConsumptionRoutes(
         var errorResponse: Pair<HttpStatusCode, ErrorResponse>? = null
         
         try {
-            val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@post
+            val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@post
             val multipartData = call.receiveMultipart()
             
             multipartData.forEachPart { part ->
@@ -181,7 +183,7 @@ fun Route.userConsumptionRoutes(
 
     post("/fetch-user-consumption-report-by-cups") {
         try {
-            val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@post
+            val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@post
             val request = call.receive<FetchConsumptionReportByCupsRequest>()
             val normalizedCupsCode = CupsValidation.normalize(request.cupsCode)
             if (!CupsValidation.isValid(normalizedCupsCode)) {
@@ -248,7 +250,7 @@ fun Route.userConsumptionRoutes(
     }
     
     get("/consumption-report-status/{jobId}") {
-        val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@get
+        val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@get
         val jobId = call.parameters["jobId"]
         
         if (jobId == null) {
@@ -288,7 +290,7 @@ fun Route.userConsumptionRoutes(
     }
     
     get("/consumption-report-result/{jobId}") {
-        val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@get
+        val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@get
         val jobId = call.parameters["jobId"]
         
         if (jobId == null) {
@@ -336,7 +338,7 @@ fun Route.userConsumptionRoutes(
     }
 
     post("/consumption-report-refresh/{jobId}") {
-        val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@post
+        val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@post
         val jobId = call.parameters["jobId"]
 
         if (jobId == null) {

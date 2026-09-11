@@ -3,6 +3,7 @@ package com.bm.backend.routes
 import com.bm.backend.models.CollectedPriceSubmitRequest
 import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.toDomainModel
+import com.bm.backend.services.AccessControlService
 import com.bm.backend.services.AdminAccessControlService
 import com.bm.backend.services.CollectedPricesService
 import io.ktor.http.HttpStatusCode
@@ -19,17 +20,18 @@ import io.ktor.server.routing.post
  * Endpoints for collected prices — the customer's current electricity prices, as
  * entered by a broker on the app's current-conditions screen.
  *
- * - `POST /collected-prices` is called by the app; any authenticated account may
+ * - `POST /collected-prices` is called by the app; any granted account may
  *   submit, since submitting is a normal part of the broker workflow.
  * - `GET /admin/collected-prices` backs the BmWeb "Collected Prices" dashboard and
  *   is restricted to accounts on the admin allowlist.
  */
 fun Route.collectedPricesRoutes(
     collectedPricesService: CollectedPricesService,
+    accessControlService: AccessControlService,
     adminAccessControlService: AdminAccessControlService
 ) {
     post("/collected-prices") {
-        if (call.requireAuthenticatedFirebaseUser() == null) return@post
+        if (call.requireGrantedFirebaseUser(accessControlService) == null) return@post
 
         try {
             val submission = call.receive<CollectedPriceSubmitRequest>().toDomainModel()
