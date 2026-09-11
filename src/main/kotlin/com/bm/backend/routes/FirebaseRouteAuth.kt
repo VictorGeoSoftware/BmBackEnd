@@ -2,6 +2,7 @@ package com.bm.backend.routes
 
 import com.bm.backend.firebase.FirebaseAdminFactory
 import com.bm.backend.models.ErrorResponse
+import com.bm.backend.models.GrantedFirebaseUser
 import com.bm.backend.services.AccessControlService
 import com.bm.backend.services.AdminAccessControlService
 import com.google.firebase.auth.FirebaseAuth
@@ -56,17 +57,18 @@ suspend fun ApplicationCall.requireAuthenticatedFirebaseUser(
 
 /**
  * Requires a Firebase-authenticated caller with an active BmApp grant.
- * The returned email comes from the verified token and is normalized for all
- * downstream identity and persistence operations.
+ * The returned identity includes the current database-backed tier, and its
+ * email is normalized for all downstream identity and persistence operations.
  */
 suspend fun ApplicationCall.requireGrantedFirebaseUser(
     accessControlService: AccessControlService,
     verifyToken: suspend (String) -> AuthenticatedFirebaseUser = ::verifyFirebaseIdToken
-): AuthenticatedFirebaseUser? {
+): GrantedFirebaseUser? {
     val authenticatedUser = requireAuthenticatedFirebaseUser(verifyToken) ?: return null
     val email = authenticatedUser.email?.trim()?.lowercase().orEmpty()
 
-    if (!accessControlService.isEmailAllowed(email)) {
+    val grant = accessControlService.findGrant(email)
+    if (grant == null) {
         application.log.warn(
             "AUDIT: Non-granted account attempted to access BmApp uid={} email={}",
             authenticatedUser.uid,
@@ -82,7 +84,14 @@ suspend fun ApplicationCall.requireGrantedFirebaseUser(
         return null
     }
 
-    return authenticatedUser.copy(email = email)
+    return GrantedFirebaseUser(
+        uid = authenticatedUser.uid,
+        email = email,
+        name = authenticatedUser.name,
+        tokenIssuedAt = authenticatedUser.tokenIssuedAt,
+        tokenExpiresAt = authenticatedUser.tokenExpiresAt,
+        tier = grant.tier
+    )
 }
 
 internal fun verifyFirebaseIdToken(idToken: String): AuthenticatedFirebaseUser {
