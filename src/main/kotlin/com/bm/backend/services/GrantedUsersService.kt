@@ -1,6 +1,7 @@
 package com.bm.backend.services
 
 import com.bm.backend.models.GrantedUserResponse
+import com.bm.backend.models.UserTier
 import com.bm.backend.repositories.ports.GrantedUsersRepositoryPort
 import com.bm.backend.repositories.ports.TransactionRunnerPort
 import com.bm.backend.repositories.ports.UserActivityRepositoryPort
@@ -29,7 +30,7 @@ class GrantedUsersService(
     private val logger = LoggerFactory.getLogger(GrantedUsersService::class.java)
 
     sealed interface AddGrantResult {
-        data class Added(val email: String) : AddGrantResult
+        data class Added(val email: String, val tier: UserTier) : AddGrantResult
         data class AlreadyExists(val email: String) : AddGrantResult
         data object InvalidEmail : AddGrantResult
     }
@@ -40,15 +41,21 @@ class GrantedUsersService(
         data object InvalidEmail : DeleteGrantResult
     }
 
-    fun addGrant(rawEmail: String?): AddGrantResult {
+    sealed interface UpdateTierResult {
+        data class Updated(val email: String, val tier: UserTier) : UpdateTierResult
+        data class NotFound(val email: String) : UpdateTierResult
+        data object InvalidEmail : UpdateTierResult
+    }
+
+    fun addGrant(rawEmail: String?, tier: UserTier = UserTier.BASIC): AddGrantResult {
         val email = normalize(rawEmail) ?: return AddGrantResult.InvalidEmail
-        val inserted = grantedUsersRepository.insert(email)
+        val inserted = grantedUsersRepository.insert(email, tier)
         if (!inserted) {
             logger.info("AUDIT: Grant add skipped, already exists {}", kv("userEmail", email))
             return AddGrantResult.AlreadyExists(email)
         }
         logger.info("AUDIT: Grant added {}", kv("userEmail", email))
-        return AddGrantResult.Added(email)
+        return AddGrantResult.Added(email, tier)
     }
 
     fun listGrants(): List<GrantedUserResponse> {
@@ -61,6 +68,7 @@ class GrantedUsersService(
             val activity = activityByEmail[grant.email]
             GrantedUserResponse(
                 email = grant.email,
+                tier = grant.tier,
                 grantedAt = grant.createdAt.toEpochMilli(),
                 name = activity?.name,
                 isOnline = activity?.isOnline,
@@ -71,6 +79,18 @@ class GrantedUsersService(
                 activityUpdatedAt = activity?.updatedAt
             )
         }
+    }
+
+    fun updateTier(rawEmail: String?, tier: UserTier): UpdateTierResult {
+        val email = normalize(rawEmail) ?: return UpdateTierResult.InvalidEmail
+        if (grantedUsersRepository.updateTier(email, tier) == 0) {
+            return UpdateTierResult.NotFound(email)
+        }
+        logger.info(
+            "AUDIT: User tier updated {} {}",
+            kv("userEmail", email), kv("userTier", tier.name)
+        )
+        return UpdateTierResult.Updated(email, tier)
     }
 
     suspend fun deleteGrant(rawEmail: String?): DeleteGrantResult {

@@ -1,5 +1,6 @@
 package com.bm.backend.database
 
+import com.bm.backend.models.UserTier
 import org.jetbrains.exposed.dao.id.IntIdTable
 import org.jetbrains.exposed.sql.javatime.timestamp
 
@@ -100,6 +101,7 @@ object UserActivityDb : IntIdTable("user_activity") {
 // Table for accounts granted access to the app (replaces the env-var allowlist)
 object GrantedUsersDb : IntIdTable("granted_users") {
     val email = varchar("email", 255).uniqueIndex()
+    val tier = enumerationByName("tier", 20, UserTier::class)
     val createdAt = timestamp("created_at")
 }
 

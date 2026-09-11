@@ -23,6 +23,7 @@ import com.bm.backend.routes.grantedUsersRoutes
 import com.bm.backend.routes.healthRoutes
 import com.bm.backend.routes.metricsRoutes
 import com.bm.backend.routes.userActivityRoutes
+import com.bm.backend.routes.userAccessRoutes
 import com.bm.backend.routes.userConsumptionRoutes
 import com.bm.backend.routes.userDataRoutes
 import com.bm.backend.security.DataMigration
@@ -250,6 +251,7 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
                     accessControlService
                 )
                 userDataRoutes(userDataService, accessControlService)
+                userAccessRoutes(accessControlService)
                 userActivityRoutes(
                     userActivityService,
                     accessControlService,

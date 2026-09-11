@@ -1,6 +1,7 @@
 package com.bm.backend.routes
 
 import com.bm.backend.services.AccessControlService
+import com.bm.backend.models.UserTier
 import com.bm.backend.testing.InMemoryGrantedUsersRepository
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -83,7 +84,7 @@ class FirebaseRouteAuthTest {
                 get("/protected") {
                     val user = call.requireGrantedFirebaseUser(accessControlService) { authenticatedUser }
                         ?: return@get
-                    call.respond(HttpStatusCode.OK, user.email.orEmpty())
+                    call.respond(HttpStatusCode.OK, "${user.email}:${user.tier}")
                 }
             }
         }
@@ -93,6 +94,32 @@ class FirebaseRouteAuthTest {
         }
 
         assertEquals(HttpStatusCode.OK, response.status)
-        assertEquals("granted@example.com", response.bodyAsText())
+        assertEquals("granted@example.com:BASIC", response.bodyAsText())
+    }
+
+    @Test
+    fun `granted guard returns premium tier from the database`() = testApplication {
+        environment { config = MapApplicationConfig() }
+        val grants = InMemoryGrantedUsersRepository().apply {
+            insert("granted@example.com", UserTier.PREMIUM)
+        }
+        val accessControlService = AccessControlService(grants)
+        application {
+            install(ContentNegotiation) { json() }
+            routing {
+                get("/protected") {
+                    val user = call.requireGrantedFirebaseUser(accessControlService) { authenticatedUser }
+                        ?: return@get
+                    call.respond(HttpStatusCode.OK, user.tier.name)
+                }
+            }
+        }
+
+        val response = client.get("/protected") {
+            header(HttpHeaders.Authorization, "Bearer valid-token")
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
+        assertEquals("PREMIUM", response.bodyAsText())
     }
 }
