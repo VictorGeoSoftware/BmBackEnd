@@ -2,6 +2,7 @@ package com.bm.backend.routes
 
 import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.UserActivityMutationResponse
+import com.bm.backend.services.AccessControlService
 import com.bm.backend.services.UserActivityService
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -10,10 +11,13 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.post
 
-fun Route.authRoutes(userActivityService: UserActivityService) {
+fun Route.authRoutes(
+    userActivityService: UserActivityService,
+    accessControlService: AccessControlService
+) {
     post("/auth/logout") {
         try {
-            val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@post
+            val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@post
             val email = authenticatedUser.email?.trim().orEmpty().lowercase()
 
             if (email.isBlank()) {

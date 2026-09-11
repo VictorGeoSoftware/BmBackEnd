@@ -4,6 +4,8 @@ import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.UserActivityFirstConnectionListResponse
 import com.bm.backend.models.UserActivityListResponse
 import com.bm.backend.models.UserActivityMutationResponse
+import com.bm.backend.services.AccessControlService
+import com.bm.backend.services.AdminAccessControlService
 import com.bm.backend.services.UserActivityService
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -13,10 +15,14 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
 
-fun Route.userActivityRoutes(userActivityService: UserActivityService) {
+fun Route.userActivityRoutes(
+    userActivityService: UserActivityService,
+    accessControlService: AccessControlService,
+    adminAccessControlService: AdminAccessControlService
+) {
     post("/user-activity/online") {
         try {
-            val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@post
+            val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@post
             val email = authenticatedUser.email?.trim().orEmpty()
             if (email.isBlank()) {
                 call.respond(HttpStatusCode.BadRequest, ErrorResponse(message = "Authenticated user email is required"))
@@ -46,7 +52,7 @@ fun Route.userActivityRoutes(userActivityService: UserActivityService) {
 
     post("/user-activity/offline") {
         try {
-            val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@post
+            val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@post
             val email = authenticatedUser.email?.trim().orEmpty()
             if (email.isBlank()) {
                 call.respond(HttpStatusCode.BadRequest, ErrorResponse(message = "Authenticated user email is required"))
@@ -76,7 +82,7 @@ fun Route.userActivityRoutes(userActivityService: UserActivityService) {
 
     post("/user-activity/proposals-response") {
         try {
-            val authenticatedUser = call.requireAuthenticatedFirebaseUser() ?: return@post
+            val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@post
             val email = authenticatedUser.email?.trim().orEmpty()
             if (email.isBlank()) {
                 call.respond(HttpStatusCode.BadRequest, ErrorResponse(message = "Authenticated user email is required"))
@@ -105,6 +111,8 @@ fun Route.userActivityRoutes(userActivityService: UserActivityService) {
     }
 
     get("/user-activity/users") {
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "list user activity") == null) return@get
+
         try {
             call.respond(
                 HttpStatusCode.OK,
@@ -123,6 +131,14 @@ fun Route.userActivityRoutes(userActivityService: UserActivityService) {
     }
 
     get("/user-activity/users/first-connection") {
+        if (call.requireAdminFirebaseUser(
+                adminAccessControlService,
+                "list users' first connections"
+            ) == null
+        ) {
+            return@get
+        }
+
         try {
             call.respond(
                 HttpStatusCode.OK,

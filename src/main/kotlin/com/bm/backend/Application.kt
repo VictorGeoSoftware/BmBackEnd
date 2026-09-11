@@ -240,16 +240,30 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
                     priceTableService,
                     externalApiService,
                     priceUpdatesNotifier,
+                    accessControlService,
                     adminAccessControlService
                 )
-                userConsumptionRoutes(userConsumptionService, jobService, comparatorReportPdfService)
+                userConsumptionRoutes(
+                    userConsumptionService,
+                    jobService,
+                    comparatorReportPdfService,
+                    accessControlService
+                )
                 userDataRoutes(userDataService, accessControlService)
-                userActivityRoutes(userActivityService)
-                authRoutes(userActivityService)
+                userActivityRoutes(
+                    userActivityService,
+                    accessControlService,
+                    adminAccessControlService
+                )
+                authRoutes(userActivityService, accessControlService)
                 adminRoutes(userDataService, adminAuthService)
                 adminAccessRoutes(adminAccessControlService)
                 grantedUsersRoutes(grantedUsersService, adminAccessControlService)
-                collectedPricesRoutes(collectedPricesService, adminAccessControlService)
+                collectedPricesRoutes(
+                    collectedPricesService,
+                    accessControlService,
+                    adminAccessControlService
+                )
             }
         }
     }
