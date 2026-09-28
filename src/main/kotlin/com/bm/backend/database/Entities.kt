@@ -8,6 +8,10 @@ import org.jetbrains.exposed.sql.javatime.timestamp
 object PriceTableResultsDb : IntIdTable("price_table_results") {
     val fileName = varchar("file_name", 255)
     val companyName = varchar("company_name", 255)
+    // Added in V13. NULL for n8n batch rows (the backend never sees their PDF).
+    val sourceSha256 = char("source_sha256", 64).nullable()
+    val version = integer("version").default(1)
+    val updatedAt = timestamp("updated_at")
 }
 
 // Table for termino de potencia data

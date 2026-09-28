@@ -13,8 +13,12 @@ GET {{baseUrl}}/health
 %}
 
 ### Upload a price-proposal PDF (full chain: backend -> Docling OCR -> Postgres)
-### No Firebase auth required. Adjust the file path as needed.
+### Requires an admin Firebase ID token: set `firebaseIdToken` in
+### http-client.private.env.json (never commit it). Adjust the file path as needed.
+### Returns 201 when stored, or 200 "already up to date" when identical bytes were
+### uploaded before (re-uploading a changed PDF with the same name replaces it).
 POST {{baseUrl}}/api/v1/upload-price-proposal
+Authorization: Bearer {{firebaseIdToken}}
 Content-Type: multipart/form-data; boundary=----BMBoundary
 
 ------BMBoundary
@@ -26,7 +30,7 @@ Content-Type: application/pdf
 
 > {%
     client.test("upload accepted", function () {
-        client.assert(response.status === 201, "expected 201, got " + response.status);
+        client.assert(response.status === 201 || response.status === 200, "expected 201/200, got " + response.status);
         client.assert(response.body.success === true, "success should be true");
     });
 %}
