@@ -6,7 +6,18 @@ import com.bm.backend.repositories.ports.PriceTableRepositoryPort
 
 class PriceTableService(private val repository: PriceTableRepositoryPort = PriceTableRepository()) {
 
-    fun processBatchPriceTables(request: BatchPriceTablesRequest): BatchProcessResponse {
+    /**
+     * True when a PDF with exactly these bytes has already been stored, so a
+     * re-upload can be skipped before paying for another extraction.
+     */
+    fun isSourceAlreadyStored(sourceSha256: String): Boolean =
+        repository.existsBySourceSha256(sourceSha256)
+
+    /**
+     * @param sourceSha256 hash of the uploaded PDF, or null when the caller never
+     * saw the PDF (n8n batch path). See [PriceTableRepositoryPort.storePriceTableResults].
+     */
+    fun processBatchPriceTables(request: BatchPriceTablesRequest, sourceSha256: String? = null): BatchProcessResponse {
         return try {
             // Validate the request first
             if (request.isEmpty()) {
@@ -24,7 +35,7 @@ class PriceTableService(private val repository: PriceTableRepositoryPort = Price
             var processedFiles = 0
 
             for (priceTableResponse in normalizedRequest) {
-                val rowsInserted = repository.storePriceTableResults(priceTableResponse)
+                val rowsInserted = repository.storePriceTableResults(priceTableResponse, sourceSha256)
                 totalRowsInserted += rowsInserted
                 processedFiles += priceTableResponse.results.size
             }
