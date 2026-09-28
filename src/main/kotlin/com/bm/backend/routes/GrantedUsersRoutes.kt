@@ -4,6 +4,8 @@ import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.GrantedUserAddRequest
 import com.bm.backend.models.GrantedUserListResponse
 import com.bm.backend.models.GrantedUserMutationResponse
+import com.bm.backend.models.GrantedUserTierUpdateRequest
+import com.bm.backend.models.GrantedUserTierUpdateResponse
 import com.bm.backend.services.AdminAccessControlService
 import com.bm.backend.services.GrantedUsersService
 import io.ktor.http.HttpStatusCode
@@ -16,6 +18,7 @@ import io.ktor.server.routing.Route
 import io.ktor.server.routing.delete
 import io.ktor.server.routing.get
 import io.ktor.server.routing.post
+import io.ktor.server.routing.patch
 
 /**
  * Endpoints for managing the granted-users allowlist. Consumed by the BmWeb
@@ -55,7 +58,7 @@ fun Route.grantedUsersRoutes(
 
         try {
             val request = call.receive<GrantedUserAddRequest>()
-            when (val result = grantedUsersService.addGrant(request.email)) {
+            when (val result = grantedUsersService.addGrant(request.email, request.tier)) {
                 is GrantedUsersService.AddGrantResult.Added -> call.respond(
                     HttpStatusCode.Created,
                     GrantedUserMutationResponse(
@@ -79,6 +82,45 @@ fun Route.grantedUsersRoutes(
             }
         } catch (e: Exception) {
             call.application.log.error("Error adding granted user: ${e.message}", e)
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
+
+    patch("/admin/granted-users/{email}/tier") {
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "update granted user tier") == null) return@patch
+
+        try {
+            val request = call.receive<GrantedUserTierUpdateRequest>()
+            val tier = request.tier
+            if (tier == null) {
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse(message = "tier is required"))
+                return@patch
+            }
+
+            when (val result = grantedUsersService.updateTier(call.parameters["email"], tier)) {
+                is GrantedUsersService.UpdateTierResult.Updated -> call.respond(
+                    HttpStatusCode.OK,
+                    GrantedUserTierUpdateResponse(
+                        success = true,
+                        email = result.email,
+                        tier = result.tier,
+                        message = "User tier updated"
+                    )
+                )
+                is GrantedUsersService.UpdateTierResult.NotFound -> call.respond(
+                    HttpStatusCode.NotFound,
+                    ErrorResponse(message = "No grant found for ${result.email}")
+                )
+                GrantedUsersService.UpdateTierResult.InvalidEmail -> call.respond(
+                    HttpStatusCode.BadRequest,
+                    ErrorResponse(message = "A valid email is required")
+                )
+            }
+        } catch (e: Exception) {
+            call.application.log.error("Error updating granted user tier: ${e.message}", e)
             call.respond(
                 HttpStatusCode.InternalServerError,
                 ErrorResponse(message = "Internal server error: ${e.message}")

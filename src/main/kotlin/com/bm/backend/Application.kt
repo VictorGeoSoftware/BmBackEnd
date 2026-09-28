@@ -23,6 +23,7 @@ import com.bm.backend.routes.grantedUsersRoutes
 import com.bm.backend.routes.healthRoutes
 import com.bm.backend.routes.metricsRoutes
 import com.bm.backend.routes.userActivityRoutes
+import com.bm.backend.routes.userAccessRoutes
 import com.bm.backend.routes.userConsumptionRoutes
 import com.bm.backend.routes.userDataRoutes
 import com.bm.backend.security.DataMigration
@@ -33,6 +34,7 @@ import com.bm.backend.services.AdminAuthService
 import com.bm.backend.services.CollectedPricesService
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.FirebaseForceLogoutNotifier
+import com.bm.backend.services.DebouncingPriceUpdatesNotifier
 import com.bm.backend.services.FirebasePriceUpdatesNotifier
 import com.bm.backend.services.FirebaseUserAccountRevoker
 import com.bm.backend.services.ComparatorReportPdfService
@@ -192,7 +194,7 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
     // Initialize services
     val priceTableService = PriceTableService()
     val externalApiService = ExternalApiService()
-    val priceUpdatesNotifier = FirebasePriceUpdatesNotifier()
+    val priceUpdatesNotifier = DebouncingPriceUpdatesNotifier(FirebasePriceUpdatesNotifier())
     val userConsumptionRepository = PostgresUserConsumptionRepository()
     val userDataRepository = UserDataRepository()
     val userActivityRepository = UserActivityRepository()
@@ -249,6 +251,7 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
                     accessControlService
                 )
                 userDataRoutes(userDataService, accessControlService)
+                userAccessRoutes(accessControlService)
                 userActivityRoutes(
                     userActivityService,
                     accessControlService,

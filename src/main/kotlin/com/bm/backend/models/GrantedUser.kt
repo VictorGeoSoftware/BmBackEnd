@@ -8,5 +8,6 @@ import java.time.Instant
  */
 data class GrantedUser(
     val email: String,
+    val tier: UserTier,
     val createdAt: Instant
 )

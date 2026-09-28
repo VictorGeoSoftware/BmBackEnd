@@ -1,5 +1,6 @@
 package com.bm.backend.services
 
+import com.bm.backend.models.UserTier
 import com.bm.backend.testing.DirectTransactionRunner
 import com.bm.backend.testing.InMemoryGrantedUsersRepository
 import com.bm.backend.testing.InMemoryUserActivityRepository
@@ -65,6 +66,7 @@ class GrantedUsersServiceTest {
         assertIs<GrantedUsersService.AddGrantResult.Added>(result)
         assertEquals("tester@example.com", result.email)
         assertTrue(grantedUsersRepository.existsByEmail("tester@example.com"))
+        assertEquals(UserTier.BASIC, grantedUsersRepository.findByEmail("tester@example.com")?.tier)
     }
 
     @Test
@@ -91,6 +93,7 @@ class GrantedUsersServiceTest {
         assertEquals(1, users.size)
         val user = users.single()
         assertEquals("tester@example.com", user.email)
+        assertEquals(UserTier.BASIC, user.tier)
         assertEquals("Tester", user.name)
         assertEquals(true, user.isOnline)
         assertEquals(0, user.monthlyUsageCount)
@@ -106,6 +109,30 @@ class GrantedUsersServiceTest {
         assertNull(user.isOnline)
         assertNull(user.monthlyUsageCount)
         assertNull(user.usageStartedAt)
+    }
+
+    @Test
+    fun `updateTier is non-destructive`() {
+        service.addGrant("tester@example.com")
+
+        val result = service.updateTier("TESTER@example.com", UserTier.PREMIUM)
+
+        assertIs<GrantedUsersService.UpdateTierResult.Updated>(result)
+        assertEquals(UserTier.PREMIUM, result.tier)
+        assertEquals(UserTier.PREMIUM, grantedUsersRepository.findByEmail("tester@example.com")?.tier)
+        assertTrue(userAccountRevoker.revokedUids.isEmpty())
+        assertTrue(forceLogoutNotifier.notifiedEmails.isEmpty())
+        assertEquals(0, transactionRunner.executions)
+    }
+
+    @Test
+    fun `updateTier reports missing and invalid grants`() {
+        assertIs<GrantedUsersService.UpdateTierResult.NotFound>(
+            service.updateTier("missing@example.com", UserTier.PREMIUM)
+        )
+        assertIs<GrantedUsersService.UpdateTierResult.InvalidEmail>(
+            service.updateTier("invalid", UserTier.PREMIUM)
+        )
     }
 
     @Test
