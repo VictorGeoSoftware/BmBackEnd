@@ -1,7 +1,9 @@
 package com.bm.backend.routes
 
 import com.bm.backend.services.AccessControlService
+import com.bm.backend.services.AdminAccessControlService
 import com.bm.backend.models.UserTier
+import com.bm.backend.testing.InMemoryAdminUsersRepository
 import com.bm.backend.testing.InMemoryGrantedUsersRepository
 import io.ktor.client.request.get
 import io.ktor.client.request.header
@@ -121,5 +123,73 @@ class FirebaseRouteAuthTest {
 
         assertEquals(HttpStatusCode.OK, response.status)
         assertEquals("PREMIUM", response.bodyAsText())
+    }
+
+    private fun adminGuardedApp(admins: InMemoryAdminUsersRepository) =
+        AdminAccessControlService(admins)
+
+    @Test
+    fun `admin guard rejects requests without a Firebase token`() = testApplication {
+        environment { config = MapApplicationConfig() }
+        val adminAccess = adminGuardedApp(InMemoryAdminUsersRepository())
+        application {
+            install(ContentNegotiation) { json() }
+            routing {
+                get("/admin-only") {
+                    call.requireAdminFirebaseUser(adminAccess, "test") { authenticatedUser }
+                        ?: return@get
+                    call.respond(HttpStatusCode.OK)
+                }
+            }
+        }
+
+        assertEquals(HttpStatusCode.Unauthorized, client.get("/admin-only").status)
+    }
+
+    @Test
+    fun `admin guard rejects app-granted accounts that are not BmWeb admins`() = testApplication {
+        environment { config = MapApplicationConfig() }
+        val adminAccess = adminGuardedApp(InMemoryAdminUsersRepository())
+        application {
+            install(ContentNegotiation) { json() }
+            routing {
+                get("/admin-only") {
+                    call.requireAdminFirebaseUser(adminAccess, "test") { authenticatedUser }
+                        ?: return@get
+                    call.respond(HttpStatusCode.OK)
+                }
+            }
+        }
+
+        val response = client.get("/admin-only") {
+            header(HttpHeaders.Authorization, "Bearer valid-token")
+        }
+
+        assertEquals(HttpStatusCode.Forbidden, response.status)
+    }
+
+    @Test
+    fun `admin guard allows BmWeb admins without an app grant`() = testApplication {
+        // Regression: a BmWeb admin missing from `granted_users` was locked out
+        // of the price proposals screen because it used the BmApp guard.
+        environment { config = MapApplicationConfig() }
+        val admins = InMemoryAdminUsersRepository().apply { add("granted@example.com") }
+        val adminAccess = adminGuardedApp(admins)
+        application {
+            install(ContentNegotiation) { json() }
+            routing {
+                get("/admin-only") {
+                    call.requireAdminFirebaseUser(adminAccess, "test") { authenticatedUser }
+                        ?: return@get
+                    call.respond(HttpStatusCode.OK)
+                }
+            }
+        }
+
+        val response = client.get("/admin-only") {
+            header(HttpHeaders.Authorization, "Bearer valid-token")
+        }
+
+        assertEquals(HttpStatusCode.OK, response.status)
     }
 }

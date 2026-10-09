@@ -119,9 +119,10 @@ internal fun verifyFirebaseIdToken(idToken: String): AuthenticatedFirebaseUser {
  */
 suspend fun ApplicationCall.requireAdminFirebaseUser(
     adminAccessControlService: AdminAccessControlService,
-    action: String
+    action: String,
+    verifyToken: suspend (String) -> AuthenticatedFirebaseUser = ::verifyFirebaseIdToken
 ): AuthenticatedFirebaseUser? {
-    val authenticatedUser = requireAuthenticatedFirebaseUser() ?: return null
+    val authenticatedUser = requireAuthenticatedFirebaseUser(verifyToken) ?: return null
 
     if (!adminAccessControlService.isAdmin(authenticatedUser.email)) {
         application.log.warn(
