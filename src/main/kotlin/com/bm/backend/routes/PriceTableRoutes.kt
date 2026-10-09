@@ -88,6 +88,24 @@ fun Route.priceTableRoutes(
         }
     }
 
+    // BmWeb-only read of the stored price proposals. Gated on `admin_users`
+    // like every other BmWeb price-table endpoint; the public
+    // `/price-table-results` above stays on `granted_users` for BmApp.
+    get("/admin/price-table-results") {
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "read price proposals") == null) return@get
+
+        try {
+            val tarifaType = call.request.queryParameters["tarifaType"]
+            val response = priceTableService.getAllPriceTableResults(tarifaType)
+            call.respond(HttpStatusCode.OK, response)
+        } catch (e: Exception) {
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
+
     get("/price-table-tax-settings") {
         if (call.requireAdminFirebaseUser(adminAccessControlService, "read price table tax settings") == null) return@get
 
