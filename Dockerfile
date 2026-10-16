@@ -19,14 +19,14 @@ RUN update-ca-certificates || true; \
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY gradle ./gradle
 
-# Download dependencies (cached layer)
-RUN gradle dependencies --no-daemon || true
-
 # Copy source code
 COPY src ./src
 
-# Build the application
-RUN gradle shadowJar --no-daemon
+# Build the application. The BuildKit cache mount keeps Gradle dependencies,
+# plugins and the build cache between image builds, so a source change only
+# recompiles what changed instead of starting from an empty Gradle home.
+RUN --mount=type=cache,target=/root/.gradle,id=bm-backend-gradle \
+    gradle shadowJar --no-daemon --build-cache
 
 # Runtime stage
 FROM eclipse-temurin:17-jre-jammy
