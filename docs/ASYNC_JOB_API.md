@@ -13,12 +13,24 @@ The `/fetch-user-consumption-report` endpoint now uses an asynchronous job-based
 ## API Endpoints
 
 ### 1. POST `/api/v1/fetch-user-consumption-report`
-Upload a PDF file for processing.
+Upload a bill as a PDF or as a photo (JPEG/PNG) for processing.
 
 **Request:**
 - Method: `POST`
 - Content-Type: `multipart/form-data`
-- Body: PDF file (field name: `file`)
+- Body: one file (field name: `file`), with extension `.pdf`, `.jpg`/`.jpeg` or `.png`
+
+Photos are validated by content (JPEG `FF D8 FF` / PNG `89 50 4E 47` magic bytes), then
+wrapped into a one-page PDF inside BmBackend (page = image size, long edge downscaled to
+2000 px, no cropping) and sent through the same Docling → n8n pipeline as a PDF. The job
+and result contract is identical for PDFs and photos. EXIF rotation is not applied.
+
+**Validation errors (400, no job created):**
+- `Only PDF, JPEG or PNG files are accepted` — unsupported or missing extension (e.g. `.heic`, `.gif`, `.txt`)
+- `Invalid image file` — `.jpg`/`.jpeg`/`.png` whose bytes are not JPEG/PNG
+- `No PDF file provided` — no file part in the request
+
+A photo with no readable bill data is accepted (202) and the job ends `FAILED` with the Docling error.
 
 **Response (202 Accepted):**
 ```json

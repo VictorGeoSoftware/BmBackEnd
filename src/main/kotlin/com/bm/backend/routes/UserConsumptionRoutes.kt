@@ -3,6 +3,7 @@ package com.bm.backend.routes
 import com.bm.backend.models.*
 import com.bm.backend.plugins.requestId
 import com.bm.backend.services.ComparatorReportPdfService
+import com.bm.backend.services.ImageToPdfConverter
 import com.bm.backend.services.JobService
 import com.bm.backend.services.AccessControlService
 import com.bm.backend.services.UserConsumptionService
@@ -74,6 +75,7 @@ fun Route.userConsumptionRoutes(
     
     post("/fetch-user-consumption-report") {
         var tempFile: File? = null
+        var uploadType: ConsumptionUploadType? = null
         var errorResponse: Pair<HttpStatusCode, ErrorResponse>? = null
         
         try {
@@ -84,13 +86,15 @@ fun Route.userConsumptionRoutes(
                 when (part) {
                     is PartData.FileItem -> {
                         val fileName = part.originalFileName ?: "uploaded.pdf"
+                        val type = ConsumptionUploadType.fromFileName(fileName)
                         
                         // Validate file type
-                        if (!fileName.endsWith(".pdf", ignoreCase = true)) {
-                            errorResponse = HttpStatusCode.BadRequest to ErrorResponse(message = "Only PDF files are accepted")
+                        if (type == null) {
+                            errorResponse = HttpStatusCode.BadRequest to ErrorResponse(message = "Only PDF, JPEG or PNG files are accepted")
                         } else if (tempFile == null) {
+                            uploadType = type
                             // Create temp file
-                            tempFile = Files.createTempFile("consumption_report_", ".pdf").toFile()
+                            tempFile = Files.createTempFile("consumption_report_", type.tempSuffix).toFile()
                             
                             // Write uploaded file to temp file
                             part.streamProvider().use { input ->
@@ -107,8 +111,8 @@ fun Route.userConsumptionRoutes(
             
             // Check for validation errors
             if (errorResponse != null) {
-                call.respond(errorResponse!!.first, errorResponse!!.second)
                 tempFile?.delete()
+                call.respond(errorResponse!!.first, errorResponse!!.second)
                 return@post
             }
             
@@ -119,10 +123,18 @@ fun Route.userConsumptionRoutes(
                 )
                 return@post
             }
+
+            // Images are validated by content (magic bytes), not only by extension
+            if (uploadType!!.isImage && !ImageToPdfConverter.hasImageMagicBytes(tempFile!!)) {
+                tempFile?.delete()
+                call.respond(HttpStatusCode.BadRequest, ErrorResponse(message = "Invalid image file"))
+                return@post
+            }
+            val isImage = uploadType!!.isImage
             
             // Create a job and return immediately
             val jobId = jobService.createJob(ownerUid = authenticatedUser.uid)
-            val pdfFile = tempFile!!
+            val uploadedFile = tempFile!!
             // Captured before detaching: the background coroutine below runs
             // outside the call scope, where the MDC (and therefore requestId)
             // is gone. Logging it explicitly keeps the async work joined to the
@@ -140,7 +152,11 @@ fun Route.userConsumptionRoutes(
                     jobService.updateJobStatus(jobId, JobStatus.PROCESSING, progress = 0)
                     
                     // Process the PDF through the orchestration flow
-                    val response = userConsumptionService.processConsumptionReportFromPdf(pdfFile)
+                    val response = if (isImage) {
+                        userConsumptionService.processConsumptionReportFromImage(uploadedFile)
+                    } else {
+                        userConsumptionService.processConsumptionReportFromPdf(uploadedFile)
+                    }
                     
                     // Mark job as completed
                     jobService.completeJob(jobId, response)
@@ -157,7 +173,7 @@ fun Route.userConsumptionRoutes(
                     jobService.failJob(jobId, e.message ?: "Unknown error")
                 } finally {
                     // Clean up temp file
-                    pdfFile.delete()
+                    uploadedFile.delete()
                 }
             }
             
