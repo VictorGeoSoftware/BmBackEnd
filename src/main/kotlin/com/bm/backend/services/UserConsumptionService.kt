@@ -11,7 +11,8 @@ import java.io.File
 class UserConsumptionService(
     private val userConsumptionRepository: UserConsumptionRepositoryPort,
     private val externalApiService: ExternalApiService,
-    private val priceTableService: PriceTableService
+    private val priceTableService: PriceTableService,
+    private val imageToPdfConverter: ImageToPdfConverter = ImageToPdfConverter()
 ) {
     
     fun processConsumptionReport(consumptionReport: UserConsumption) {
@@ -29,6 +30,16 @@ class UserConsumptionService(
 
         // Steps 2-6: shared pipeline
         return runConsumptionPipeline(extractedData)
+    }
+
+    /** Wraps a JPEG/PNG bill photo into a one-page PDF and runs the PDF flow. */
+    suspend fun processConsumptionReportFromImage(imageFile: File): ConsumptionReportResponse {
+        val pdfFile = imageToPdfConverter.convert(imageFile)
+        try {
+            return processConsumptionReportFromPdf(pdfFile)
+        } finally {
+            pdfFile.delete()
+        }
     }
 
     suspend fun processConsumptionReportFromCups(cupsCode: String): ConsumptionReportResponse {
