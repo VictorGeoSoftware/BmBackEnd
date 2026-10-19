@@ -63,4 +63,16 @@ class WebPushTokensRepositoryTest {
         assertEquals(2, repository.deleteByEmail("A@Example.com"))
         assertEquals(listOf(Triple("tok-3", "uid-b", "ios")), rows())
     }
+
+    @Test
+    fun `allTokens lists every token and deleteByTokens removes only the given ones`() {
+        repository.upsert("tok-1", "uid-a", "a@example.com", "android")
+        repository.upsert("tok-2", "uid-a", "a@example.com", "desktop")
+        repository.upsert("tok-3", "uid-b", "b@example.com", "ios")
+
+        assertEquals(listOf("tok-1", "tok-2", "tok-3"), repository.allTokens().sorted())
+        assertEquals(0, repository.deleteByTokens(emptyList()))
+        assertEquals(2, repository.deleteByTokens(listOf("tok-1", "tok-3", "missing")))
+        assertEquals(listOf(Triple("tok-2", "uid-a", "desktop")), rows())
+    }
 }

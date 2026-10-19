@@ -31,9 +31,26 @@ the account by email, in the same transaction as the other user tables.
 
 Tokens are never logged in full: only the first 12 characters.
 
-## Not done yet
+## Delivery (`price_updates`)
 
-Stored tokens are **not** subscribed to `price_updates` / `force_logout`, and
-nothing is sent to them. That is the `web-push-price-updates` feature in
-PowerAppWeb, which also adds the service worker `push` handler (without it,
-browsers show a generic notification and iOS revokes the subscription).
+`WebPushPriceUpdatesNotifier` sends every price update to **all stored tokens**
+with `sendEachForMulticast` (chunks of 500). It sits next to the unchanged
+Android topic notifier inside `CompositePriceUpdatesNotifier`, behind the same
+`DebouncingPriceUpdatesNotifier`; a failing channel never blocks the other.
+
+- **Multicast, not topics.** `web_push_tokens` is the single source of truth: a
+  deleted row (logout, grant wipe) stops delivery at once, with no topic
+  subscriptions to keep in sync.
+- **Data-only.** Data `type=price_updates`, `payload=<PriceUpdatesNotification
+  JSON>` (same as Android), `WebpushConfig` headers `Urgency: high`,
+  `TTL: 86400`, no `notification` block. The PWA service worker (`/sw.js`)
+  always shows its own notification ("Tarifas actualizadas", opens
+  `/proposals`): browsers require a visible notification per push (iOS revokes
+  silent subscriptions; Chrome shows a generic one).
+- **Pruning.** Tokens whose result is `UNREGISTERED`, `SENDER_ID_MISMATCH` or
+  `INVALID_ARGUMENT` are deleted. Other errors (`UNAVAILABLE`, `INTERNAL`,
+  `QUOTA_EXCEEDED`) keep the row. Logs show counts and masked tokens only.
+- No tokens → no FCM web call.
+
+`force_logout` is **not** sent to web tokens: the grant deletion wipes them
+before the force-logout send. The PWA re-checks `/user-data` on tab return.
