@@ -17,4 +17,9 @@ interface WebPushTokensRepositoryPort {
 
     /** Returns the number of rows deleted. */
     fun deleteByEmail(email: String): Int
+
+    fun allTokens(): List<String>
+
+    /** Returns the number of rows deleted. */
+    fun deleteByTokens(tokens: Collection<String>): Int
 }

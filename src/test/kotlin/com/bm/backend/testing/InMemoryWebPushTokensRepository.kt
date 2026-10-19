@@ -31,4 +31,9 @@ class InMemoryWebPushTokensRepository : WebPushTokensRepositoryPort {
         keys.forEach(rows::remove)
         return keys.size
     }
+
+    override fun allTokens(): List<String> = rows.keys.toList()
+
+    override fun deleteByTokens(tokens: Collection<String>): Int =
+        tokens.toSet().count { rows.remove(it) != null }
 }

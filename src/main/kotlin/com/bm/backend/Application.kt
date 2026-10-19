@@ -36,8 +36,11 @@ import com.bm.backend.services.AdminAuthService
 import com.bm.backend.services.CollectedPricesService
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.FirebaseForceLogoutNotifier
+import com.bm.backend.services.CompositePriceUpdatesNotifier
 import com.bm.backend.services.DebouncingPriceUpdatesNotifier
 import com.bm.backend.services.FirebasePriceUpdatesNotifier
+import com.bm.backend.services.FirebaseWebPushSender
+import com.bm.backend.services.WebPushPriceUpdatesNotifier
 import com.bm.backend.services.FirebaseUserAccountRevoker
 import com.bm.backend.services.WebPushTokensService
 import com.bm.backend.services.ComparatorReportPdfService
@@ -197,7 +200,15 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
     // Initialize services
     val priceTableService = PriceTableService()
     val externalApiService = ExternalApiService()
-    val priceUpdatesNotifier = DebouncingPriceUpdatesNotifier(FirebasePriceUpdatesNotifier())
+    val webPushTokensRepository = WebPushTokensRepository()
+    val priceUpdatesNotifier = DebouncingPriceUpdatesNotifier(
+        CompositePriceUpdatesNotifier(
+            listOf(
+                FirebasePriceUpdatesNotifier(),
+                WebPushPriceUpdatesNotifier(webPushTokensRepository, FirebaseWebPushSender()),
+            )
+        )
+    )
     val userConsumptionRepository = PostgresUserConsumptionRepository()
     val userDataRepository = UserDataRepository()
     val userActivityRepository = UserActivityRepository()
@@ -215,7 +226,6 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
     val adminUsersRepository = AdminUsersRepository()
     val adminAccessControlService = AdminAccessControlService(adminUsersRepository)
     val adminAuthService = AdminAuthService.fromEnv()
-    val webPushTokensRepository = WebPushTokensRepository()
     val webPushTokensService = WebPushTokensService(webPushTokensRepository)
     val grantedUsersService = GrantedUsersService(
         grantedUsersRepository = grantedUsersRepository,

@@ -6,6 +6,7 @@ import org.jetbrains.exposed.sql.SqlExpressionBuilder
 import org.jetbrains.exposed.sql.and
 import org.jetbrains.exposed.sql.deleteWhere
 import org.jetbrains.exposed.sql.lowerCase
+import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.jetbrains.exposed.sql.upsert
 import java.time.Instant
@@ -40,5 +41,17 @@ class WebPushTokensRepository : WebPushTokensRepositoryPort {
         val target = email.trim().lowercase()
         val condition = with(SqlExpressionBuilder) { WebPushTokensDb.email.lowerCase() eq target }
         WebPushTokensDb.deleteWhere { condition }
+    }
+
+    override fun allTokens(): List<String> = transaction {
+        WebPushTokensDb.selectAll().map { it[WebPushTokensDb.token] }
+    }
+
+    override fun deleteByTokens(tokens: Collection<String>): Int {
+        if (tokens.isEmpty()) return 0
+        return transaction {
+            val condition = with(SqlExpressionBuilder) { WebPushTokensDb.token inList tokens.toSet() }
+            WebPushTokensDb.deleteWhere { condition }
+        }
     }
 }
