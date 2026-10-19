@@ -14,6 +14,7 @@ import com.bm.backend.repositories.GrantedUsersRepository
 import com.bm.backend.repositories.PostgresUserConsumptionRepository
 import com.bm.backend.repositories.UserDataRepository
 import com.bm.backend.repositories.UserActivityRepository
+import com.bm.backend.repositories.WebPushTokensRepository
 import com.bm.backend.routes.priceTableRoutes
 import com.bm.backend.routes.adminAccessRoutes
 import com.bm.backend.routes.adminRoutes
@@ -26,6 +27,7 @@ import com.bm.backend.routes.userActivityRoutes
 import com.bm.backend.routes.userAccessRoutes
 import com.bm.backend.routes.userConsumptionRoutes
 import com.bm.backend.routes.userDataRoutes
+import com.bm.backend.routes.webPushRoutes
 import com.bm.backend.security.DataMigration
 import com.bm.backend.security.EncryptionUtils
 import com.bm.backend.services.AccessControlService
@@ -37,6 +39,7 @@ import com.bm.backend.services.FirebaseForceLogoutNotifier
 import com.bm.backend.services.DebouncingPriceUpdatesNotifier
 import com.bm.backend.services.FirebasePriceUpdatesNotifier
 import com.bm.backend.services.FirebaseUserAccountRevoker
+import com.bm.backend.services.WebPushTokensService
 import com.bm.backend.services.ComparatorReportPdfService
 import com.bm.backend.services.GrantedUsersService
 import com.bm.backend.services.HealthService
@@ -212,11 +215,14 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
     val adminUsersRepository = AdminUsersRepository()
     val adminAccessControlService = AdminAccessControlService(adminUsersRepository)
     val adminAuthService = AdminAuthService.fromEnv()
+    val webPushTokensRepository = WebPushTokensRepository()
+    val webPushTokensService = WebPushTokensService(webPushTokensRepository)
     val grantedUsersService = GrantedUsersService(
         grantedUsersRepository = grantedUsersRepository,
         userDataRepository = userDataRepository,
         userActivityRepository = userActivityRepository,
         userConsumptionRepository = userConsumptionRepository,
+        webPushTokensRepository = webPushTokensRepository,
         userAccountRevoker = FirebaseUserAccountRevoker(),
         forceLogoutNotifier = FirebaseForceLogoutNotifier(),
         transactionRunner = ExposedTransactionRunner()
@@ -252,6 +258,7 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
                 )
                 userDataRoutes(userDataService, accessControlService)
                 userAccessRoutes(accessControlService)
+                webPushRoutes(webPushTokensService, accessControlService)
                 userActivityRoutes(
                     userActivityService,
                     accessControlService,

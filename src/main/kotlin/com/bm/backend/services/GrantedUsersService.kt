@@ -7,6 +7,7 @@ import com.bm.backend.repositories.ports.TransactionRunnerPort
 import com.bm.backend.repositories.ports.UserActivityRepositoryPort
 import com.bm.backend.repositories.ports.UserConsumptionRepositoryPort
 import com.bm.backend.repositories.ports.UserDataRepositoryPort
+import com.bm.backend.repositories.ports.WebPushTokensRepositoryPort
 import net.logstash.logback.argument.StructuredArguments.kv
 import org.slf4j.LoggerFactory
 
@@ -15,7 +16,8 @@ import org.slf4j.LoggerFactory
  * dashboard: listing (joined with activity data), adding, and deleting.
  *
  * Deleting a grant performs a FULL WIPE of the account: the grant row plus
- * every `user_data`, `user_activity` and `user_consumption` row, and revokes
+ * every `user_data`, `user_activity`, `user_consumption` and `web_push_tokens`
+ * row, and revokes
  * the account's Firebase refresh tokens so active sessions die immediately.
  */
 class GrantedUsersService(
@@ -23,6 +25,7 @@ class GrantedUsersService(
     private val userDataRepository: UserDataRepositoryPort,
     private val userActivityRepository: UserActivityRepositoryPort,
     private val userConsumptionRepository: UserConsumptionRepositoryPort,
+    private val webPushTokensRepository: WebPushTokensRepositoryPort,
     private val userAccountRevoker: UserAccountRevoker,
     private val forceLogoutNotifier: ForceLogoutNotifier,
     private val transactionRunner: TransactionRunnerPort
@@ -109,13 +112,14 @@ class GrantedUsersService(
             userAccountRevoker.revokeRefreshTokens(uid)
         }
 
-        // Unit of work spanning the four user tables; the repository methods
+        // Unit of work spanning the user tables; the repository methods
         // join this transaction (Exposed reuses the thread-local transaction).
         transactionRunner.inTransaction {
             if (uid != null) {
                 userConsumptionRepository.deleteByUid(uid)
             }
             userActivityRepository.deleteByEmail(email)
+            webPushTokensRepository.deleteByEmail(email)
             userDataRepository.deleteByEmail(email)
             grantedUsersRepository.deleteByEmail(email)
         }
