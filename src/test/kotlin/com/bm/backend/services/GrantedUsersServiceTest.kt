@@ -6,6 +6,7 @@ import com.bm.backend.testing.InMemoryGrantedUsersRepository
 import com.bm.backend.testing.InMemoryUserActivityRepository
 import com.bm.backend.testing.InMemoryUserConsumptionRepository
 import com.bm.backend.testing.InMemoryUserDataRepository
+import com.bm.backend.testing.InMemoryWebPushTokensRepository
 import kotlinx.coroutines.runBlocking
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
@@ -35,6 +36,7 @@ class GrantedUsersServiceTest {
     private lateinit var userDataRepository: InMemoryUserDataRepository
     private lateinit var userActivityRepository: InMemoryUserActivityRepository
     private lateinit var userConsumptionRepository: InMemoryUserConsumptionRepository
+    private lateinit var webPushTokensRepository: InMemoryWebPushTokensRepository
     private lateinit var userAccountRevoker: RecordingUserAccountRevoker
     private lateinit var forceLogoutNotifier: RecordingForceLogoutNotifier
     private lateinit var transactionRunner: DirectTransactionRunner
@@ -46,6 +48,7 @@ class GrantedUsersServiceTest {
         userDataRepository = InMemoryUserDataRepository()
         userActivityRepository = InMemoryUserActivityRepository()
         userConsumptionRepository = InMemoryUserConsumptionRepository()
+        webPushTokensRepository = InMemoryWebPushTokensRepository()
         userAccountRevoker = RecordingUserAccountRevoker()
         forceLogoutNotifier = RecordingForceLogoutNotifier()
         transactionRunner = DirectTransactionRunner()
@@ -54,6 +57,7 @@ class GrantedUsersServiceTest {
             userDataRepository = userDataRepository,
             userActivityRepository = userActivityRepository,
             userConsumptionRepository = userConsumptionRepository,
+            webPushTokensRepository = webPushTokensRepository,
             userAccountRevoker = userAccountRevoker,
             forceLogoutNotifier = forceLogoutNotifier,
             transactionRunner = transactionRunner
@@ -149,6 +153,9 @@ class GrantedUsersServiceTest {
             phoneUuid = "phone-1"
         )
         userActivityRepository.setOnline(name = "Tester", email = "tester@example.com")
+        webPushTokensRepository.upsert("tok-1", "uid-123", "tester@example.com", "android")
+        webPushTokensRepository.upsert("tok-2", "uid-123", "tester@example.com", "ios")
+        webPushTokensRepository.upsert("tok-other", "uid-9", "other@example.com", "desktop")
 
         val result = service.deleteGrant("TESTER@example.com")
 
@@ -159,6 +166,7 @@ class GrantedUsersServiceTest {
         assertTrue(grantedUsersRepository.findAll().isEmpty())
         assertNull(userDataRepository.findUidByEmail("tester@example.com"))
         assertTrue(userActivityRepository.getUsersActivity().isEmpty())
+        assertEquals(listOf("tok-other"), webPushTokensRepository.all().map { it.token })
 
         // Consumption wipe requested for the resolved uid
         assertEquals(listOf("uid-123"), userConsumptionRepository.deletedUids)

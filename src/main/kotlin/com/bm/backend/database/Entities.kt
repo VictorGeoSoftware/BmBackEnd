@@ -109,6 +109,16 @@ object GrantedUsersDb : IntIdTable("granted_users") {
     val createdAt = timestamp("created_at")
 }
 
+// FCM web push tokens registered by the PowerAppWeb PWA (V14)
+object WebPushTokensDb : IntIdTable("web_push_tokens") {
+    val token = text("token").uniqueIndex()
+    val uid = varchar("uid", 128)
+    val email = varchar("email", 255).index()
+    val platform = varchar("platform", 16)
+    val createdAt = timestamp("created_at")
+    val updatedAt = timestamp("updated_at")
+}
+
 // Table for accounts allowed into the BmWeb dashboard and /admin/* endpoints
 object AdminUsersDb : IntIdTable("admin_users") {
     val email = varchar("email", 255).uniqueIndex()
