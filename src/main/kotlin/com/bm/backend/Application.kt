@@ -219,7 +219,10 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
         externalApiService,
         priceTableService
     )
-    val userDataService = UserDataService(userDataRepository)
+    val userDataService = UserDataService(
+        userDataRepository,
+        deviceBindingExemptEmails = UserDataService.parseExemptEmails()
+    )
     val userActivityService = UserActivityService(userActivityRepository)
     val grantedUsersRepository = GrantedUsersRepository()
     val accessControlService = AccessControlService(grantedUsersRepository)
