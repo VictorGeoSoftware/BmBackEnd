@@ -92,4 +92,32 @@ class UserDataServiceTest {
             service.resetDeviceBinding("   ")
         }
     }
+
+    @Test
+    fun `exempt email can sign in from several devices without changing the binding`() {
+        val fake = InMemoryUserDataRepository()
+        val service = UserDataService(fake, deviceBindingExemptEmails = setOf(" Tester@Example.com "))
+
+        sync(service, uid = "uid-1", email = "tester@example.com", phoneUuid = "device-a")
+        sync(service, uid = "uid-1", email = "tester@example.com", phoneUuid = "device-b")
+
+        assertEquals("device-a", fake.findPhoneUuid("uid-1"))
+    }
+
+    @Test
+    fun `non-exempt email is still rejected when an exemption list is configured`() {
+        val service = UserDataService(InMemoryUserDataRepository(), deviceBindingExemptEmails = setOf("tester@example.com"))
+
+        sync(service, uid = "uid-2", email = "other@example.com", phoneUuid = "device-a")
+
+        assertThrows<DeviceMismatchException> {
+            sync(service, uid = "uid-2", email = "other@example.com", phoneUuid = "device-b")
+        }
+    }
+
+    @Test
+    fun `parseExemptEmails splits, trims and lowercases`() {
+        assertEquals(setOf("a@x.com", "b@x.com"), UserDataService.parseExemptEmails(" A@x.com, ,b@x.com "))
+        assertEquals(emptySet(), UserDataService.parseExemptEmails(null))
+    }
 }
