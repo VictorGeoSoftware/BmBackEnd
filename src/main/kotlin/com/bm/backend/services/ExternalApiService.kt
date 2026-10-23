@@ -70,16 +70,22 @@ class ExternalApiService {
     /**
      * Calls Docling price tables API and normalizes the response to backend price table schema.
      */
-    suspend fun extractPriceTablesFromPdf(pdfFile: File): PriceTableResponse {
+    /**
+     * @param sourceFileName the uploader's original filename. It is sent to the
+     * extractor instead of the temp file's random name: the extractor echoes it back
+     * as `fileName` (the persistence natural key), and DoclingBillReader uses it
+     * to route to a supplier-specific parser.
+     */
+    suspend fun extractPriceTablesFromPdf(pdfFile: File, sourceFileName: String = pdfFile.name): PriceTableResponse {
         return try {
-            println("Sending PDF to Docling Price Tables API: ${pdfFile.name}, size: ${pdfFile.length()} bytes")
+            println("Sending PDF to Docling Price Tables API: $sourceFileName, size: ${pdfFile.length()} bytes")
 
             val httpResponse = client.submitFormWithBinaryData(
                 url = "$doclingPriceTablesApiUrl/extract-price-tables",
                 formData = formData {
                     append("file", pdfFile.readBytes(), Headers.build {
                         append(HttpHeaders.ContentType, "application/pdf")
-                        append(HttpHeaders.ContentDisposition, "filename=\"${pdfFile.name}\"")
+                        append(HttpHeaders.ContentDisposition, "filename=\"$sourceFileName\"")
                     })
                 }
             )
@@ -100,7 +106,7 @@ class ExternalApiService {
 
             println("Docling Price Tables API response received, length: ${responseText.length} chars")
 
-            parseOrNormalizePriceTableResponse(responseText, pdfFile.name)
+            parseOrNormalizePriceTableResponse(responseText, sourceFileName)
         } catch (e: Exception) {
             throw Exception("Failed to extract price tables from PDF via Docling API: ${e.message}", e)
         }

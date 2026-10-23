@@ -1,5 +1,6 @@
 package com.bm.backend.database
 
+import com.bm.backend.models.UserTier
 import org.jetbrains.exposed.dao.id.IntIdTable
 import org.jetbrains.exposed.sql.javatime.timestamp
 
@@ -7,6 +8,10 @@ import org.jetbrains.exposed.sql.javatime.timestamp
 object PriceTableResultsDb : IntIdTable("price_table_results") {
     val fileName = varchar("file_name", 255)
     val companyName = varchar("company_name", 255)
+    // Added in V13. NULL for n8n batch rows (the backend never sees their PDF).
+    val sourceSha256 = char("source_sha256", 64).nullable()
+    val version = integer("version").default(1)
+    val updatedAt = timestamp("updated_at")
 }
 
 // Table for termino de potencia data
@@ -100,7 +105,18 @@ object UserActivityDb : IntIdTable("user_activity") {
 // Table for accounts granted access to the app (replaces the env-var allowlist)
 object GrantedUsersDb : IntIdTable("granted_users") {
     val email = varchar("email", 255).uniqueIndex()
+    val tier = enumerationByName("tier", 20, UserTier::class)
     val createdAt = timestamp("created_at")
+}
+
+// FCM web push tokens registered by the PowerAppWeb PWA (V14)
+object WebPushTokensDb : IntIdTable("web_push_tokens") {
+    val token = text("token").uniqueIndex()
+    val uid = varchar("uid", 128)
+    val email = varchar("email", 255).index()
+    val platform = varchar("platform", 16)
+    val createdAt = timestamp("created_at")
+    val updatedAt = timestamp("updated_at")
 }
 
 // Table for accounts allowed into the BmWeb dashboard and /admin/* endpoints

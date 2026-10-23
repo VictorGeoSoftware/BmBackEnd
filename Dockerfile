@@ -19,32 +19,34 @@ RUN update-ca-certificates || true; \
 COPY build.gradle.kts settings.gradle.kts gradle.properties ./
 COPY gradle ./gradle
 
-# Download dependencies (cached layer)
-RUN gradle dependencies --no-daemon || true
-
 # Copy source code
 COPY src ./src
 
-# Build the application
-RUN gradle shadowJar --no-daemon
+# Build the application. The BuildKit cache mount keeps Gradle dependencies,
+# plugins and the build cache between image builds, so a source change only
+# recompiles what changed instead of starting from an empty Gradle home.
+RUN --mount=type=cache,target=/root/.gradle,id=bm-backend-gradle \
+    gradle shadowJar --no-daemon --build-cache
 
 # Runtime stage
-FROM eclipse-temurin:17-jre-alpine
+FROM eclipse-temurin:17-jre-jammy
 
 WORKDIR /app
 
 # Optional corporate CA trust (no-op on the VPS). Append corporate PEM certs to
-# the system bundle BEFORE apk so the HTTPS package fetch validates behind a
+# the system bundle BEFORE apt so the HTTPS package fetch validates behind a
 # TLS-inspecting proxy.
 COPY certs/ /tmp/corp-certs/
 RUN cat /tmp/corp-certs/*.crt >> /etc/ssl/certs/ca-certificates.crt 2>/dev/null || true; \
     rm -rf /tmp/corp-certs
 
 # Install curl for healthchecks
-RUN apk add --no-cache curl
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl \
+    && rm -rf /var/lib/apt/lists/*
 
 # Create non-root user for security
-RUN addgroup -S bmapp && adduser -S bmapp -G bmapp
+RUN groupadd --system bmapp && useradd --system --gid bmapp bmapp
 
 # Copy the built JAR from build stage
 COPY --from=build /app/build/libs/*-all.jar app.jar

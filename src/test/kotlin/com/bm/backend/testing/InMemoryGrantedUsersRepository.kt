@@ -1,6 +1,7 @@
 package com.bm.backend.testing
 
 import com.bm.backend.models.GrantedUser
+import com.bm.backend.models.UserTier
 import com.bm.backend.repositories.ports.GrantedUsersRepositoryPort
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
@@ -13,19 +14,29 @@ import java.util.concurrent.ConcurrentHashMap
  */
 class InMemoryGrantedUsersRepository : GrantedUsersRepositoryPort {
 
-    private val rows = ConcurrentHashMap<String, Instant>()
+    private data class Row(val tier: UserTier, val createdAt: Instant)
 
-    override fun existsByEmail(email: String): Boolean = rows.containsKey(email)
+    private val rows = ConcurrentHashMap<String, Row>()
 
-    override fun insert(email: String): Boolean {
+    override fun findByEmail(email: String): GrantedUser? = rows[email]?.let { row ->
+        GrantedUser(email = email, tier = row.tier, createdAt = row.createdAt)
+    }
+
+    override fun insert(email: String, tier: UserTier): Boolean {
         if (rows.containsKey(email)) return false
-        rows[email] = Instant.now()
+        rows[email] = Row(tier = tier, createdAt = Instant.now())
         return true
+    }
+
+    override fun updateTier(email: String, tier: UserTier): Int {
+        val existing = rows[email] ?: return 0
+        rows[email] = existing.copy(tier = tier)
+        return 1
     }
 
     override fun deleteByEmail(email: String): Int = if (rows.remove(email) != null) 1 else 0
 
     override fun findAll(): List<GrantedUser> = rows.entries
-        .map { (email, createdAt) -> GrantedUser(email = email, createdAt = createdAt) }
+        .map { (email, row) -> GrantedUser(email = email, tier = row.tier, createdAt = row.createdAt) }
         .sortedByDescending { it.createdAt }
 }

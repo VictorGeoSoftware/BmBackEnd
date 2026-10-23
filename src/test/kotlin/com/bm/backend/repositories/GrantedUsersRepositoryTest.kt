@@ -1,5 +1,6 @@
 package com.bm.backend.repositories
 
+import com.bm.backend.models.UserTier
 import com.bm.backend.testing.DockerAvailable
 import com.bm.backend.testing.PostgresTestSetup
 import org.junit.jupiter.api.Assumptions
@@ -38,6 +39,7 @@ class GrantedUsersRepositoryTest {
         assertTrue(repository.insert("tester@example.com"))
         assertTrue(repository.existsByEmail("tester@example.com"))
         assertFalse(repository.existsByEmail("other@example.com"))
+        assertEquals(UserTier.BASIC, repository.findByEmail("tester@example.com")?.tier)
     }
 
     @Test
@@ -67,5 +69,14 @@ class GrantedUsersRepositoryTest {
 
         val emails = repository.findAll().map { it.email }
         assertEquals(listOf("second@example.com", "first@example.com"), emails)
+    }
+
+    @Test
+    fun `updateTier changes only an existing grant`() {
+        repository.insert("tester@example.com")
+
+        assertEquals(1, repository.updateTier("tester@example.com", UserTier.PREMIUM))
+        assertEquals(UserTier.PREMIUM, repository.findByEmail("tester@example.com")?.tier)
+        assertEquals(0, repository.updateTier("missing@example.com", UserTier.PREMIUM))
     }
 }

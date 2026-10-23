@@ -1,6 +1,7 @@
 package com.bm.backend.services
 
 import com.bm.backend.repositories.ports.GrantedUsersRepositoryPort
+import com.bm.backend.models.GrantedUser
 import org.slf4j.LoggerFactory
 
 /**
@@ -20,13 +21,15 @@ class AccessControlService(
     /**
      * Returns true when the given account is permitted to access the app.
      */
-    fun isEmailAllowed(email: String?): Boolean {
+    fun findGrant(email: String?): GrantedUser? {
         val normalized = email?.trim()?.lowercase().orEmpty()
-        if (normalized.isBlank()) return false
-        val allowed = grantedUsersRepository.existsByEmail(normalized)
-        if (!allowed) {
+        if (normalized.isBlank()) return null
+        val grant = grantedUsersRepository.findByEmail(normalized)
+        if (grant == null) {
             logger.warn("AUDIT: Access denied for non-granted account email={}", normalized)
         }
-        return allowed
+        return grant
     }
+
+    fun isEmailAllowed(email: String?): Boolean = findGrant(email) != null
 }

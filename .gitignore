@@ -64,3 +64,6 @@ certs/*
 # Firebase service account (secret — never commit)
 firebase-service-account.json
 brielmarnysos-1dc68-*.json
+
+# IntelliJ HTTP client secrets (Firebase tokens)
+http/http-client.private.env.json

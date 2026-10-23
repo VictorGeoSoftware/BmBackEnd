@@ -4,5 +4,6 @@ import kotlinx.serialization.Serializable
 
 @Serializable
 data class GrantedUserAddRequest(
-    val email: String? = null
+    val email: String? = null,
+    val tier: UserTier = UserTier.BASIC
 )

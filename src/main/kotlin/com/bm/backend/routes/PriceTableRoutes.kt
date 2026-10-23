@@ -18,6 +18,8 @@ import kotlinx.serialization.json.Json
 import net.logstash.logback.argument.StructuredArguments.kv
 import java.io.File
 import java.nio.file.Files
+import java.security.DigestInputStream
+import java.security.MessageDigest
 
 fun Route.priceTableRoutes(
     priceTableService: PriceTableService,
@@ -73,6 +75,24 @@ fun Route.priceTableRoutes(
 
     get("/price-table-results") {
         if (call.requireGrantedFirebaseUser(accessControlService) == null) return@get
+
+        try {
+            val tarifaType = call.request.queryParameters["tarifaType"]
+            val response = priceTableService.getAllPriceTableResults(tarifaType)
+            call.respond(HttpStatusCode.OK, response)
+        } catch (e: Exception) {
+            call.respond(
+                HttpStatusCode.InternalServerError,
+                ErrorResponse(message = "Internal server error: ${e.message}")
+            )
+        }
+    }
+
+    // BmWeb-only read of the stored price proposals. Gated on `admin_users`
+    // like every other BmWeb price-table endpoint; the public
+    // `/price-table-results` above stays on `granted_users` for BmApp.
+    get("/admin/price-table-results") {
+        if (call.requireAdminFirebaseUser(adminAccessControlService, "read price proposals") == null) return@get
 
         try {
             val tarifaType = call.request.queryParameters["tarifaType"]
@@ -200,30 +220,11 @@ fun Route.priceTableRoutes(
         }
     }
 
-    post("/fetch-total-prices") {
-        if (call.requireAdminFirebaseUser(adminAccessControlService, "trigger the total prices workflow") == null) return@post
-
-        try {
-            val response = externalApiService.triggerFetchTotalPricesWorkflow()
-            call.respond(HttpStatusCode.OK, response)
-        } catch (e: Exception) {
-            call.application.log.error("Error triggering Total prices workflow: ${e.message}", e)
-            call.respond(
-                HttpStatusCode.InternalServerError,
-                TriggerWorkflowResponse(
-                    success = false,
-                    message = "Failed to trigger Total prices workflow",
-                    details = e.message
-                )
-            )
-        }
-    }
-
     post("/upload-price-proposal") {
         if (call.requireAdminFirebaseUser(adminAccessControlService, "upload a price proposal") == null) return@post
 
         var tempFile: File? = null
-        var uploadedFileName: String? = null
+        var sourceDocument: SourceDocument? = null
 
         try {
             val multipartData = call.receiveMultipart()
@@ -236,19 +237,28 @@ fun Route.priceTableRoutes(
                             return@forEachPart
                         }
 
-                        val originalFileName = part.originalFileName ?: "uploaded.pdf"
+                        val originalFileName = UploadedFileNameSanitizer.sanitize(part.originalFileName)
                         if (!originalFileName.endsWith(".pdf", ignoreCase = true)) {
                             throw ValidationException("Only PDF files are accepted")
                         }
 
-                        uploadedFileName = originalFileName
+                        // The temp file only holds the bytes; its random name must never
+                        // leak into extraction or persistence (it broke re-upload upserts).
                         tempFile = Files.createTempFile("price_proposal_", ".pdf").toFile()
+                        val digest = MessageDigest.getInstance("SHA-256")
 
                         part.streamProvider().use { input ->
-                            tempFile!!.outputStream().use { output ->
-                                input.copyTo(output)
+                            DigestInputStream(input, digest).use { hashingInput ->
+                                tempFile!!.outputStream().use { output ->
+                                    hashingInput.copyTo(output)
+                                }
                             }
                         }
+
+                        sourceDocument = SourceDocument(
+                            fileName = originalFileName,
+                            sha256 = digest.digest().joinToString("") { "%02x".format(it) }
+                        )
                     }
 
                     else -> {}
@@ -256,18 +266,48 @@ fun Route.priceTableRoutes(
                 part.dispose()
             }
 
-            if (tempFile == null) {
+            val source = sourceDocument
+            if (tempFile == null || source == null) {
                 throw ValidationException("No PDF file provided")
             }
 
-            val extractedResponse = externalApiService.extractPriceTablesFromPdf(tempFile!!)
+            // Identical bytes were already stored: nothing would change, so skip the
+            // (slow, possibly paid) extraction entirely.
+            if (priceTableService.isSourceAlreadyStored(source.sha256)) {
+                call.application.log.info(
+                    "Price proposal already up to date, skipping extraction {} {}",
+                    kv("fileName", source.fileName),
+                    kv("sha256", source.sha256)
+                )
+                call.respond(
+                    HttpStatusCode.OK,
+                    UploadPriceProposalResponse(
+                        success = true,
+                        message = "Price proposal already up to date",
+                        extracted = PriceTableResponse(success = true, results = emptyList()),
+                        storage = BatchProcessResponse(
+                            success = true,
+                            message = "Identical file already stored; nothing changed",
+                            processed_files = 0,
+                            total_rows_inserted = 0
+                        )
+                    )
+                )
+                return@post
+            }
+
+            val extractedResponse = externalApiService.extractPriceTablesFromPdf(tempFile!!, source.fileName)
             // Summary only — the full extraction JSON used to be logged inline.
             call.application.log.info(
-                "Price tables extracted from PDF {}",
-                kv("fileName", uploadedFileName ?: tempFile!!.name)
+                "Price tables extracted from PDF {} {}",
+                kv("fileName", source.fileName),
+                kv("sha256", source.sha256)
             )
 
-            val storageResponse = priceTableService.processBatchPriceTables(listOf(extractedResponse))
+            val storageResponse = priceTableService.processBatchPriceTables(
+                listOf(extractedResponse),
+                sourceSha256 = source.sha256
+            )
             priceUpdatesNotifier.notify(
                 PriceUpdatesNotification(
                     eventType = PriceUpdatesEventType.PRICE_PROPOSALS_UPSERTED,

@@ -10,6 +10,7 @@ import kotlinx.serialization.Serializable
 @Serializable
 data class GrantedUserResponse(
     val email: String,
+    val tier: UserTier,
     val grantedAt: Long,
     val name: String?,
     val isOnline: Boolean?,

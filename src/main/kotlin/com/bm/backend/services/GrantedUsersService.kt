@@ -1,11 +1,13 @@
 package com.bm.backend.services
 
 import com.bm.backend.models.GrantedUserResponse
+import com.bm.backend.models.UserTier
 import com.bm.backend.repositories.ports.GrantedUsersRepositoryPort
 import com.bm.backend.repositories.ports.TransactionRunnerPort
 import com.bm.backend.repositories.ports.UserActivityRepositoryPort
 import com.bm.backend.repositories.ports.UserConsumptionRepositoryPort
 import com.bm.backend.repositories.ports.UserDataRepositoryPort
+import com.bm.backend.repositories.ports.WebPushTokensRepositoryPort
 import net.logstash.logback.argument.StructuredArguments.kv
 import org.slf4j.LoggerFactory
 
@@ -14,7 +16,8 @@ import org.slf4j.LoggerFactory
  * dashboard: listing (joined with activity data), adding, and deleting.
  *
  * Deleting a grant performs a FULL WIPE of the account: the grant row plus
- * every `user_data`, `user_activity` and `user_consumption` row, and revokes
+ * every `user_data`, `user_activity`, `user_consumption` and `web_push_tokens`
+ * row, and revokes
  * the account's Firebase refresh tokens so active sessions die immediately.
  */
 class GrantedUsersService(
@@ -22,6 +25,7 @@ class GrantedUsersService(
     private val userDataRepository: UserDataRepositoryPort,
     private val userActivityRepository: UserActivityRepositoryPort,
     private val userConsumptionRepository: UserConsumptionRepositoryPort,
+    private val webPushTokensRepository: WebPushTokensRepositoryPort,
     private val userAccountRevoker: UserAccountRevoker,
     private val forceLogoutNotifier: ForceLogoutNotifier,
     private val transactionRunner: TransactionRunnerPort
@@ -29,7 +33,7 @@ class GrantedUsersService(
     private val logger = LoggerFactory.getLogger(GrantedUsersService::class.java)
 
     sealed interface AddGrantResult {
-        data class Added(val email: String) : AddGrantResult
+        data class Added(val email: String, val tier: UserTier) : AddGrantResult
         data class AlreadyExists(val email: String) : AddGrantResult
         data object InvalidEmail : AddGrantResult
     }
@@ -40,15 +44,21 @@ class GrantedUsersService(
         data object InvalidEmail : DeleteGrantResult
     }
 
-    fun addGrant(rawEmail: String?): AddGrantResult {
+    sealed interface UpdateTierResult {
+        data class Updated(val email: String, val tier: UserTier) : UpdateTierResult
+        data class NotFound(val email: String) : UpdateTierResult
+        data object InvalidEmail : UpdateTierResult
+    }
+
+    fun addGrant(rawEmail: String?, tier: UserTier = UserTier.BASIC): AddGrantResult {
         val email = normalize(rawEmail) ?: return AddGrantResult.InvalidEmail
-        val inserted = grantedUsersRepository.insert(email)
+        val inserted = grantedUsersRepository.insert(email, tier)
         if (!inserted) {
             logger.info("AUDIT: Grant add skipped, already exists {}", kv("userEmail", email))
             return AddGrantResult.AlreadyExists(email)
         }
         logger.info("AUDIT: Grant added {}", kv("userEmail", email))
-        return AddGrantResult.Added(email)
+        return AddGrantResult.Added(email, tier)
     }
 
     fun listGrants(): List<GrantedUserResponse> {
@@ -61,6 +71,7 @@ class GrantedUsersService(
             val activity = activityByEmail[grant.email]
             GrantedUserResponse(
                 email = grant.email,
+                tier = grant.tier,
                 grantedAt = grant.createdAt.toEpochMilli(),
                 name = activity?.name,
                 isOnline = activity?.isOnline,
@@ -71,6 +82,18 @@ class GrantedUsersService(
                 activityUpdatedAt = activity?.updatedAt
             )
         }
+    }
+
+    fun updateTier(rawEmail: String?, tier: UserTier): UpdateTierResult {
+        val email = normalize(rawEmail) ?: return UpdateTierResult.InvalidEmail
+        if (grantedUsersRepository.updateTier(email, tier) == 0) {
+            return UpdateTierResult.NotFound(email)
+        }
+        logger.info(
+            "AUDIT: User tier updated {} {}",
+            kv("userEmail", email), kv("userTier", tier.name)
+        )
+        return UpdateTierResult.Updated(email, tier)
     }
 
     suspend fun deleteGrant(rawEmail: String?): DeleteGrantResult {
@@ -89,13 +112,14 @@ class GrantedUsersService(
             userAccountRevoker.revokeRefreshTokens(uid)
         }
 
-        // Unit of work spanning the four user tables; the repository methods
+        // Unit of work spanning the user tables; the repository methods
         // join this transaction (Exposed reuses the thread-local transaction).
         transactionRunner.inTransaction {
             if (uid != null) {
                 userConsumptionRepository.deleteByUid(uid)
             }
             userActivityRepository.deleteByEmail(email)
+            webPushTokensRepository.deleteByEmail(email)
             userDataRepository.deleteByEmail(email)
             grantedUsersRepository.deleteByEmail(email)
         }

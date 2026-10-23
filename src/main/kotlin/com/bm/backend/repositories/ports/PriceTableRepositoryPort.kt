@@ -16,7 +16,17 @@ interface PriceTableRepositoryPort {
 
     fun updateTaxSettings(iva: Double, impuestoElectrico: Double): TaxSettingsResponse
 
-    fun storePriceTableResults(priceTableResponse: PriceTableResponse): Int
+    /**
+     * Upserts each result by its natural key (fileName, companyName).
+     *
+     * When an existing row is overwritten and [sourceSha256] is non-null and differs
+     * from the stored hash, the row's version is incremented. A null hash (n8n batch
+     * path) overwrites without bumping the version.
+     */
+    fun storePriceTableResults(priceTableResponse: PriceTableResponse, sourceSha256: String? = null): Int
+
+    /** True when at least one stored result was extracted from a PDF with this hash. */
+    fun existsBySourceSha256(sourceSha256: String): Boolean
 
     fun getAllPriceTableResults(tarifaType: String? = null): PriceTableResponse
 

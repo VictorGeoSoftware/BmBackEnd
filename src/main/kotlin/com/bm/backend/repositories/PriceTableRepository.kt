@@ -7,6 +7,7 @@ import org.jetbrains.exposed.sql.*
 import org.jetbrains.exposed.sql.SqlExpressionBuilder.eq
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.slf4j.LoggerFactory
+import java.time.Instant
 
 class PriceTableRepository : PriceTableRepositoryPort {
 
@@ -71,23 +72,38 @@ class PriceTableRepository : PriceTableRepositoryPort {
         )
     }
 
-    override fun storePriceTableResults(priceTableResponse: PriceTableResponse): Int {
+    override fun storePriceTableResults(priceTableResponse: PriceTableResponse, sourceSha256: String?): Int {
         return transaction {
             var totalRowsInserted = 0
+            val now = Instant.now()
             
             priceTableResponse.results.forEach { result ->
-                val existingResultIds = findResultIdsByNaturalKey(
+                val existingRows = findResultRowsByNaturalKey(
                     fileName = result.fileName,
                     companyName = result.extracted_tables.companyName
                 )
 
-                if (existingResultIds.isNotEmpty()) {
-                    val keepResultId = existingResultIds.first()
+                if (existingRows.isNotEmpty()) {
+                    val keepRow = existingRows.first()
+                    val keepResultId = keepRow[PriceTableResultsDb.id].value
+                    val storedSha256 = keepRow[PriceTableResultsDb.sourceSha256]
+                    val isNewVersion = sourceSha256 != null && sourceSha256 != storedSha256
+                    val nextVersion = keepRow[PriceTableResultsDb.version] + if (isNewVersion) 1 else 0
 
                     PriceTableResultsDb.update({ PriceTableResultsDb.id eq keepResultId }) {
                         it[fileName] = result.fileName
                         it[companyName] = result.extracted_tables.companyName
+                        it[version] = nextVersion
+                        it[updatedAt] = now
+                        if (sourceSha256 != null) it[PriceTableResultsDb.sourceSha256] = sourceSha256
                     }
+                    if (isNewVersion) {
+                        logger.info(
+                            "AUDIT: Price proposal replaced by new version — id={}, fileName={}, version={}",
+                            keepResultId, result.fileName, nextVersion
+                        )
+                    }
+                    val existingResultIds = existingRows.map { it[PriceTableResultsDb.id].value }
 
                     // Delete duplicates — CASCADE removes their children automatically
                     existingResultIds.drop(1).forEach { duplicateId ->
@@ -107,6 +123,9 @@ class PriceTableRepository : PriceTableRepositoryPort {
                 val resultId = PriceTableResultsDb.insertAndGetId {
                     it[PriceTableResultsDb.fileName] = result.fileName
                     it[PriceTableResultsDb.companyName] = result.extracted_tables.companyName
+                    it[PriceTableResultsDb.sourceSha256] = sourceSha256
+                    it[PriceTableResultsDb.version] = 1
+                    it[PriceTableResultsDb.updatedAt] = now
                 }.value
 
                 totalRowsInserted += insertPriceTableDetails(resultId, result)
@@ -183,14 +202,25 @@ class PriceTableRepository : PriceTableRepositoryPort {
         return insertedRows
     }
 
-    private fun findResultIdsByNaturalKey(fileName: String, companyName: String): List<Int> {
+    private fun findResultRowsByNaturalKey(fileName: String, companyName: String): List<ResultRow> {
         return PriceTableResultsDb
             .selectAll()
             .where {
                 (PriceTableResultsDb.fileName eq fileName) and
                     (PriceTableResultsDb.companyName eq companyName)
             }
-            .map { it[PriceTableResultsDb.id].value }
+            .orderBy(PriceTableResultsDb.id to SortOrder.ASC)
+            .toList()
+    }
+
+    override fun existsBySourceSha256(sourceSha256: String): Boolean {
+        return transaction {
+            !PriceTableResultsDb
+                .selectAll()
+                .where { PriceTableResultsDb.sourceSha256 eq sourceSha256 }
+                .limit(1)
+                .empty()
+        }
     }
 
     override fun getAllPriceTableResults(tarifaType: String?): PriceTableResponse {

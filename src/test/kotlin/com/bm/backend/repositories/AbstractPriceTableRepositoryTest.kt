@@ -5,10 +5,12 @@ import com.bm.backend.models.IMPUESTO_ELECTRICO
 import com.bm.backend.models.IVA
 import com.bm.backend.testing.PriceTableFixtures
 import org.jetbrains.exposed.sql.deleteAll
+import org.jetbrains.exposed.sql.selectAll
 import org.jetbrains.exposed.sql.transactions.transaction
 import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertFalse
 import kotlin.test.assertNotNull
 import kotlin.test.assertNull
 import kotlin.test.assertTrue
@@ -18,6 +20,11 @@ import kotlin.test.assertTrue
  * Subclasses provide DB setup; tests run identically on SQLite and Postgres.
  */
 abstract class AbstractPriceTableRepositoryTest {
+
+    private companion object {
+        val HASH_A = "a".repeat(64)
+        val HASH_B = "b".repeat(64)
+    }
 
     protected lateinit var repository: PriceTableRepository
 
@@ -100,6 +107,81 @@ abstract class AbstractPriceTableRepositoryTest {
         val baseTarifa = all.results.single()
             .extracted_tables.termino_de_energia.tabla_precio_clasica_base.tarifas.single()
         assertEquals(0.200000, baseTarifa.P1)
+    }
+
+    private fun storedRow(fileName: String) = transaction {
+        PriceTableResultsDb.selectAll()
+            .where { PriceTableResultsDb.fileName eq fileName }
+            .single()
+    }
+
+    @Test
+    fun `new upload is stored as version 1 with its source hash`() {
+        repository.storePriceTableResults(
+            PriceTableFixtures.response(PriceTableFixtures.result(fileName = "adx.pdf", companyName = "ADX")),
+            sourceSha256 = HASH_A
+        )
+        val row = storedRow("adx.pdf")
+        assertEquals(1, row[PriceTableResultsDb.version])
+        assertEquals(HASH_A, row[PriceTableResultsDb.sourceSha256])
+    }
+
+    @Test
+    fun `same name with a different hash overwrites in place and bumps the version`() {
+        repository.storePriceTableResults(
+            PriceTableFixtures.response(PriceTableFixtures.result(fileName = "adx.pdf", companyName = "ADX", energyP1 = 0.18)),
+            sourceSha256 = HASH_A
+        )
+        val firstId = repository.getAllPriceTableResults().results.single().id
+
+        repository.storePriceTableResults(
+            PriceTableFixtures.response(PriceTableFixtures.result(fileName = "adx.pdf", companyName = "ADX", energyP1 = 0.21)),
+            sourceSha256 = HASH_B
+        )
+
+        val all = repository.getAllPriceTableResults()
+        assertEquals(1, all.results.size, "A new version must replace, not duplicate")
+        assertEquals(firstId, all.results.single().id)
+        assertEquals(
+            0.21,
+            all.results.single().extracted_tables.termino_de_energia.tabla_precio_clasica_base.tarifas.single().P1
+        )
+        val row = storedRow("adx.pdf")
+        assertEquals(2, row[PriceTableResultsDb.version])
+        assertEquals(HASH_B, row[PriceTableResultsDb.sourceSha256])
+    }
+
+    @Test
+    fun `same name with the same hash keeps the version`() {
+        val response = PriceTableFixtures.response(PriceTableFixtures.result(fileName = "adx.pdf", companyName = "ADX"))
+        repository.storePriceTableResults(response, sourceSha256 = HASH_A)
+        repository.storePriceTableResults(response, sourceSha256 = HASH_A)
+        assertEquals(1, storedRow("adx.pdf")[PriceTableResultsDb.version])
+    }
+
+    @Test
+    fun `batch path without hash overwrites without bumping version or clearing the stored hash`() {
+        repository.storePriceTableResults(
+            PriceTableFixtures.response(PriceTableFixtures.result(fileName = "total.pdf", companyName = "Total")),
+            sourceSha256 = HASH_A
+        )
+        repository.storePriceTableResults(
+            PriceTableFixtures.response(PriceTableFixtures.result(fileName = "total.pdf", companyName = "Total"))
+        )
+        val row = storedRow("total.pdf")
+        assertEquals(1, row[PriceTableResultsDb.version])
+        assertEquals(HASH_A, row[PriceTableResultsDb.sourceSha256])
+    }
+
+    @Test
+    fun `existsBySourceSha256 reflects stored hashes`() {
+        assertFalse(repository.existsBySourceSha256(HASH_A))
+        repository.storePriceTableResults(
+            PriceTableFixtures.response(PriceTableFixtures.result(fileName = "adx.pdf", companyName = "ADX")),
+            sourceSha256 = HASH_A
+        )
+        assertTrue(repository.existsBySourceSha256(HASH_A))
+        assertFalse(repository.existsBySourceSha256(HASH_B))
     }
 
     @Test

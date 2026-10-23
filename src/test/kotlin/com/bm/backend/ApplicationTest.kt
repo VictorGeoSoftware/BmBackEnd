@@ -209,6 +209,20 @@ class ApplicationTest {
     }
 
     @Test
+    fun `admin price table results rejects unauthenticated callers`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
+        application {
+            testApplicationModule()
+        }
+
+        client.get("/api/v1/admin/price-table-results").apply {
+            assertEquals(HttpStatusCode.Unauthorized, status)
+        }
+    }
+
+    @Test
     fun `test batch process endpoint with empty data`() = testApplication {
         environment {
             config = io.ktor.server.config.MapApplicationConfig()
