@@ -206,3 +206,42 @@ the owner's completed study, first failure wins, with value-free reason codes:
 
 Not available from any source and therefore absent from the dataset: current supplier name, holder NIF,
 contact data, separate postal fields, penalties.
+
+## Premium report rendering (internal, not wired)
+
+`POST /api/v1/reports/premium-pdf` still answers 501 (`UnavailablePremiumReportRenderer`); the pieces below are
+assembled into the real `PremiumReportRenderer` by the later `report-document` feature.
+
+Foundation (`services/premiumreport/`, one type per file):
+
+- `PremiumReportSection` — `fun write(document, writer, dataset)`. A section sets its own page size, then calls
+  `document.newPage()` (a no-op on an empty page), so portrait and landscape sections can be mixed.
+- `PremiumReportPdf.render(sections, dataset)` — opens an A4 portrait document, writes the sections in order and
+  closes it. Metadata: title `ESTUDIO COMPLETO DE SUMINISTRO ELÉCTRICO`, author/creator `BM`; never the CUPS,
+  holder or address.
+- `PremiumReportTheme` — page sizes/margins, colours (Basic highlight `249,196,17`, dark text, grid grey) and
+  fonts. Fonts are Liberation Sans 2.1.5 Regular/Bold bundled in `src/main/resources/fonts/` (SIL OFL 1.1,
+  `fonts/LICENSE-LiberationSans.txt`) and embedded as Identity-H subsets; a missing font resource throws.
+- `PremiumReportBlocks` (yellow section bar, wrapping label/value table, cell), `PremiumReportFormat` (Spanish
+  numbers up to 3 decimals, `dd/MM/yyyy` dates, Europe/Madrid issue date, `es-ES` uppercase),
+  `PremiumReportTexts` (approved cover copy).
+
+Cover (`PremiumCoverSection(clock)`): `images/logo_briel.png` centred (missing logo → `IllegalStateException`),
+title, subtitle `Análisis de consumo y oferta económica`, `Fecha del informe:` and a `DATOS DEL SUMINISTRO` table:
+
+| Row | Source | When shown |
+|-----|--------|-----------|
+| Titular / Dirección del suministro | broker-entered `comparison.supplyHolder` / `supplyAddress`, uppercased | always |
+| CUPS | study CUPS (`dataset.cups`) | always |
+| Tarifa de acceso | `comparison.tariffName` (validated equal to the study `feeType`) | always |
+| Distribuidora | snapshot `distributorName` | if present and not blank |
+| Ubicación | `<municipality> (<province>) — CP <postalCode>`, absent parts dropped | if any part present |
+| Potencia contratada | `P1: 15,1 kW · …`, reported periods only | if any period reported |
+| Fecha de la última lectura | snapshot `lastReadingDate` as `dd/MM/yyyy` | if present |
+
+If the snapshot is unavailable, the snapshot rows are omitted and one sentence is shown: `No se dispone de datos
+adicionales del suministro.` (no reason code). Distributor code, BIE/APM/access/extension rights, other dates,
+annual consumption and the contracted-power check are never shown. Values wrap and are never truncated.
+
+Previews: `PremiumCoverPreviewTest` writes synthetic `build/premium-report-preview/cover-*.pdf`; convert with
+`pdftoppm -png -r 110` for manual review.

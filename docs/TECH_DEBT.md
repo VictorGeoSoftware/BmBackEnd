@@ -410,6 +410,14 @@ hand. Verified the workflow YAML parses and all keys resolve.
 
 ## 🟡 Low
 
+### 21. Basic and Premium PDF styles are duplicated
+
+`ComparatorReportPdfService` keeps its colours, Helvetica fonts and `buildCell` helper private, so the Premium
+report foundation (`services/premiumreport/PremiumReportTheme`, `PremiumReportBlocks`) copies the same highlight
+colour and bar style instead of sharing them, and uses embedded Liberation Sans while Basic uses non-embedded
+base-14 Helvetica. The Basic PDF was deliberately left untouched (feature `report-cover`). If the two must stay
+visually identical, extract a shared theme in a separate, behaviour-checked change.
+
 ### 10. Grafana's admin password is only honoured on first boot
 
 `GF_SECURITY_ADMIN_PASSWORD` is read when Grafana initialises its database in
