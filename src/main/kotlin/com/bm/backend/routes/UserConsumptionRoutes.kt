@@ -160,7 +160,7 @@ fun Route.userConsumptionRoutes(
                     }
                     
                     // Mark job as completed
-                    jobService.completeJob(jobId, response.report, response.history)
+                    jobService.completeJob(jobId, response.report, response.history, response.snapshot)
                     call.application.log.info(
                         "Consumption report job completed {} {} {}",
                         kv("jobId", jobId), kv("userId", ownerUid), kv("requestId", originRequestId)
@@ -228,7 +228,7 @@ fun Route.userConsumptionRoutes(
 
                     val response = userConsumptionService.processConsumptionReportFromCups(normalizedCupsCode)
 
-                    jobService.completeJob(jobId, response.report, response.history)
+                    jobService.completeJob(jobId, response.report, response.history, response.snapshot)
                     call.application.log.info(
                         "CUPS consumption job completed {} {} {}",
                         kv("jobId", jobId), kv("userId", ownerUid), kv("requestId", originRequestId)

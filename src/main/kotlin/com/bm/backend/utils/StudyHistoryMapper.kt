@@ -43,8 +43,7 @@ object StudyHistoryMapper {
     private fun mapObject(element: JsonElement, cups: String): StudyHistory {
         val obj = element as? JsonObject ?: throw Malformed()
         val version = obj["version"] as? JsonPrimitive ?: throw Malformed()
-        if (version.isString) throw Malformed()
-        val versionNumber = version.content.toIntOrNull() ?: throw Malformed()
+        val versionNumber = StrictJsonNumber.toInt(version) ?: throw Malformed()
         if (versionNumber != SUPPORTED_VERSION) return StudyHistory.unavailable(cups, REASON_UNSUPPORTED_VERSION)
 
         return when (string(obj["status"])) {
@@ -95,9 +94,6 @@ object StudyHistoryMapper {
     private fun value(element: JsonElement): Double? {
         if (element is JsonNull) return null
         val primitive = element as? JsonPrimitive ?: throw Malformed()
-        if (primitive.isString) throw Malformed()
-        val number = primitive.content.toDoubleOrNull() ?: throw Malformed()
-        if (!number.isFinite()) throw Malformed()
-        return number
+        return StrictJsonNumber.toDouble(primitive) ?: throw Malformed()
     }
 }

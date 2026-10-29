@@ -6,6 +6,7 @@ import com.bm.backend.models.DoclingExtractedData
 import com.bm.backend.models.UserConsumption
 import com.bm.backend.repositories.ports.UserConsumptionRepositoryPort
 import com.bm.backend.utils.StudyHistoryMapper
+import com.bm.backend.utils.StudySnapshotMapper
 import com.bm.backend.utils.calculateProposals
 import com.bm.backend.utils.toCleanedData
 import java.io.File
@@ -81,7 +82,9 @@ class UserConsumptionService(
         )
         // Total mapper: a history defect yields UNAVAILABLE and never fails the annual result.
         val history = StudyHistoryMapper.map(n8nResponse.data.history, cleanedConsumptionData.cups)
-        return ConsumptionStudyResult(report = report, history = history)
+        // Total mapper, run after history: only a snapshot for the same CUPS is retained.
+        val snapshot = StudySnapshotMapper.map(n8nResponse.data.snapshot, cleanedConsumptionData.cups)
+        return ConsumptionStudyResult(report = report, history = history, snapshot = snapshot)
     }
 
     fun refreshProposals(consumptionData: com.bm.backend.models.CleanedConsumptionData): List<com.bm.backend.models.ProposalPriceModel> {

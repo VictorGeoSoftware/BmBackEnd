@@ -224,3 +224,14 @@ owner-scoped `JobService.getHistory(jobId, ownerUid)` (null for other owners).
 - Refresh updates proposals/taxes only and keeps the retained history untouched.
 - Retention is memory-only: it is lost on restart and jobs expire after 1 hour, like the
   annual result. No database table or archive exists.
+
+## Retained supply snapshot (not exposed)
+
+Alongside the history, a completed job keeps the typed supply snapshot (`Job.snapshot`, see
+`docs/N8N_INTEGRATION.md`) only when it belongs to the study CUPS; otherwise an `UNAVAILABLE`
+snapshot with a single reason code is kept. It is read only through the owner-scoped
+`JobService.getSnapshot(jobId, ownerUid)` (null for other owners).
+
+- Status/result/refresh client JSON is unchanged: it contains no `snapshot` key.
+- Refresh keeps the retained snapshot instance untouched.
+- Memory-only, like the history: lost on restart, expires with the job after 1 hour.

@@ -170,10 +170,34 @@ from the `fetch-user-consumption` webhook as raw JSON (`N8nConsumptionData.histo
 - `UNAVAILABLE` with one reason code (never partial data, never values or the CUPS):
   upstream `missing` / `invalid_date` / `invalid_measurement`; `not_provided` (no `history`
   key, older workflow); `unsupported_version` (version other than 1); `malformed`
-  (wrong types, string numbers, non-finite values, period objects without exactly P1–P6,
+  (wrong types, string numbers, non-finite values, non-JSON number tokens such as `16.1d`
+  accepted by the lenient decoder — see `utils/StrictJsonNumber` — period objects without exactly P1–P6,
   impossible dates, missing groups, `available` with `intervals: null`).
 - A history defect never fails the job or changes the annual result. The legacy `=`-prefixed
-  annual fields are parsed exactly as before. `data.snapshot` is not decoded.
+  annual fields are parsed exactly as before.
+
+### Consumption webhook `data.snapshot` (contract v1)
+
+The optional `data.snapshot` object is decoded as raw JSON (`N8nConsumptionData.snapshot`) and
+typed by the total `utils/StudySnapshotMapper` into `StudySnapshot` (`StudySnapshotFields`,
+`ContractedPowerCheck`, `PeriodValues`) after the annual result and the history are built:
+
+- `AVAILABLE` requires `version: 1`, `units: {energy: "kWh", power: "kW"}`, `status: "available"`
+  and a `fields` object whose `cups` matches the study CUPS (cleaned `data.cups`): equal after
+  trim/upper-case, or equal 20-char core when exactly one side carries the 2-char suffix.
+  `StudySnapshot.cups` is always the study CUPS.
+- Values are kept as published: numbers as `Double` (strict JSON numbers only, powers already
+  kW, no conversion/rounding), text unchanged, dates as the source ISO string after strict
+  validation (`YYYY-MM-DD` or full ISO date-time). Absent optional keys stay `null`; period maps
+  keep only `P1`–`P6` (absent period = `null`). Fetch/processing times are never used as
+  source dates. `checks.contractedPowerVsPortal` is stored as `ContractedPowerCheck` (or `null`)
+  and never changes the status or values.
+- `UNAVAILABLE` with one reason and no fields: upstream `not_captured` / `parse_error` /
+  `cups_mismatch` / `invalid_fields`; `not_provided` (no `snapshot` key); `unsupported_version`;
+  `cups_mismatch` (backend re-check); `malformed` (wrong types, string or non-JSON numbers,
+  explicit `null` values, period keys outside P1–P6, blank `fields.cups`, impossible dates,
+  wrong units, `available` with `fields: null`, unknown reason or check value).
+- A snapshot defect never fails the job or changes the annual result or history.
 
 ### Additional Resources
 

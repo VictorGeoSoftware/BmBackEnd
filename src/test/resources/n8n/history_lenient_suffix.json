@@ -1,0 +1,91 @@
+{
+  "success": true,
+  "data": {
+    "cups": "=ES0000000000000000AA0F",
+    "tarifa": "=3.0TD",
+    "tarifaValue": "=3.0TD",
+    "annualConsumption": "=12000",
+    "annualConsumptionP1": "=1000",
+    "annualConsumptionP2": "=2000",
+    "annualConsumptionP3": "=3000",
+    "annualConsumptionP4": "=4000",
+    "annualConsumptionP5": "=5000",
+    "annualConsumptionP6": "=6000",
+    "subscribedPowerP1": "=15",
+    "subscribedPowerP2": "=15",
+    "subscribedPowerP3": "=15",
+    "subscribedPowerP4": "=15",
+    "subscribedPowerP5": "=15",
+    "subscribedPowerP6": "=15",
+    "feeType": "=fixed",
+    "fileName": "=synthetic.json",
+    "history": {
+      "version": 1,
+      "units": {
+        "active": "kWh",
+        "reactive": "kVArh",
+        "maxDemand": "kW"
+      },
+      "status": "available",
+      "intervals": [
+        {
+          "startDate": "2025-01-01",
+          "endDate": "2025-01-15",
+          "active": {
+            "P1": 1112,
+            "P2": 200.5,
+            "P3": 0,
+            "P4": null,
+            "P5": 10,
+            "P6": 20
+          },
+          "reactive": {
+            "P1": 1,
+            "P2": 2,
+            "P3": 3,
+            "P4": 4,
+            "P5": 5,
+            "P6": 6
+          },
+          "maxDemand": {
+            "P1": 16.1d,
+            "P2": 10,
+            "P3": 8,
+            "P4": null,
+            "P5": 5,
+            "P6": 4
+          }
+        },
+        {
+          "startDate": "2025-01-16",
+          "endDate": "2025-01-31",
+          "active": {
+            "P1": 900,
+            "P2": 100,
+            "P3": 0.25,
+            "P4": null,
+            "P5": 7,
+            "P6": 8
+          },
+          "reactive": {
+            "P1": null,
+            "P2": null,
+            "P3": null,
+            "P4": null,
+            "P5": null,
+            "P6": null
+          },
+          "maxDemand": {
+            "P1": 15,
+            "P2": 9,
+            "P3": 7,
+            "P4": 6,
+            "P5": 5,
+            "P6": 4
+          }
+        }
+      ]
+    }
+  },
+  "processedAt": "2026-10-29T10:00:00Z"
+}

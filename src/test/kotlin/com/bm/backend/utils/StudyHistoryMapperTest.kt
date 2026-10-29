@@ -108,4 +108,12 @@ class StudyHistoryMapperTest {
         assertEquals(StudyHistoryStatus.AVAILABLE, history.status)
         assertEquals(LocalDate.of(2024, 12, 1), history.intervals[0].endDate)
     }
+
+    @Test
+    fun `lenient non-JSON number token is malformed`() {
+        val history = mapFixture("history_lenient_suffix.json")
+        assertEquals(StudyHistoryStatus.UNAVAILABLE, history.status)
+        assertEquals("malformed", history.reason)
+        assertTrue(history.intervals.isEmpty())
+    }
 }
