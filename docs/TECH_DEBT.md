@@ -534,6 +534,13 @@ documented.
 REACTIVE family only (one row of the pair with all six REACTIVE cells exactly `0.0`; blanks never
 qualify). Same accepted risk as A1. Neutrality is judged per family.
 
+**Demand summary (M2/M4, user decision 2026-10-29):** `DemandSummaryCalculator` takes the peak
+(maximum recorded kW) over all contained MAX_DEMAND rows, including overlapping ones; overlaps are
+disclosed, never block the peak and drop no row (max is idempotent, so double coverage cannot inflate
+it). Accepted risk: if an overlapping row is a superseded correction its value may still be the peak;
+the peak row's dates are always reported. The mean of per-reading maxima is withheld (`overlap`) when
+any contained demand rows overlap. Revisit if upstream semantics are documented.
+
 **Pending migration:** `utils/FamilyWindowAggregator` duplicates the private window/overlap/union logic
 of `ActiveSummaryCalculator`, which was intentionally not refactored in `report-reactive-summary`.
 Migrate the active calculator onto the helper in a dedicated change with its existing tests unchanged.
