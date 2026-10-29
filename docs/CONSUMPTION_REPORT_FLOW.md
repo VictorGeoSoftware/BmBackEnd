@@ -225,6 +225,13 @@ returns `200 application/pdf` for a valid Premium request (user decisions 2026-1
   Any section/close exception propagates ⇒ `500 report_generation_failed` with no bytes. Metadata stays neutral.
 - Tests: `PremiumReportDocumentTest`, `PremiumReportRoutesTest` (real renderer A/G/H); previews
   `PremiumReportDocumentPreviewTest` → `build/premium-report-preview/document-*.pdf`.
+- Tariff periods (spec report-tariff-applicability): `utils/TariffPeriodResolver` is the only place tariff periods
+  are defined (2.0TD → energy/reactive P1–P3, power/maximeter P1–P2; 3.0TD → P1–P6). Candidates are the available
+  snapshot's `tariff`, then the comparison `tariffName`; texts that are not an access-tariff code (blank, `fixed`)
+  carry no evidence. Two different codes ⇒ fallback + T2; an unknown/unsupported code or none ⇒ fallback + T1; a
+  supported tariff with non-zero history/snapshot values outside its periods ⇒ fallback + T3. Fallback periods are
+  those with any non-null source value (none ⇒ P1–P6). The cover shows T1–T3 once; sections/calculators receive the
+  periods (default P1–P6, so 3.0TD output is unchanged). Tests `*Tariff*`, previews `tariff-*.pdf`.
 
 The pieces below are the accepted section renderers that the assembly uses unchanged.
 

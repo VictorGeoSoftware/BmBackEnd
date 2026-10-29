@@ -18,6 +18,7 @@ import com.bm.backend.models.StudyHistory
 import com.bm.backend.models.StudyHistoryStatus
 import com.bm.backend.models.StudySnapshot
 import com.bm.backend.models.StudySnapshotStatus
+import com.bm.backend.models.TariffPeriodProfile
 import com.bm.backend.models.ValueComparison
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
@@ -26,6 +27,7 @@ import kotlin.math.abs
 /**
  * Pure, never-throwing active-energy summary over comparable date windows (spec report-active-summary, A1–A8).
  * D1: a row covers `[startDate, endDate)`; only fully contained rows are summed, crossing rows are never prorated.
+ * Null cells and comparison rows are limited to the tariff's [periods] (default P1–P6).
  * Null cells are never treated as 0; nothing is projected; source values are never replaced.
  */
 object ActiveSummaryCalculator {
@@ -50,9 +52,10 @@ object ActiveSummaryCalculator {
         history: StudyHistory,
         coverage: HistoryCoverage,
         snapshot: StudySnapshot?,
-        legacy: CleanedConsumptionData?
+        legacy: CleanedConsumptionData?,
+        periods: List<Int> = TariffPeriodProfile.ALL_PERIODS
     ): ActiveSummary = try {
-        compute(history, coverage, snapshot, legacy)
+        compute(history, coverage, snapshot, legacy, periods)
     } catch (e: Exception) {
         ActiveSummary.unavailable(CALCULATION_ERROR)
     }
@@ -61,7 +64,8 @@ object ActiveSummaryCalculator {
         history: StudyHistory,
         coverage: HistoryCoverage,
         snapshot: StudySnapshot?,
-        legacy: CleanedConsumptionData?
+        legacy: CleanedConsumptionData?,
+        periods: List<Int>
     ): ActiveSummary {
         val sources = sources(snapshot, legacy)
         val unavailableReason = when {
@@ -71,7 +75,7 @@ object ActiveSummaryCalculator {
             else -> null
         }
         if (unavailableReason != null) {
-            return ActiveSummary.unavailable(unavailableReason).copy(comparisons = compare(sources, null))
+            return ActiveSummary.unavailable(unavailableReason).copy(comparisons = compare(sources, null, periods))
         }
         val anchor = coverage.anchorDate!!
         val inverted = coverage.invertedIntervals.toSet()
@@ -81,8 +85,8 @@ object ActiveSummaryCalculator {
             .filter { s -> s.cells.any { it != null } }
             .sortedWith(compareBy<Span>({ it.start }, { it.endExclusive }, { it.index }))
 
-        val latest = window(ActiveWindowKind.LATEST_12M, anchor.minusMonths(12), anchor, spans)
-        val previous = window(ActiveWindowKind.PREVIOUS_12M, anchor.minusMonths(24), anchor.minusMonths(12), spans)
+        val latest = window(ActiveWindowKind.LATEST_12M, anchor.minusMonths(12), anchor, spans, periods)
+        val previous = window(ActiveWindowKind.PREVIOUS_12M, anchor.minusMonths(24), anchor.minusMonths(12), spans, periods)
         val (changePct, changeReason) = change(latest, previous)
         val active = coverage.families[MeasurementFamily.ACTIVE]
 
@@ -98,11 +102,11 @@ object ActiveSummaryCalculator {
             changeReason = changeReason,
             highIntervals = highIntervals(listOf(latest, previous), spans),
             highIntervalCount = ActiveSummary.HIGH_INTERVAL_COUNT,
-            comparisons = compare(sources, latest)
+            comparisons = compare(sources, latest, periods)
         )
     }
 
-    private fun window(kind: ActiveWindowKind, start: LocalDate, end: LocalDate, spans: List<Span>): ActiveWindowSummary {
+    private fun window(kind: ActiveWindowKind, start: LocalDate, end: LocalDate, spans: List<Span>, periods: List<Int>): ActiveWindowSummary {
         val contained = spans.filter { it.start >= start && it.endExclusive <= end }
         val crossing = spans.filter { !(it.start >= start && it.endExclusive <= end) && it.start < end && it.endExclusive > start }
         val windowDays = days(start, end)
@@ -117,7 +121,7 @@ object ActiveSummaryCalculator {
         }
         if (end > runningEnd) gaps += CoverageGap(runningEnd, end, days(runningEnd, end))
         val coveredDays = unionDays(contained)
-        val nullCells = contained.sumOf { s -> s.cells.count { it == null } }
+        val nullCells = contained.sumOf { s -> periods.count { p -> s.cells[p - 1] == null } }
         val periodSums = (0 until 6).map { p ->
             val present = contained.mapNotNull { it.cells[p] }
             if (present.isEmpty()) null else present.sum()
@@ -237,7 +241,7 @@ object ActiveSummaryCalculator {
         return listOf(sips, leg)
     }
 
-    private fun compare(sources: List<SourceValues>, latest: ActiveWindowSummary?): List<AnnualSourceComparison> =
+    private fun compare(sources: List<SourceValues>, latest: ActiveWindowSummary?, periods: List<Int>): List<AnnualSourceComparison> =
         sources.map { src ->
             val available = src.total != null || src.periods?.any { it != null } == true
             val comparable = available && latest?.status == ActiveWindowStatus.COMPLETE
@@ -251,8 +255,8 @@ object ActiveSummaryCalculator {
                 source = src.source,
                 status = status,
                 total = value(null, src.total, if (comparable) latest?.total else null),
-                periods = (0 until 6).map { p ->
-                    value(p + 1, src.periods?.get(p), if (comparable) historyPeriods?.get(p) else null)
+                periods = periods.map { p ->
+                    value(p, src.periods?.get(p - 1), if (comparable) historyPeriods?.get(p - 1) else null)
                 }
             )
         }

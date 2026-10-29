@@ -15,6 +15,7 @@ import com.bm.backend.models.StudyHistoryInterval
 import com.bm.backend.models.StudyHistoryStatus
 import com.bm.backend.models.StudySnapshot
 import com.bm.backend.models.StudySnapshotStatus
+import com.bm.backend.models.TariffPeriodProfile
 import com.bm.backend.utils.FamilyWindowAggregator.cells
 
 /**
@@ -23,6 +24,7 @@ import com.bm.backend.utils.FamilyWindowAggregator.cells
  * recorded 0.0 distinct from null, values never converted. Overlaps are disclosed and do not block the peak (M2);
  * the mean of per-reading maxima is given only on a complete, overlap-free window (M4).
  * The contracted comparison is a side-by-side difference and percentage only (M5).
+ * Period statistics and null cells cover only the tariff's power [periods] (default P1–P6).
  * Reuses [FamilyWindowAggregator] for window classification only; its sums and blocking rows are ignored (M7).
  */
 object DemandSummaryCalculator {
@@ -38,8 +40,13 @@ object DemandSummaryCalculator {
     const val CONTRACTED_ZERO = "contracted_zero"
     const val WINDOW_MONTHS = 12L
 
-    fun calculate(history: StudyHistory, coverage: HistoryCoverage, snapshot: StudySnapshot?): DemandSummary = try {
-        compute(history, coverage, snapshot)
+    fun calculate(
+        history: StudyHistory,
+        coverage: HistoryCoverage,
+        snapshot: StudySnapshot?,
+        periods: List<Int> = TariffPeriodProfile.ALL_PERIODS
+    ): DemandSummary = try {
+        compute(history, coverage, snapshot, periods)
     } catch (e: Exception) {
         DemandSummary.unavailable(CALCULATION_ERROR)
     }
@@ -50,7 +57,7 @@ object DemandSummaryCalculator {
         else -> DemandWindowStatus.INCOMPLETE
     }
 
-    private fun compute(history: StudyHistory, coverage: HistoryCoverage, snapshot: StudySnapshot?): DemandSummary {
+    private fun compute(history: StudyHistory, coverage: HistoryCoverage, snapshot: StudySnapshot?, periods: List<Int>): DemandSummary {
         val unavailable = when {
             history.status == StudyHistoryStatus.UNAVAILABLE -> history.reason ?: CALCULATION_ERROR
             coverage.status == StudyHistoryStatus.UNAVAILABLE -> coverage.reason ?: CALCULATION_ERROR
@@ -64,7 +71,7 @@ object DemandSummaryCalculator {
             return DemandSummary.unavailable(NO_DEMAND_ROWS).copy(anchorDate = anchor)
         }
         val start = anchor.minusMonths(WINDOW_MONTHS)
-        val agg = FamilyWindowAggregator.aggregate(history, MeasurementFamily.MAX_DEMAND, inverted, start, anchor)
+        val agg = FamilyWindowAggregator.aggregate(history, MeasurementFamily.MAX_DEMAND, inverted, start, anchor, periods)
         val wStatus = status(agg)
         val overlapIndices = agg.overlaps.flatMap { listOf(it.firstIndex, it.secondIndex) }.toSet()
         val window = DemandWindowSummary(
@@ -96,7 +103,7 @@ object DemandSummaryCalculator {
             else -> null
         }
 
-        val periods = (0 until 6).map { p ->
+        val statistics = periods.map { it - 1 }.map { p ->
             val readings = rows.mapNotNull { (i, r) -> cells(r.maxDemand)[p]?.let { Triple(i, r, it) } }
             val peak = readings.sortedWith(
                 compareByDescending<Triple<Int, StudyHistoryInterval, Double>> { it.third }
@@ -152,7 +159,7 @@ object DemandSummaryCalculator {
             window = window,
             contractedSource = DemandContractedSource.SNAPSHOT_CONTRACTED_POWER_KW,
             snapshotReason = snapshotReason,
-            periods = periods,
+            periods = statistics,
             series = series
         )
     }

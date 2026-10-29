@@ -6,6 +6,7 @@ import com.bm.backend.models.HistoryCoverage
 import com.bm.backend.models.MeasurementFamily
 import com.bm.backend.models.StudyHistory
 import com.bm.backend.models.StudyHistoryStatus
+import com.bm.backend.models.TariffPeriodProfile
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 import kotlin.math.ceil
@@ -59,24 +60,26 @@ data class ActiveChartModel(
         internal fun tickNumber(v: Double): String =
             if (v == floor(v)) PremiumReportFormat.kwh(v) else PremiumReportFormat.number(v)
 
-        /** Horizontal P1–P6 share bars of a COMPLETE window with shares; null otherwise (D5). */
-        fun distribution(window: ActiveWindowSummary): ActiveChartModel? {
+        /** Horizontal share bars of the tariff's [periods] (default P1–P6) of a COMPLETE window with shares; null otherwise (D5). */
+        fun distribution(window: ActiveWindowSummary, periods: List<Int> = TariffPeriodProfile.ALL_PERIODS): ActiveChartModel? {
             val shares = window.shares ?: return null
             if (window.status != ActiveWindowStatus.COMPLETE) return null
-            val totals = window.periodTotals.let { listOf(it.p1, it.p2, it.p3, it.p4, it.p5, it.p6) }
-            val values = shares.let { listOf(it.p1, it.p2, it.p3, it.p4, it.p5, it.p6) }
+            val allTotals = window.periodTotals.let { listOf(it.p1, it.p2, it.p3, it.p4, it.p5, it.p6) }
+            val allShares = shares.let { listOf(it.p1, it.p2, it.p3, it.p4, it.p5, it.p6) }
+            val totals = periods.map { allTotals[it - 1] }
+            val values = periods.map { allShares[it - 1] }
             val band = 22.0
             val plotLeft = 150.0
             val plotBottom = 18.0
             val plotWidth = WIDTH - plotLeft - 16.0
-            val plotHeight = band * 6
+            val plotHeight = band * periods.size
             val axisMax = niceCeiling(values.filterNotNull().maxOrNull() ?: 0.0)
             val bars = values.mapIndexed { i, share ->
                 val y = plotBottom + plotHeight - band * (i + 1) + band * 0.2
-                val label = "P${i + 1} " + (totals[i]?.let { "${PremiumReportFormat.kwh(it)} kWh" } ?: "—") +
+                val label = "P${periods[i]} " + (totals[i]?.let { "${PremiumReportFormat.kwh(it)} kWh" } ?: "—") +
                     (share?.let { " (${PremiumReportFormat.percent(it)})" } ?: "")
                 val w = (share ?: 0.0) / axisMax * plotWidth
-                ChartBar(null, i + 1, share, label, plotLeft, y, w, band * 0.6,
+                ChartBar(null, periods[i], share, label, plotLeft, y, w, band * 0.6,
                     if (share == null) ChartBarStyle.NO_DATA else ChartBarStyle.FILLED)
             }
             return ActiveChartModel(
@@ -84,7 +87,7 @@ data class ActiveChartModel(
                 plotLeft = plotLeft, plotBottom = plotBottom, plotWidth = plotWidth, plotHeight = plotHeight,
                 horizontal = true, axisMax = axisMax, unit = "%",
                 valueTicks = ticks(axisMax, plotWidth) { "${tickNumber(it)} %" },
-                categoryTicks = emptyList(), bars = bars, totalRows = 6, shownRows = 6
+                categoryTicks = emptyList(), bars = bars, totalRows = periods.size, shownRows = periods.size
             )
         }
 

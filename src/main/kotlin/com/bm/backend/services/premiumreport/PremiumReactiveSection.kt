@@ -10,6 +10,7 @@ import com.bm.backend.models.StudyHistory
 import com.bm.backend.models.StudyHistoryStatus
 import com.bm.backend.utils.HistoryCoverageCalculator
 import com.bm.backend.utils.ReactiveSummaryCalculator
+import com.bm.backend.utils.TariffPeriodResolver
 import com.lowagie.text.Document
 import com.lowagie.text.Element
 import com.lowagie.text.Font
@@ -24,13 +25,15 @@ import java.awt.Color
 /**
  * Portrait reactive-energy page (spec report-reactive-page V1–V8). Every figure comes from [ReactiveSummaryCalculator]
  * over [HistoryCoverageCalculator]; every sentence comes from the approved truth table in [PremiumReactiveTexts].
+ * Period columns, rows and bands follow the tariff's energy periods ([TariffPeriodResolver]).
  * Descriptive only: nothing is projected, prorated, judged or advised; missing data is never shown as 0.
  */
 class PremiumReactiveSection : PremiumReportSection {
 
     override fun write(document: Document, writer: PdfWriter, dataset: ReportDataset) {
         val history = dataset.history
-        val summary = ReactiveSummaryCalculator.calculate(history, HistoryCoverageCalculator.calculate(history))
+        val periods = TariffPeriodResolver.resolve(dataset).energyPeriods
+        val summary = ReactiveSummaryCalculator.calculate(history, HistoryCoverageCalculator.calculate(history), periods)
         val w = summary.window
 
         document.setPageSize(PremiumReportTheme.PAGE_PORTRAIT)
@@ -45,10 +48,10 @@ class PremiumReactiveSection : PremiumReportSection {
         windowLine(document, PremiumReactiveTexts.windowValue(range(w)))
 
         heading(document, writer, PremiumReactiveTexts.WINDOW_TITLE)
-        document.add(windowTable(w))
+        document.add(windowTable(w, periods))
         notes(document, w, history)
 
-        val distribution = ReactiveChartModel.distribution(w)
+        val distribution = ReactiveChartModel.distribution(w, periods)
         heading(document, writer, PremiumReactiveTexts.DISTRIBUTION_TITLE, distribution?.let { it.height.toFloat() + 40f } ?: 60f)
         if (distribution != null) chart(document, writer, distribution) else note(document, distributionReason(w))
 
@@ -63,7 +66,7 @@ class PremiumReactiveSection : PremiumReportSection {
         chart(document, writer, readings)
         note(document, PremiumReactiveTexts.READINGS_CAPTION)
         if (readings.shownRows < readings.totalRows) note(document, PremiumReactiveTexts.readingsCap(readings.shownRows, readings.totalRows))
-        readingsTable(document, writer, summary)
+        readingsTable(document, writer, summary, periods)
     }
 
     companion object {
@@ -103,9 +106,13 @@ class PremiumReactiveSection : PremiumReportSection {
     private fun header(text: String, align: Int = Element.ALIGN_RIGHT, background: Color = PremiumReportTheme.COLOR_GRID, color: Color = PremiumReportTheme.COLOR_TEXT) =
         cell(text, PremiumReportTheme.bold(PremiumReportTheme.SIZE_TABLE, color), align, background)
 
-    private fun periodHeaders(table: PdfPTable, suffix: String) = (0 until 6).forEach { i ->
-        table.addCell(header("P${i + 1}$suffix", background = PremiumReportTheme.PERIOD_COLORS[i], color = PremiumReportTheme.PERIOD_TEXT_COLORS[i]))
+    /** Headers keep each period's colour (identity by period number). */
+    private fun periodHeaders(table: PdfPTable, periods: List<Int>, suffix: String) = periods.forEach { p ->
+        table.addCell(header("P$p$suffix", background = PremiumReportTheme.PERIOD_COLORS[p - 1], color = PremiumReportTheme.PERIOD_TEXT_COLORS[p - 1]))
     }
+
+    private fun widths(vararg lead: Float, periods: List<Int>, trail: Float) =
+        (lead.toList() + List(periods.size) { 1f } + trail).toFloatArray()
 
     private fun table(widths: FloatArray): PdfPTable = PdfPTable(widths).apply {
         widthPercentage = 100f
@@ -128,12 +135,12 @@ class PremiumReactiveSection : PremiumReportSection {
 
     // ---------- H1 / C1–C7 window table ----------
 
-    private fun windowTable(w: ReactiveWindowSummary): PdfPTable {
-        val t = table(floatArrayOf(2.3f, 1.3f, 1.1f, 1f, 1f, 1f, 1f, 1f, 1f, 1.35f))
+    private fun windowTable(w: ReactiveWindowSummary, periods: List<Int>): PdfPTable {
+        val t = table(widths(2.3f, 1.3f, 1.1f, periods = periods, trail = 1.35f))
         t.addCell(header(PremiumReactiveTexts.COL_PERIOD, Element.ALIGN_LEFT))
         t.addCell(header(PremiumReactiveTexts.COL_STATUS, Element.ALIGN_LEFT))
         t.addCell(header(PremiumReactiveTexts.COL_COVERED_DAYS))
-        periodHeaders(t, PremiumReactiveTexts.UNIT_SUFFIX)
+        periodHeaders(t, periods, PremiumReactiveTexts.UNIT_SUFFIX)
         t.addCell(header(PremiumReactiveTexts.COL_TOTAL_KVARH))
         t.addCell(cell("${PremiumReactiveTexts.LATEST_WINDOW}\n${range(w)}", align = Element.ALIGN_LEFT))
         t.addCell(cell(statusText(w.status), align = Element.ALIGN_LEFT))
@@ -141,8 +148,10 @@ class PremiumReactiveSection : PremiumReportSection {
             ReactiveWindowStatus.COMPLETE, ReactiveWindowStatus.INCOMPLETE -> {
                 t.addCell(cell("${w.coveredDays} / ${w.windowDays}"))
                 val shares = w.shares?.let { cells(it) }
-                cells(w.periodTotals).forEachIndexed { i, v ->
-                    val share = shares?.get(i)?.let { "\n${PremiumReportFormat.percent(it)}" } ?: ""
+                val totals = cells(w.periodTotals)
+                periods.forEach { p ->
+                    val v = totals[p - 1]
+                    val share = shares?.get(p - 1)?.let { "\n${PremiumReportFormat.percent(it)}" } ?: ""
                     t.addCell(cell(kvarh(v) + share))
                 }
                 val total = if (w.status == ReactiveWindowStatus.COMPLETE) kvarh(w.total)
@@ -150,9 +159,9 @@ class PremiumReactiveSection : PremiumReportSection {
                 t.addCell(cell(total, font = tableBold))
             }
             ReactiveWindowStatus.OVERLAP_UNRESOLVED ->
-                t.addCell(cell(PremiumReactiveTexts.OVERLAP_NO_FIGURE, align = Element.ALIGN_LEFT, colspan = 8))
+                t.addCell(cell(PremiumReactiveTexts.OVERLAP_NO_FIGURE, align = Element.ALIGN_LEFT, colspan = periods.size + 2))
             ReactiveWindowStatus.UNAVAILABLE ->
-                t.addCell(cell(PremiumReactiveTexts.NO_DATA, align = Element.ALIGN_LEFT, colspan = 8))
+                t.addCell(cell(PremiumReactiveTexts.NO_DATA, align = Element.ALIGN_LEFT, colspan = periods.size + 2))
         }
         return t
     }
@@ -236,20 +245,21 @@ class PremiumReactiveSection : PremiumReportSection {
 
     // ---------- T0–T2 readings table ----------
 
-    private fun readingsTable(document: Document, writer: PdfWriter, s: ReactiveSummary) {
+    private fun readingsTable(document: Document, writer: PdfWriter, s: ReactiveSummary, periods: List<Int>) {
         heading(document, writer, PremiumReactiveTexts.READINGS_TABLE_TITLE)
-        val t = table(floatArrayOf(1.35f, 1.25f, 0.6f, 1f, 1f, 1f, 1f, 1f, 1f, 1.1f))
+        val t = table(widths(1.35f, 1.25f, 0.6f, periods = periods, trail = 1.1f))
         t.addCell(header(PremiumReactiveTexts.COL_FROM, Element.ALIGN_LEFT))
         t.addCell(header(PremiumReactiveTexts.COL_TO, Element.ALIGN_LEFT))
         t.addCell(header(PremiumReactiveTexts.COL_DAYS))
-        periodHeaders(t, PremiumReactiveTexts.UNIT_SUFFIX)
+        periodHeaders(t, periods, PremiumReactiveTexts.UNIT_SUFFIX)
         t.addCell(header(PremiumReactiveTexts.COL_TOTAL_KVARH))
         s.series.forEach { p ->
             val mark = if (p.inUnresolvedOverlap) PremiumReactiveTexts.OVERLAP_MARK else ""
             t.addCell(cell(PremiumReportFormat.date(p.start) + mark, align = Element.ALIGN_LEFT))
             t.addCell(cell(PremiumReportFormat.date(p.endExclusive.minusDays(1)), align = Element.ALIGN_LEFT))
             t.addCell(cell(p.days.toString()))
-            cells(p.values).forEach { t.addCell(cell(kvarh(it))) }
+            val values = cells(p.values)
+            periods.forEach { n -> t.addCell(cell(kvarh(values[n - 1]))) }
             t.addCell(cell(kvarh(p.total), tableBold))
         }
         document.add(t)

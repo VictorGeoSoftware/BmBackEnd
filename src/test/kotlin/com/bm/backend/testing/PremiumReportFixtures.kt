@@ -282,4 +282,73 @@ object PremiumReportFixtures {
     /** History wholly unavailable (not N1): reactive and demand keep their N2 disclosures. */
     fun documentUnavailableDataset(): ReportDataset =
         dataset().copy(history = StudyHistory(CUPS, StudyHistoryStatus.UNAVAILABLE, "calculation_error", emptyList()))
+
+    // ---- Tariff-applicability fixtures (report-tariff-applicability; synthetic 2.0TD household) ----
+
+    /**
+     * 12 monthly 2.0TD rows (31/07/2025 – 30/07/2026): active/reactive P1–P3, maximeter P1–P2; out-of-tariff cells
+     * are null, or recorded 0 when [zeros]. The last month's P2 maximeter (4.4 kW) is the peak.
+     */
+    fun tariff20Rows(zeros: Boolean = false): List<StudyHistoryInterval> {
+        val x: Double? = if (zeros) 0.0 else null
+        return (0 until 12).map { i ->
+            StudyHistoryInterval(
+                REACTIVE_START.plusMonths(i.toLong()), REACTIVE_START.plusMonths(i + 1L),
+                PeriodValues(60.0 + i, 55.0, 130.0, x, x, x),
+                PeriodValues(10.0, 8.0, 20.0, x, x, x),
+                PeriodValues(3.9, if (i == 11) 4.4 else 4.1, x, x, x, x)
+            )
+        }
+    }
+
+    /** 2.0TD snapshot: contracted 4,6 kW in P1–P2 (P3–P6 null, or 0 when [zeros]), annual P1–P3. */
+    fun tariff20Fields(zeros: Boolean = false, tariff: String? = "2.0TD"): StudySnapshotFields {
+        val x: Double? = if (zeros) 0.0 else null
+        return fullFields().copy(
+            tariff = tariff,
+            annualConsumptionKwh = 3000.0,
+            annualConsumptionPeriodsKwh = PeriodValues(800.0, 700.0, 1500.0, x, x, x),
+            contractedPowerKw = PeriodValues(4.6, 4.6, x, x, x, x)
+        )
+    }
+
+    /**
+     * Full-report dataset for a tariff scenario: [snapshotTariff] in the available snapshot, [tariffName] in the
+     * comparison/legacy study (legacy P4–P6 coerced to 0 as today). The comparison request has 2 power / 3 energy rows.
+     */
+    fun tariffDataset(
+        snapshotTariff: String? = "2.0TD",
+        tariffName: String = "2.0TD",
+        rows: List<StudyHistoryInterval> = tariff20Rows(),
+        zeros: Boolean = false
+    ): ReportDataset {
+        val base = dataset(available(tariff20Fields(zeros, snapshotTariff)))
+        val data = base.report.consumptionData.copy(
+            feeType = tariffName,
+            annualConsumption = 3000.0,
+            annualConsumptionP1 = 800.0, annualConsumptionP2 = 700.0, annualConsumptionP3 = 1500.0,
+            annualConsumptionP4 = 0.0, annualConsumptionP5 = 0.0, annualConsumptionP6 = 0.0
+        )
+        val comparison = base.comparison.copy(
+            tariffName = tariffName,
+            powerTermRows = listOf(
+                com.bm.backend.models.ComparatorReportPeriodValue("P1", 4.6),
+                com.bm.backend.models.ComparatorReportPeriodValue("P2", 4.6)
+            ),
+            energyConsumedRows = listOf(
+                com.bm.backend.models.ComparatorReportPeriodIntValue("P1", 800),
+                com.bm.backend.models.ComparatorReportPeriodIntValue("P2", 700),
+                com.bm.backend.models.ComparatorReportPeriodIntValue("P3", 1500)
+            )
+        )
+        return base.copy(history = history(rows), report = base.report.copy(consumptionData = data), comparison = comparison)
+    }
+
+    /** 2.0TD dataset whose legacy annual study publishes P5 = 120 kWh (history and snapshot P5 empty). */
+    fun tariff20LegacyP5Dataset(): ReportDataset = tariffDataset().let { d ->
+        d.copy(report = d.report.copy(consumptionData = d.report.consumptionData.copy(annualConsumptionP5 = 120.0, annualConsumption = 3120.0)))
+    }
+
+    /** 2.0TD rows with one active P5 = 120 kWh (out of tariff ⇒ inconsistent fallback). */
+    fun tariff20InconsistentRows() = tariff20Rows().mapIndexed { i, r -> if (i == 6) r.copy(active = r.active.copy(p5 = 120.0)) else r }
 }

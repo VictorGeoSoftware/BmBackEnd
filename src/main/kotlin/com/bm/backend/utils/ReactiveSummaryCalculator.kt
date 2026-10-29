@@ -11,12 +11,14 @@ import com.bm.backend.models.ReactiveWindowSummary
 import com.bm.backend.models.RatioActiveBasis
 import com.bm.backend.models.StudyHistory
 import com.bm.backend.models.StudyHistoryStatus
+import com.bm.backend.models.TariffPeriodProfile
 import com.bm.backend.utils.FamilyWindowAggregator.cells
 import com.bm.backend.utils.FamilyWindowAggregator.values
 
 /**
  * Pure, never-throwing descriptive summary of recorded reactive energy (spec report-reactive-summary, R1–R8).
  * Latest 12-month window only, contained rows only, nulls never 0, nothing projected or prorated.
+ * Ratios, null cells and the recorded-zero check cover only the tariff's [periods] (default P1–P6).
  * The ratio is a plain quotient kVArh / kWh over the same window's history ACTIVE rows.
  */
 object ReactiveSummaryCalculator {
@@ -35,8 +37,12 @@ object ReactiveSummaryCalculator {
     const val PERIOD_NULL_CELLS = "period_null_cells"
     const val WINDOW_MONTHS = 12L
 
-    fun calculate(history: StudyHistory, coverage: HistoryCoverage): ReactiveSummary = try {
-        compute(history, coverage)
+    fun calculate(
+        history: StudyHistory,
+        coverage: HistoryCoverage,
+        periods: List<Int> = TariffPeriodProfile.ALL_PERIODS
+    ): ReactiveSummary = try {
+        compute(history, coverage, periods)
     } catch (e: Exception) {
         ReactiveSummary.unavailable(CALCULATION_ERROR)
     }
@@ -48,7 +54,7 @@ object ReactiveSummaryCalculator {
         else -> ReactiveWindowStatus.INCOMPLETE
     }
 
-    private fun compute(history: StudyHistory, coverage: HistoryCoverage): ReactiveSummary {
+    private fun compute(history: StudyHistory, coverage: HistoryCoverage, periods: List<Int>): ReactiveSummary {
         val unavailable = when {
             history.status == StudyHistoryStatus.UNAVAILABLE -> history.reason ?: CALCULATION_ERROR
             coverage.status == StudyHistoryStatus.UNAVAILABLE -> coverage.reason ?: CALCULATION_ERROR
@@ -62,11 +68,11 @@ object ReactiveSummaryCalculator {
             return ReactiveSummary.unavailable(NO_REACTIVE_ROWS).copy(anchorDate = anchor)
         }
         val start = anchor.minusMonths(WINDOW_MONTHS)
-        val reactive = FamilyWindowAggregator.aggregate(history, MeasurementFamily.REACTIVE, inverted, start, anchor)
-        val active = FamilyWindowAggregator.aggregate(history, MeasurementFamily.ACTIVE, inverted, start, anchor)
+        val reactive = FamilyWindowAggregator.aggregate(history, MeasurementFamily.REACTIVE, inverted, start, anchor, periods)
+        val active = FamilyWindowAggregator.aggregate(history, MeasurementFamily.ACTIVE, inverted, start, anchor, periods)
         val rStatus = status(reactive)
         val aStatus = status(active)
-        val window = window(reactive, rStatus)
+        val window = window(reactive, rStatus, periods)
 
         val ratioReason = when {
             rStatus == ReactiveWindowStatus.OVERLAP_UNRESOLVED -> REACTIVE_OVERLAP
@@ -84,10 +90,10 @@ object ReactiveSummaryCalculator {
         val ratios: List<ReactiveRatio>
         val overall: ReactiveRatio
         if (ratioReason != null) {
-            ratios = (1..6).map { ReactiveRatio(it, null, null, null, ratioReason) }
+            ratios = periods.map { ReactiveRatio(it, null, null, null, ratioReason) }
             overall = ReactiveRatio(null, null, null, null, ratioReason)
         } else {
-            ratios = (1..6).map { p ->
+            ratios = periods.map { p ->
                 val r = reactiveSums[p - 1]
                 val a = activeSums[p - 1]
                 when {
@@ -140,12 +146,13 @@ object ReactiveSummaryCalculator {
         )
     }
 
-    private fun window(a: FamilyWindowAggregate, status: ReactiveWindowStatus): ReactiveWindowSummary {
+    private fun window(a: FamilyWindowAggregate, status: ReactiveWindowStatus, periods: List<Int>): ReactiveWindowSummary {
         val sums = cells(a.periodSums)
         val sum = sums.filterNotNull().sum()
         val showTotals = status == ReactiveWindowStatus.COMPLETE || status == ReactiveWindowStatus.INCOMPLETE
         val firm = status == ReactiveWindowStatus.COMPLETE
-        val recordedZero = showTotals && sums.any { it != null } && sums.filterNotNull().all { it == 0.0 }
+        val inProfile = periods.map { sums[it - 1] }
+        val recordedZero = showTotals && inProfile.any { it != null } && inProfile.filterNotNull().all { it == 0.0 }
         val reason = when (status) {
             ReactiveWindowStatus.UNAVAILABLE -> NO_REACTIVE_ROWS
             ReactiveWindowStatus.OVERLAP_UNRESOLVED -> OVERLAP_UNRESOLVED

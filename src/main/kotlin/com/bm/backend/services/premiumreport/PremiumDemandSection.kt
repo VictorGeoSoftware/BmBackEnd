@@ -9,6 +9,7 @@ import com.bm.backend.models.ReportDataset
 import com.bm.backend.models.StudyHistoryStatus
 import com.bm.backend.utils.DemandSummaryCalculator
 import com.bm.backend.utils.HistoryCoverageCalculator
+import com.bm.backend.utils.TariffPeriodResolver
 import com.lowagie.text.Document
 import com.lowagie.text.Element
 import com.lowagie.text.Font
@@ -24,13 +25,14 @@ import java.awt.Color
  * Portrait demanded-power page (spec report-demand-page V1–V9). Every figure comes from [DemandSummaryCalculator]
  * over [HistoryCoverageCalculator] (kW as published); every sentence comes from the approved truth table in
  * [PremiumDemandTexts]. Descriptive only: the contracted-power comparison is plain arithmetic with no verdict,
- * and missing data is never shown as 0.
+ * and missing data is never shown as 0. Period rows/columns follow the tariff's power periods ([TariffPeriodResolver]).
  */
 class PremiumDemandSection : PremiumReportSection {
 
     override fun write(document: Document, writer: PdfWriter, dataset: ReportDataset) {
         val history = dataset.history
-        val summary = DemandSummaryCalculator.calculate(history, HistoryCoverageCalculator.calculate(history), dataset.snapshot)
+        val periods = TariffPeriodResolver.resolve(dataset).powerPeriods
+        val summary = DemandSummaryCalculator.calculate(history, HistoryCoverageCalculator.calculate(history), dataset.snapshot, periods)
         val w = summary.window
 
         document.setPageSize(PremiumReportTheme.PAGE_PORTRAIT)
@@ -51,10 +53,10 @@ class PremiumDemandSection : PremiumReportSection {
             document.add(statsTable(summary.periods))
             note(document, PremiumDemandTexts.STATS_CAPTION)
         }
-        notes(document, summary, w)
+        notes(document, summary, w, periods)
 
         // Block 3: comparison with contracted power.
-        comparison(document, writer, summary, w)
+        comparison(document, writer, summary, w, periods)
 
         // Blocks 4–5: readings chart and table.
         val readings = DemandChartModel.readings(summary.series)
@@ -64,9 +66,9 @@ class PremiumDemandSection : PremiumReportSection {
             return
         }
         chart(document, readings, writer)
-        note(document, PremiumDemandTexts.READINGS_CAPTION)
+        note(document, PremiumDemandTexts.readingsCaption(periods))
         if (readings.shownRows < readings.totalRows) note(document, PremiumDemandTexts.readingsCap(readings.shownRows, readings.totalRows))
-        readingsTable(document, writer, summary)
+        readingsTable(document, writer, summary, periods)
     }
 
     companion object {
@@ -164,7 +166,7 @@ class PremiumDemandSection : PremiumReportSection {
 
     // ---------- N3–N10 status notes (truth-table order) ----------
 
-    private fun notes(document: Document, s: DemandSummary, w: DemandWindowSummary) {
+    private fun notes(document: Document, s: DemandSummary, w: DemandWindowSummary, periods: List<Int>) {
         val figures = w.status != DemandWindowStatus.UNAVAILABLE
         val withReadings = s.periods.filter { it.readings > 0 }
         val noReadings = s.periods.filter { it.reason == DemandSummaryCalculator.NO_READINGS }.map { it.period }.sorted()
@@ -173,7 +175,7 @@ class PremiumDemandSection : PremiumReportSection {
         if (w.crossing.isNotEmpty()) note(document, PremiumDemandTexts.crossing(w.crossing.size))
         if (figures && withReadings.isNotEmpty() && withReadings.all { it.peakKw == 0.0 }) note(document, PremiumDemandTexts.RECORDED_ZERO)
         if (figures && w.nullCells > 0) note(document, PremiumDemandTexts.NULL_CELLS)
-        if (figures && noReadings.isNotEmpty() && noReadings.size < 6) note(document, PremiumDemandTexts.noReadings(noReadings))
+        if (figures && noReadings.isNotEmpty() && noReadings.size < periods.size) note(document, PremiumDemandTexts.noReadings(noReadings))
         w.overlapDisclosures.forEach { o ->
             note(document, PremiumDemandTexts.overlapNote(PremiumReportFormat.inclusiveRange(o.start, o.endExclusive, "–")))
         }
@@ -182,8 +184,8 @@ class PremiumDemandSection : PremiumReportSection {
 
     // ---------- K0–K8 / KU1 / KU2 comparison ----------
 
-    private fun comparison(document: Document, writer: PdfWriter, s: DemandSummary, w: DemandWindowSummary) {
-        val model = if (w.status != DemandWindowStatus.UNAVAILABLE && s.snapshotReason == null) DemandChartModel.comparison(s.periods) else null
+    private fun comparison(document: Document, writer: PdfWriter, s: DemandSummary, w: DemandWindowSummary, periods: List<Int>) {
+        val model = if (w.status != DemandWindowStatus.UNAVAILABLE && s.snapshotReason == null) DemandChartModel.comparison(s.periods, periods) else null
         heading(document, writer, PremiumDemandTexts.COMPARISON_TITLE, model?.let { it.height.toFloat() + 80f } ?: 60f)
         when {
             w.status == DemandWindowStatus.UNAVAILABLE -> { note(document, PremiumDemandTexts.COMPARISON_NO_READINGS); return }
@@ -220,21 +222,22 @@ class PremiumDemandSection : PremiumReportSection {
 
     // ---------- T0–T3 readings table ----------
 
-    private fun readingsTable(document: Document, writer: PdfWriter, s: DemandSummary) {
+    private fun readingsTable(document: Document, writer: PdfWriter, s: DemandSummary, periods: List<Int>) {
         heading(document, writer, PremiumDemandTexts.READINGS_TABLE_TITLE)
-        val t = table(floatArrayOf(1.45f, 1.25f, 0.6f, 1f, 1f, 1f, 1f, 1f, 1f))
+        val t = table((listOf(1.45f, 1.25f, 0.6f) + List(periods.size) { 1f }).toFloatArray())
         t.addCell(header(PremiumDemandTexts.COL_FROM, Element.ALIGN_LEFT))
         t.addCell(header(PremiumDemandTexts.COL_TO, Element.ALIGN_LEFT))
         t.addCell(header(PremiumDemandTexts.COL_DAYS))
-        (0 until 6).forEach { i ->
-            t.addCell(header("P${i + 1}${PremiumDemandTexts.UNIT_SUFFIX}", background = PremiumReportTheme.PERIOD_COLORS[i], color = PremiumReportTheme.PERIOD_TEXT_COLORS[i]))
+        periods.forEach { n ->
+            t.addCell(header("P$n${PremiumDemandTexts.UNIT_SUFFIX}", background = PremiumReportTheme.PERIOD_COLORS[n - 1], color = PremiumReportTheme.PERIOD_TEXT_COLORS[n - 1]))
         }
         s.series.forEach { p ->
             val marks = (if (p.inOverlap) PremiumDemandTexts.OVERLAP_MARK else "") + (if (p.activeAllZero) PremiumDemandTexts.ACTIVE_ZERO_MARK else "")
             t.addCell(cell(PremiumReportFormat.date(p.start) + marks, align = Element.ALIGN_LEFT))
             t.addCell(cell(PremiumReportFormat.date(p.endExclusive.minusDays(1)), align = Element.ALIGN_LEFT))
             t.addCell(cell(p.days.toString()))
-            cells(p.values).forEach { t.addCell(cell(kw(it))) }
+            val values = cells(p.values)
+            periods.forEach { n -> t.addCell(cell(kw(values[n - 1]))) }
         }
         document.add(t)
         note(document, PremiumDemandTexts.DATES_NOTE)

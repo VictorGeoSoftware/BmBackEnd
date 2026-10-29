@@ -1,5 +1,7 @@
 package com.bm.backend.services.premiumreport
 
+import com.bm.backend.models.TariffPeriodProfile
+
 /**
  * Spanish copy of the demanded-power page (spec report-demand-page truth table, approved by the user 2026-10-29).
  * Phrases with the same meaning as the active/reactive pages reference [PremiumActiveTexts]/[PremiumReactiveTexts].
@@ -66,9 +68,19 @@ object PremiumDemandTexts {
 
     // G0–G4 / T0–T3.
     const val READINGS_CHART_TITLE = "Máxima registrada por lectura (últimos 12 meses)"
-    const val READINGS_CAPTION =
-        "Cada barra es una lectura de la fuente (no un mes): la altura es el mayor valor de maxímetro registrado entre P1 y P6 " +
+    val READINGS_CAPTION = readingsCaption(TariffPeriodProfile.ALL_PERIODS)
+
+    /** T4a contiguous (`entre P1 y P2`), T4b single (`en P2`), T4c non-contiguous (`en P1, P3`) power periods. */
+    fun readingsCaption(periods: List<Int>): String {
+        val contiguous = periods.size >= 2 && periods.zipWithNext().all { (a, b) -> b == a + 1 }
+        val where = when {
+            periods.size == 1 -> "en P${periods[0]}"
+            contiguous -> "entre P${periods.first()} y P${periods.last()}"
+            else -> "en " + periods.joinToString(", ") { "P$it" }
+        }
+        return "Cada barra es una lectura de la fuente (no un mes): la altura es el mayor valor de maxímetro registrado $where " +
             "en esa lectura (kW) y la anchura los días que cubre. Contorno sin relleno: lectura solapada. Raya sobre el eje: lectura con valor 0."
+    }
     fun readingsCap(shown: Int, total: Int) = PremiumActiveTexts.readingsCap(shown, total)
     const val READINGS_CHART_UNAVAILABLE =
         "Gráfico de lecturas no disponible: no hay lecturas de potencia demandada dentro de los últimos 12 meses."
