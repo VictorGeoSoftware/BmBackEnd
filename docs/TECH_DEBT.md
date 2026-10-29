@@ -514,6 +514,15 @@ harmless: a test scrapes the registry and asserts both labels are present on
 emitted metrics. Noise, not a bug; worth silencing eventually so it does not
 mask a real ordering problem later.
 
+### 18. History overlap semantics are unresolved
+
+`HistoryCoverageCalculator` discloses overlapping history rows (e.g. a zero-energy row with
+non-zero demand inside a longer energy row) but cannot say whether they are corrections,
+re-reads or separate demand readings. Until distributor/portal evidence settles it, downstream
+report summaries must suppress definitive aggregates over overlapping ranges. The half-open
+`[startDate, endDate)` boundary is a user-approved default inferred from data, not an upstream
+contract statement.
+
 ---
 
 ## Fixed during this work — do not regress

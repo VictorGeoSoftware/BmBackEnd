@@ -235,3 +235,27 @@ snapshot with a single reason code is kept. It is read only through the owner-sc
 - Status/result/refresh client JSON is unchanged: it contains no `snapshot` key.
 - Refresh keeps the retained snapshot instance untouched.
 - Memory-only, like the history: lost on restart, expires with the job after 1 hour.
+
+## History coverage (computed on demand, not exposed)
+
+`HistoryCoverageCalculator.calculate(StudyHistory): HistoryCoverage` (`utils/`) is a pure,
+never-throwing calculation over a history obtained through `JobService.getHistory(jobId, ownerUid)`.
+It is not stored on `Job` and adds no key to any client JSON. Any unexpected error yields
+`UNAVAILABLE` with reason `calculation_error`; an unavailable history yields `UNAVAILABLE` with
+the history's reason. The input history is never modified, reordered or deduplicated.
+
+- **Date boundary (D1, user-approved default):** each row covers the half-open range
+  `[startDate, endDate)` (reading-to-reading). A shared endpoint is contiguous. Implemented in one
+  place (`span`). Rows are never interpreted as months and never split or prorated.
+- **Per family (ACTIVE, REACTIVE, MAX_DEMAND):** a row is usable when `startDate <= endDate` and
+  at least one P1–P6 value is non-null (`0.0` is a value). All-null rows go to `missingIntervals`;
+  nulls in usable rows are only counted (`nullValues`). `startDate > endDate` rows are listed in
+  `invertedIntervals` and excluded; `start == end` rows are usable with zero days.
+- **Gaps / overlaps:** gaps are uncovered ranges between usable rows; overlaps list both source
+  indices and the shared range. `coveredDays` is the union length (never double-counted).
+  Overlap meaning is unresolved: `hasUnresolvedOverlaps` must make downstream summaries suppress
+  definitive figures over overlapping ranges.
+- **Windows:** anchor is the latest `endDate` of any non-inverted row with a usable family (never
+  fetch time); 12/24-month windows `[anchor - n months, anchor)`. Rows are `contained` or
+  `crossing` (listed, not prorated); `complete` requires contained coverage of the whole window
+  with no gaps and no crossing rows.
