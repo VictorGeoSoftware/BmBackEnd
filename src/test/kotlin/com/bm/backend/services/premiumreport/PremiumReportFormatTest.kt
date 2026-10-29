@@ -34,4 +34,14 @@ class PremiumReportFormatTest {
         val clock = Clock.fixed(Instant.parse("2026-10-28T23:30:00Z"), ZoneId.of("UTC"))
         assertEquals("29/10/2026", PremiumReportFormat.issueDate(clock))
     }
+
+    @Test
+    fun `decimal2 rounds half up with two decimals and Spanish grouping`() {
+        assertEquals("0,25", PremiumReportFormat.decimal2(0.25))
+        assertEquals("0,19", PremiumReportFormat.decimal2(10920.0 / 56400.0))
+        assertEquals("0,13", PremiumReportFormat.decimal2(0.125))
+        assertEquals("0,00", PremiumReportFormat.decimal2(0.0))
+        assertEquals("0,00", PremiumReportFormat.decimal2(-0.001))
+        assertEquals("1.234,57", PremiumReportFormat.decimal2(1234.567))
+    }
 }

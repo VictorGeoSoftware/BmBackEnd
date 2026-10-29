@@ -133,4 +133,64 @@ object PremiumReportFixtures {
         )
         return base.copy(history = history, report = base.report.copy(consumptionData = data))
     }
+    // ---- Reactive-energy page fixtures (synthetic; window 31/07/2025 – 30/07/2026) ----
+
+    val NULLS = PeriodValues(null, null, null, null, null, null)
+    val REACTIVE_START: LocalDate = LocalDate.parse("2025-07-31")
+    val ACTIVE_MONTH = PeriodValues(400.0, 500.0, 450.0, 600.0, 250.0, 2500.0)
+    val REACTIVE_MONTH = PeriodValues(100.0, 120.0, 90.0, 150.0, 50.0, 400.0)
+
+    fun reactiveRow(start: LocalDate, end: LocalDate, active: PeriodValues, reactive: PeriodValues) =
+        StudyHistoryInterval(start, end, active, reactive, ones)
+
+    /** 12 monthly rows ending 2026-07-31 (exclusive) with active and reactive values. */
+    fun reactiveMonths(
+        active: (Int) -> PeriodValues = { ACTIVE_MONTH },
+        reactive: (Int) -> PeriodValues = { REACTIVE_MONTH }
+    ) = (0 until 12).map { i ->
+        reactiveRow(REACTIVE_START.plusMonths(i.toLong()), REACTIVE_START.plusMonths(i + 1L), active(i), reactive(i))
+    }
+
+    /** A: complete window plus an all-zero reactive row overlapping 2026-05-31..2026-06-30 (neutral, disclosed). */
+    fun reactiveCompleteRows() = reactiveMonths() +
+        reactiveRow(LocalDate.parse("2026-05-31"), LocalDate.parse("2026-06-30"), NULLS, ZEROS)
+
+    /** B: every reactive cell recorded as 0.0, active > 0. */
+    fun reactiveZeroRows() = reactiveMonths(reactive = { ZEROS })
+
+    /** C: no reactive values at all. */
+    fun reactiveMissingRows() = reactiveMonths(reactive = { NULLS })
+
+    /** C2: reactive only before the window plus one reading crossing its start; active covers the window. */
+    fun reactiveOutsideRows() =
+        (0 until 11).map { i ->
+            reactiveRow(LocalDate.parse("2024-06-30").plusMonths(i.toLong()), LocalDate.parse("2024-06-30").plusMonths(i + 1L), NULLS, REACTIVE_MONTH)
+        } + reactiveRow(LocalDate.parse("2025-05-30"), LocalDate.parse("2025-08-31"), NULLS, REACTIVE_MONTH) +
+            reactiveMonths(reactive = { NULLS })
+
+    /** D: reactive only for the last 8 months (243 of 365 days). */
+    fun reactiveIncompleteRows() = reactiveMonths(reactive = { i -> if (i < 4) NULLS else REACTIVE_MONTH })
+
+    /** E: complete plus a non-zero reactive row overlapping 2026-01-15..2026-02-10 (unresolved). */
+    fun reactiveOverlapRows() = reactiveMonths() +
+        reactiveRow(LocalDate.parse("2026-01-15"), LocalDate.parse("2026-02-10"), NULLS, PeriodValues(5.0, 5.0, 5.0, 5.0, 5.0, 5.0))
+
+    /** F: complete reactive, no active values (active_unavailable). */
+    fun reactiveNoActiveRows() = reactiveMonths(active = { NULLS })
+
+    /** F4: complete reactive; a non-zero active-only row overlaps (active_overlap). */
+    fun reactiveActiveOverlapRows() = reactiveMonths() +
+        reactiveRow(LocalDate.parse("2026-01-15"), LocalDate.parse("2026-02-10"), ACTIVE_MONTH, NULLS)
+
+    /** F5: complete reactive; active only for the last 6 months (active_incomplete). */
+    fun reactiveActiveIncompleteRows() = reactiveMonths(active = { i -> if (i < 6) NULLS else ACTIVE_MONTH })
+
+    /** G: complete, P4–P6 reactive cells null in rows 2 and 5. */
+    fun reactiveNullRows() = reactiveMonths(reactive = { i -> if (i == 2 || i == 5) REACTIVE_MONTH.copy(p4 = null, p5 = null, p6 = null) else REACTIVE_MONTH })
+
+    /** L: 73 five-day rows covering the window exactly (chart cap 36). */
+    fun reactiveLongRows() = (0 until 73).map { i ->
+        val s = REACTIVE_START.plusDays(5L * i)
+        reactiveRow(s, s.plusDays(5), PeriodValues(10.0, 12.0, 11.0, 15.0, 6.0, 40.0), PeriodValues(2.0 + i % 5, 3.0, 2.0, 4.0, 1.0, 9.0))
+    }
 }

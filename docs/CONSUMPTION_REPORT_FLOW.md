@@ -279,3 +279,26 @@ ceiling; deterministic) drawn by `ActiveChartPainter` with OpenPDF vector primit
 chart library; labels are real embedded-font text). P1–P6 colours: `PremiumReportTheme.PERIOD_COLORS`, a yellow →
 dark-grey ramp; every bar is also labelled. Previews: `PremiumActivePreviewTest` writes
 `build/premium-report-preview/active-*.pdf`. The page is not yet wired; the route still answers 501.
+
+### Reactive-energy page
+
+`PremiumReactiveSection` (portrait, section bar `ENERGÍA REACTIVA`) computes `HistoryCoverageCalculator` and
+`ReactiveSummaryCalculator` from the dataset; it adds no calculation, projection, proration, comparison or advice.
+Every sentence is a row of the approved truth table in `docs/specs/report-reactive-page.md` (workspace) and lives in
+`PremiumReactiveTexts` (approved 2026-10-29; shared meanings reference `PremiumActiveTexts`). No penalty, power-factor,
+threshold, verdict or exclusion statement appears (X1 omitted). Blocks:
+
+1. `Ventana analizada: Últimos 12 meses (<range>)`; when the summary is UNAVAILABLE the page stops after
+   `Ventana analizada: Sin datos` plus "no reactive readings" (`no_reactive_rows`) or the generic unavailable sentence.
+2. Latest-window table in kVArh (status, covered/window days, P1–P6, total; shares only when COMPLETE with total > 0;
+   `Parcial: …` when INCOMPLETE; `Sin cifra firme…`/`Sin datos` spans). Notes: nothing contained in the window,
+   partial coverage, crossing readings, recorded zero, null cells, one per overlap disclosure (zero/blocking).
+3. P1–P6 share chart (`ReactiveChartModel.distribution`) or the reason it is unavailable.
+4. kVArh/kWh descriptive quotient: the basis sentence (active window range) always; the table (2 decimals,
+   `PremiumReportFormat.decimal2`, per-cell reason texts) only when `ratioReason` is null, otherwise its reason.
+5. Readings chart (`ReactiveChartModel.readings`: one bar per `summary.series` row, kVArh/día on a date axis,
+   36-row cap disclosed) and the readings table of the same latest-12-month rows (`†` = unresolved overlap).
+
+`ReactiveChartModel` returns the shared `ActiveChartModel`, so `ActiveChartPainter` draws it unchanged (the model's
+tick/month helpers are `internal`). Previews: `PremiumReactivePreviewTest` writes
+`build/premium-report-preview/reactive-*.pdf`. Not yet wired; the route still answers 501.

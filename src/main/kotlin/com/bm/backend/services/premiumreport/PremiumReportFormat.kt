@@ -60,6 +60,14 @@ object PremiumReportFormat {
         return format.format(value).let { if (it == "-0,0") "0,0" else it }
     }
 
+    /** Exactly two decimals with Spanish grouping, HALF_UP (`0.125` → `0,13`, `-0.001` → `0,00`); used for kVArh/kWh. */
+    fun decimal2(value: Double): String {
+        val symbols = DecimalFormatSymbols(LOCALE).apply { minusSign = '-' }
+        val format = DecimalFormat("#,##0.00", symbols)
+        format.roundingMode = RoundingMode.HALF_UP
+        return format.format(value).let { if (it == "-0,00") "0,00" else it }
+    }
+
     /** One-decimal percentage (`9.908` → `9,9 %`). */
     fun percent(value: Double): String {
         val symbols = DecimalFormatSymbols(LOCALE).apply { minusSign = '-' }
