@@ -48,13 +48,13 @@ data class ActiveChartModel(
             return nice * magnitude
         }
 
-        private fun ticks(axisMax: Double, length: Double, label: (Double) -> String) =
+        internal fun ticks(axisMax: Double, length: Double, label: (Double) -> String) =
             (0..VALUE_DIVISIONS).map { i ->
                 val v = axisMax * i / VALUE_DIVISIONS
                 ChartTick(length * i / VALUE_DIVISIONS, label(v))
             }
 
-        private fun tickNumber(v: Double): String =
+        internal fun tickNumber(v: Double): String =
             if (v == floor(v)) PremiumReportFormat.kwh(v) else PremiumReportFormat.number(v)
 
         /** Horizontal P1–P6 share bars of a COMPLETE window with shares; null otherwise (D5). */
@@ -142,10 +142,10 @@ data class ActiveChartModel(
             )
         }
 
-        private fun monthLabel(d: LocalDate) = "%02d/%d".format(d.monthValue, d.year)
+        internal fun monthLabel(d: LocalDate) = "%02d/%d".format(d.monthValue, d.year)
 
         /** First-of-month dates inside [start, end], every 1/2/3/4/6/12 months so that at most ~10 labels appear. */
-        private fun monthTicks(start: LocalDate, end: LocalDate): List<LocalDate> {
+        internal fun monthTicks(start: LocalDate, end: LocalDate): List<LocalDate> {
             val months = ChronoUnit.MONTHS.between(start.withDayOfMonth(1), end.withDayOfMonth(1)).coerceAtLeast(1)
             val step = listOf(1, 2, 3, 4, 6, 12).firstOrNull { ceil(months.toDouble() / it) <= 10 } ?: 12
             val result = mutableListOf<LocalDate>()
