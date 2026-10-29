@@ -523,6 +523,13 @@ report summaries must suppress definitive aggregates over overlapping ranges. Th
 `[startDate, endDate)` boundary is a user-approved default inferred from data, not an upstream
 contract statement.
 
+**Active summary exception (A1, user decision 2026-10-29):** `ActiveSummaryCalculator` treats an
+ACTIVE overlap as value-neutral when one row of each overlapping pair has all P1–P6 `0.0` (blank cells do not qualify); the
+window then gets a firm total with the overlap disclosed. Any other overlap still yields
+`OVERLAP_UNRESOLVED` (no firm total/shares). Accepted risk: a zero row could be a correction that
+supersedes the other row; no source evidence supports that today. Revisit if upstream semantics are
+documented.
+
 ---
 
 ## Fixed during this work — do not regress
