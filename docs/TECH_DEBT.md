@@ -555,6 +555,15 @@ Migrate the active calculator onto the helper in a dedicated change with its exi
 
 ---
 
+### 22. Premium report route: no per-route body-size limit; StatusPages logs exception text
+
+Recorded by `report-document` (user answer Q5 a, 2026-10-29; low notes from `report-api-access`).
+`POST /api/v1/reports/premium-pdf` has no route-specific request-body size limit (only the server defaults apply),
+and failures raised outside the renderer (e.g. during body deserialisation) reach the global `StatusPages` handler,
+which logs the exception message/stack. Renderer failures themselves are mapped to `500 report_generation_failed`
+and log only `errorType`/requestId/uid. If needed, add a per-route limit (e.g. 1 MiB ⇒ 413) and a scrubbed
+StatusPages log in a separate, tested change.
+
 ## Fixed during this work — do not regress
 
 - **Promtail discarded every stack trace.** Its `output` stage replaces the log

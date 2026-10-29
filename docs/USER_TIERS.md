@@ -55,15 +55,15 @@ Checks run in this order on every request; the first failure wins:
 | Study missing, owned by someone else, or older than 1 h (indistinguishable) | 404 | `study_not_found` |
 | Study pending/failed | 409 | `study_not_ready` |
 | Comparison inconsistent with the study (`ReportDatasetRejection` codes) | 422 | e.g. `cups_mismatch` |
-| No document renderer yet (current production default) | 501 | `report_unavailable` |
+| No document renderer bound (test-only `UnavailablePremiumReportRenderer`) | 501 | `report_unavailable` |
 | Renderer error | 500 | `report_generation_failed` |
 
 Success: `200 application/pdf`, `Content-Disposition: attachment; filename="informe_completo_<epochMillis>.pdf"`.
 Errors use `ReportErrorResponse {success:false, code, message, requestId}`; `message` is fixed
 Spanish copy and never contains customer values, the job id, the email or exception text. One log
 line per request records outcome code, requestId and uid only. The renderer seam is
-`PremiumReportRenderer`; `report-document` replaces the `UnavailablePremiumReportRenderer` binding
-in `Application.kt`.
+`PremiumReportRenderer`; `Application.kt` binds `PdfPremiumReportRenderer` (feature `report-document`), so a
+valid Premium request now returns the assembled PDF (see `CONSUMPTION_REPORT_FLOW.md`, "Premium report assembly").
 
 BmWeb administrators can assign a tier when creating a grant. Omitting `tier`
 defaults to `BASIC`:

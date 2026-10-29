@@ -15,6 +15,10 @@ import com.bm.backend.services.PremiumReportService
 import com.bm.backend.services.ReportDatasetService
 import com.bm.backend.services.UnavailablePremiumReportRenderer
 import com.bm.backend.services.UserConsumptionService
+import com.bm.backend.services.premiumreport.PdfPremiumReportRenderer
+import com.bm.backend.services.premiumreport.PremiumReportSection
+import com.bm.backend.testing.PdfInspection
+import com.bm.backend.testing.PremiumReportFixtures
 import com.bm.backend.testing.InMemoryGrantedUsersRepository
 import com.bm.backend.testing.ReportComparisonFixtures
 import io.ktor.client.request.header
@@ -327,5 +331,62 @@ class PremiumReportRoutesTest {
             assertTrue(r.headers[HttpHeaders.ContentDisposition].orEmpty().contains("comparativo_"))
         }
         assertEquals(0, countOf(c.renderer))
+    }
+
+    // ---- report-document: real renderer ----
+
+    @Test
+    fun `A real renderer returns the assembled pdf`() = testApplication {
+        val c = ctx(renderer = PdfPremiumReportRenderer(PremiumReportFixtures.CLOCK)); setup(c)
+        val (jobId, comparison) = completedJob(c.jobs)
+        val r = premium("token-a", body(jobId, comparison))
+        assertEquals(HttpStatusCode.OK, r.status)
+        assertEquals(ContentType.Application.Pdf, r.contentType()?.withoutParameters())
+        val disposition = r.headers[HttpHeaders.ContentDisposition].orEmpty()
+        assertTrue(Regex("attachment; filename=\"?informe_completo_\\d+\\.pdf\"?").matches(disposition), disposition)
+        val pdf = PdfInspection(r.readBytes())
+        assertTrue(pdf.isPdf)
+        assertTrue(pdf.pageCount >= 4)
+        assertTrue(pdf.pageTexts.last().contains("Página ${pdf.pageCount} de ${pdf.pageCount}"))
+    }
+
+    @Test
+    fun `H real renderer - basic is 403 premium_required`() = testApplication {
+        val c = ctx(tierA = UserTier.BASIC, renderer = PdfPremiumReportRenderer(PremiumReportFixtures.CLOCK)); setup(c)
+        val (jobId, comparison) = completedJob(c.jobs)
+        val r = premium("token-a", body(jobId, comparison))
+        assertEquals(HttpStatusCode.Forbidden, r.status)
+        assertEquals("premium_required", r.code())
+    }
+
+    @Test
+    fun `G real renderer - section failure is 500 without bytes or leaks, next request succeeds`() = testApplication {
+        val fail = java.util.concurrent.atomic.AtomicBoolean(true)
+        val renderer = PdfPremiumReportRenderer(PremiumReportFixtures.CLOCK) { d ->
+            val sections = PdfPremiumReportRenderer(PremiumReportFixtures.CLOCK).defaultSections(d)
+            if (fail.get()) sections.take(2) + PremiumReportSection { _, _, ds -> error("${ds.cups} ${ds.comparison.supplyHolder}") } else sections
+        }
+        val c = ctx(renderer = renderer); setup(c)
+        val (jobId, comparison) = completedJob(c.jobs)
+        val root = LoggerFactory.getLogger(org.slf4j.Logger.ROOT_LOGGER_NAME) as Logger
+        val appender = ListAppender<ILoggingEvent>().apply { start() }
+        root.addAppender(appender)
+        try {
+            val r = premium("token-a", body(jobId, comparison))
+            assertEquals(HttpStatusCode.InternalServerError, r.status)
+            assertEquals("report_generation_failed", r.code())
+            assertEquals(ContentType.Application.Json, r.contentType()?.withoutParameters())
+            assertEquals(null, r.headers[HttpHeaders.ContentDisposition])
+            assertFalse(r.bodyAsText().contains("%PDF"))
+            r.assertNoLeak(sensitive(jobId, comparison))
+            appender.list.map { e -> e.formattedMessage + (e.throwableProxy?.let { " ${it.className} ${it.message}" } ?: "") }
+                .forEach { line -> sensitive(jobId, comparison).forEach { assertFalse(line.contains(it), "log leaked '$it': $line") } }
+        } finally {
+            root.detachAppender(appender)
+        }
+        fail.set(false)
+        val ok = premium("token-a", body(jobId, comparison))
+        assertEquals(HttpStatusCode.OK, ok.status)
+        assertTrue(PdfInspection(ok.readBytes()).isPdf)
     }
 }

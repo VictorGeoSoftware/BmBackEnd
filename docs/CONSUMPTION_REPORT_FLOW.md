@@ -207,16 +207,32 @@ the owner's completed study, first failure wins, with value-free reason codes:
 Not available from any source and therefore absent from the dataset: current supplier name, holder NIF,
 contact data, separate postal fields, penalties.
 
-## Premium report rendering (internal, not wired)
+## Premium report assembly
 
-`POST /api/v1/reports/premium-pdf` still answers 501 (`UnavailablePremiumReportRenderer`); the pieces below are
-assembled into the real `PremiumReportRenderer` by the later `report-document` feature.
+`Application.kt` binds `PdfPremiumReportRenderer(Clock.systemUTC())`, so `POST /api/v1/reports/premium-pdf`
+returns `200 application/pdf` for a valid Premium request (user decisions 2026-10-29):
+
+- Order (Q1 a): cover → active → reactive → demand → comparison (landscape, 7 offers/page) → company. No contents
+  page (Q2 a).
+- Footer (Q3 a, `PremiumPageFooter`, copy in `PremiumDocumentTexts`): `Página {n} de {total}`, 9 pt grey, centred
+  in the bottom margin of every page except the cover; the cover counts as page 1. `{total}` is a template filled
+  when the document closes, so numbers always match the real output.
+- Optional sections (Q4 b): reactive/demand are omitted **only** when the history contains no readings of that
+  family (`ReactiveSummaryCalculator.NO_REACTIVE_ROWS` / `DemandSummaryCalculator.NO_DEMAND_ROWS`). Any other
+  unavailable reason (e.g. `calculation_error`) or readings only outside the window keeps the section with its
+  approved disclosure. Active, comparison, cover and company are always included.
+- In memory only (no temp files, no storage, no n8n/portal refetch); renderer and footer are created per request.
+  Any section/close exception propagates ⇒ `500 report_generation_failed` with no bytes. Metadata stays neutral.
+- Tests: `PremiumReportDocumentTest`, `PremiumReportRoutesTest` (real renderer A/G/H); previews
+  `PremiumReportDocumentPreviewTest` → `build/premium-report-preview/document-*.pdf`.
+
+The pieces below are the accepted section renderers that the assembly uses unchanged.
 
 Foundation (`services/premiumreport/`, one type per file):
 
 - `PremiumReportSection` — `fun write(document, writer, dataset)`. A section sets its own page size, then calls
   `document.newPage()` (a no-op on an empty page), so portrait and landscape sections can be mixed.
-- `PremiumReportPdf.render(sections, dataset)` — opens an A4 portrait document, writes the sections in order and
+- `PremiumReportPdf.render(sections, dataset, pageEvent = null)` — opens an A4 portrait document, writes the sections in order and
   closes it. Metadata: title `ESTUDIO COMPLETO DE SUMINISTRO ELÉCTRICO`, author/creator `BM`; never the CUPS,
   holder or address.
 - `PremiumReportTheme` — page sizes/margins, colours (Basic highlight `249,196,17`, dark text, grid grey) and
@@ -278,7 +294,7 @@ Charts: `ActiveChartModel` (pure geometry in PDF points: `ChartBar`, `ChartTick`
 ceiling; deterministic) drawn by `ActiveChartPainter` with OpenPDF vector primitives into a `PdfTemplate` image (no
 chart library; labels are real embedded-font text). P1–P6 colours: `PremiumReportTheme.PERIOD_COLORS`, a yellow →
 dark-grey ramp; every bar is also labelled. Previews: `PremiumActivePreviewTest` writes
-`build/premium-report-preview/active-*.pdf`. The page is not yet wired; the route still answers 501.
+`build/premium-report-preview/active-*.pdf`. Assembled by `PdfPremiumReportRenderer` (see "Premium report assembly").
 
 ### Reactive-energy page
 
@@ -301,7 +317,7 @@ threshold, verdict or exclusion statement appears (X1 omitted). Blocks:
 
 `ReactiveChartModel` returns the shared `ActiveChartModel`, so `ActiveChartPainter` draws it unchanged (the model's
 tick/month helpers are `internal`). Previews: `PremiumReactivePreviewTest` writes
-`build/premium-report-preview/reactive-*.pdf`. Not yet wired; the route still answers 501.
+`build/premium-report-preview/reactive-*.pdf`. Assembled by `PdfPremiumReportRenderer` (see "Premium report assembly").
 
 ### Demanded-power page
 
@@ -326,7 +342,7 @@ contracted-power comparison is plain arithmetic: no exceed flag, verdict, colour
 
 `ActiveChartModel.markers` (default empty) and the painter's marker drawing are additive: the active/reactive charts
 carry no markers and render unchanged. Previews: `PremiumDemandPreviewTest` writes
-`build/premium-report-preview/demand-*.pdf`. Not yet wired; the route still answers 501.
+`build/premium-report-preview/demand-*.pdf`. Assembled by `PdfPremiumReportRenderer` (see "Premium report assembly").
 
 ### Economic comparison page
 
@@ -343,7 +359,7 @@ ranking or advice. `PremiumReportFormat` is never applied to amounts.
 Parity rule: `PremiumComparisonSectionTest` extracts each page of the Basic PDF and of the Premium section for the same
 request and requires the same ordered characters (whitespace ignored) once Basic's supply block is removed.
 Previews: `PremiumComparisonPreviewTest` writes `build/premium-report-preview/comparison-*.pdf` and the Basic PDF of
-each request as `comparison-*-basic.pdf`. Not yet wired; the route still answers 501.
+each request as `comparison-*-basic.pdf`. Assembled by `PdfPremiumReportRenderer` (see "Premium report assembly").
 
 ### Company page
 
@@ -355,4 +371,4 @@ data-protection text `ComparatorReportPdfTexts.DATA_PROTECTION_DISCLAIMER` (9 pt
 2026-10-29: no company/services presentation, no website). Nothing else is printed, and the page ignores the dataset
 (no customer value). `PremiumCompanySectionTest` checks the exact ordered text, the verbatim constant, identical output
 across datasets and forbidden vocabulary. Previews: `PremiumCompanyPreviewTest` writes
-`build/premium-report-preview/company-*.pdf`. Not yet wired; the route still answers 501.
+`build/premium-report-preview/company-*.pdf`. Assembled by `PdfPremiumReportRenderer` (see "Premium report assembly").
