@@ -97,4 +97,15 @@ class ReportDatasetServiceTest {
         assertEquals("Cliente Ficticio SL", request.comparison.supplyHolder)
         assertEquals(ReportDatasetRejection.STUDY_NOT_FOUND, rejection(service.assemble(request, "uid-a")))
     }
+
+    @Test
+    fun `expired owned study is not found like a missing one`() {
+        var offset = 0L
+        val clocked = ReportDatasetService(jobService) { System.currentTimeMillis() + offset }
+        val (jobId, study) = completedJob()
+        val request = ReportDatasetRequest(jobId, ReportComparisonFixtures.comparison(study.report, core))
+        assertTrue(clocked.assemble(request, "uid-a") is ReportDatasetResult.Assembled)
+        offset = 60 * 60 * 1000L + 1_000
+        assertEquals(ReportDatasetRejection.STUDY_NOT_FOUND, rejection(clocked.assemble(request, "uid-a")))
+    }
 }

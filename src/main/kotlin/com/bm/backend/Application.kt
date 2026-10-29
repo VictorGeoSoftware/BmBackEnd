@@ -22,6 +22,7 @@ import com.bm.backend.routes.authRoutes
 import com.bm.backend.routes.collectedPricesRoutes
 import com.bm.backend.routes.grantedUsersRoutes
 import com.bm.backend.routes.healthRoutes
+import com.bm.backend.routes.premiumReportRoutes
 import com.bm.backend.routes.metricsRoutes
 import com.bm.backend.routes.userActivityRoutes
 import com.bm.backend.routes.userAccessRoutes
@@ -47,7 +48,10 @@ import com.bm.backend.services.ComparatorReportPdfService
 import com.bm.backend.services.GrantedUsersService
 import com.bm.backend.services.HealthService
 import com.bm.backend.services.MetricsAuthService
+import com.bm.backend.services.PremiumReportService
 import com.bm.backend.services.PriceTableService
+import com.bm.backend.services.ReportDatasetService
+import com.bm.backend.services.UnavailablePremiumReportRenderer
 import com.bm.backend.services.UserConsumptionService
 import com.bm.backend.services.UserDataService
 import com.bm.backend.services.UserActivityService
@@ -214,6 +218,11 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
     val userActivityRepository = UserActivityRepository()
     val jobService = com.bm.backend.services.JobService()
     val comparatorReportPdfService = ComparatorReportPdfService()
+    // `report-document` replaces only the renderer binding; until then the route answers 501 report_unavailable.
+    val premiumReportService = PremiumReportService(
+        ReportDatasetService(jobService),
+        UnavailablePremiumReportRenderer()
+    )
     val userConsumptionService = UserConsumptionService(
         userConsumptionRepository,
         externalApiService,
@@ -269,6 +278,7 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
                     comparatorReportPdfService,
                     accessControlService
                 )
+                premiumReportRoutes(premiumReportService, accessControlService)
                 userDataRoutes(userDataService, accessControlService)
                 userAccessRoutes(accessControlService)
                 webPushRoutes(webPushTokensService, accessControlService)

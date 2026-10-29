@@ -29,6 +29,12 @@ class JobService {
         return jobs[jobId]
     }
     
+    /** Job read that enforces the 1 h expiry: null when missing or older than [JOB_EXPIRY_MS] at [nowMs]. */
+    fun getActiveJob(jobId: String, nowMs: Long = System.currentTimeMillis()): Job? {
+        val job = jobs[jobId] ?: return null
+        return if (nowMs - job.createdAt > JOB_EXPIRY_MS) null else job
+    }
+
     fun updateJobStatus(jobId: String, status: JobStatus, progress: Int? = null) {
         jobs[jobId]?.let { job ->
             job.status = status
