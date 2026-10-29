@@ -26,11 +26,12 @@ fun Route.userConsumptionRoutes(
     userConsumptionService: UserConsumptionService,
     jobService: JobService,
     comparatorReportPdfService: ComparatorReportPdfService,
-    accessControlService: AccessControlService
+    accessControlService: AccessControlService,
+    verifyToken: suspend (String) -> AuthenticatedFirebaseUser = ::verifyFirebaseIdToken
 ) {
     post("/reports/comparator-pdf") {
         try {
-            call.requireGrantedFirebaseUser(accessControlService) ?: return@post
+            call.requireGrantedFirebaseUser(accessControlService, verifyToken) ?: return@post
             val request = call.receive<ComparatorReportPdfRequest>()
             val pdfBytes = comparatorReportPdfService.generate(request)
             val fileName = "comparativo_${System.currentTimeMillis()}.pdf"
@@ -79,7 +80,7 @@ fun Route.userConsumptionRoutes(
         var errorResponse: Pair<HttpStatusCode, ErrorResponse>? = null
         
         try {
-            val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@post
+            val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService, verifyToken) ?: return@post
             val multipartData = call.receiveMultipart()
             
             multipartData.forEachPart { part ->
@@ -159,7 +160,7 @@ fun Route.userConsumptionRoutes(
                     }
                     
                     // Mark job as completed
-                    jobService.completeJob(jobId, response)
+                    jobService.completeJob(jobId, response.report, response.history)
                     call.application.log.info(
                         "Consumption report job completed {} {} {}",
                         kv("jobId", jobId), kv("userId", ownerUid), kv("requestId", originRequestId)
@@ -199,7 +200,7 @@ fun Route.userConsumptionRoutes(
 
     post("/fetch-user-consumption-report-by-cups") {
         try {
-            val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@post
+            val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService, verifyToken) ?: return@post
             val request = call.receive<FetchConsumptionReportByCupsRequest>()
             val normalizedCupsCode = CupsValidation.normalize(request.cupsCode)
             if (!CupsValidation.isValid(normalizedCupsCode)) {
@@ -227,7 +228,7 @@ fun Route.userConsumptionRoutes(
 
                     val response = userConsumptionService.processConsumptionReportFromCups(normalizedCupsCode)
 
-                    jobService.completeJob(jobId, response)
+                    jobService.completeJob(jobId, response.report, response.history)
                     call.application.log.info(
                         "CUPS consumption job completed {} {} {}",
                         kv("jobId", jobId), kv("userId", ownerUid), kv("requestId", originRequestId)
@@ -266,7 +267,7 @@ fun Route.userConsumptionRoutes(
     }
     
     get("/consumption-report-status/{jobId}") {
-        val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@get
+        val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService, verifyToken) ?: return@get
         val jobId = call.parameters["jobId"]
         
         if (jobId == null) {
@@ -306,7 +307,7 @@ fun Route.userConsumptionRoutes(
     }
     
     get("/consumption-report-result/{jobId}") {
-        val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@get
+        val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService, verifyToken) ?: return@get
         val jobId = call.parameters["jobId"]
         
         if (jobId == null) {
@@ -354,7 +355,7 @@ fun Route.userConsumptionRoutes(
     }
 
     post("/consumption-report-refresh/{jobId}") {
-        val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService) ?: return@post
+        val authenticatedUser = call.requireGrantedFirebaseUser(accessControlService, verifyToken) ?: return@post
         val jobId = call.parameters["jobId"]
 
         if (jobId == null) {

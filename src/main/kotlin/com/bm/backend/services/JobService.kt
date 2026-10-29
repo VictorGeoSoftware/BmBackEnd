@@ -3,6 +3,7 @@ package com.bm.backend.services
 import com.bm.backend.models.ConsumptionReportResponse
 import com.bm.backend.models.Job
 import com.bm.backend.models.JobStatus
+import com.bm.backend.models.StudyHistory
 import java.util.*
 import java.util.concurrent.ConcurrentHashMap
 
@@ -42,6 +43,22 @@ class JobService {
         }
     }
     
+    /** Completes a fetched study, retaining its dated history alongside the annual result. */
+    fun completeJob(jobId: String, result: ConsumptionReportResponse, history: StudyHistory) {
+        jobs[jobId]?.let { job ->
+            job.history = history
+            job.status = JobStatus.COMPLETED
+            job.progress = 100
+            job.result = result
+        }
+    }
+
+    /** Owner-scoped history read: null when the job is missing or owned by another user. */
+    fun getHistory(jobId: String, ownerUid: String): StudyHistory? {
+        val job = jobs[jobId] ?: return null
+        return if (job.ownerUid == ownerUid) job.history else null
+    }
+
     fun failJob(jobId: String, error: String) {
         jobs[jobId]?.let { job ->
             job.status = JobStatus.FAILED

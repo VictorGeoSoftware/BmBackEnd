@@ -1,6 +1,7 @@
 package com.bm.backend.models
 
 import kotlinx.serialization.Serializable
+import kotlinx.serialization.json.JsonElement
 
 // Docling API Response Models
 @Serializable
@@ -58,7 +59,9 @@ data class N8nConsumptionData(
     val subscribedPowerP5: String,
     val subscribedPowerP6: String,
     val feeType: String,
-    val fileName: String
+    val fileName: String,
+    // Raw `data.history` (contract v1); typed by StudyHistoryMapper. Missing in old workflows.
+    val history: JsonElement? = null
 )
 
 // Consolidated Response Model
