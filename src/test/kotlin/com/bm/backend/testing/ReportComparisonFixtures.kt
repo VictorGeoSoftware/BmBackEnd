@@ -125,4 +125,93 @@ object ReportComparisonFixtures {
             proposals = offers.mapIndexed { i, p -> offer(p, if (i == 0) 12.0 else 0.0, current) }
         )
     }
+
+    // ---- Economic comparison page scenarios (spec report-comparison-page A–H, Q3); synthetic only ----
+
+    /** Same shape and values as `report/comparison_request.json`. */
+    fun pageRequest(): ComparatorReportPdfRequest = ComparatorReportPdfRequest(
+        supplyHolder = "Cliente Ficticio SL",
+        supplyAddress = "Calle Falsa 1",
+        cups = "ES0000000000000000AA",
+        tariffName = "fixed",
+        powerTermRows = listOf(ComparatorReportPeriodValue("P1", 15.0), ComparatorReportPeriodValue("P2", 15.0)),
+        energyConsumedRows = listOf(ComparatorReportPeriodIntValue("P1", 1000), ComparatorReportPeriodIntValue("P2", 2000)),
+        iva = "21.00 %",
+        impuestoElectrico = "5.11 %",
+        customerConditions = ComparatorReportColumn(
+            title = "Condiciones actuales", powerTermItems = listOf(0.1, 0.05), annualPowerTermCost = "821.25",
+            consumedEnergyItems = listOf(0.2, 0.1), annualEnergyCost = "400.00", extraServices = "0.00",
+            electricalTax = "62.47", iva = "269.63", totalAnnualPrice = "1553.35"
+        ),
+        proposals = listOf(pageOffer("Oferta Ficticia A", "175.74", 11, extra = "12.00"))
+    )
+
+    fun pageOffer(
+        title: String,
+        difference: String?,
+        percentage: Int?,
+        extra: String = "0.00",
+        power: List<Double> = listOf(0.09, 0.04),
+        energy: List<Double> = listOf(0.18, 0.09)
+    ): ComparatorReportProposal = ComparatorReportProposal(
+        title = title, powerTermItems = power, annualPowerTermCost = "711.75", consumedEnergyItems = energy,
+        annualEnergyCost = "360.00", extraServices = extra, electricalTax = "54.79", iva = "239.07",
+        totalAnnualPrice = "1377.61", annualPriceDifference = difference, annualSavingsPercentage = percentage
+    )
+
+    fun pageScenarioB(): ComparatorReportPdfRequest = pageRequest().copy(proposals = listOf(
+        pageOffer("Oferta Ahorro", "175.74", 11),
+        pageOffer("Oferta Cara", "-62.10", -4),
+        pageOffer("Oferta Igual", "0.00", 0)
+    ))
+
+    fun pageScenarioC(): ComparatorReportPdfRequest = pageRequest().copy(proposals = listOf(
+        pageOffer("Oferta Sin Importe", null, 5),
+        pageOffer("Oferta Sin Porcentaje", "10.00", null),
+        pageOffer("Oferta Sin Ahorro", null, null)
+    ))
+
+    fun pageScenarioD(): ComparatorReportPdfRequest = pageRequest().copy(
+        customerConditions = pageRequest().customerConditions.copy(extraServices = "0.00"),
+        proposals = listOf(
+            pageOffer("Oferta Cero", "1.00", 1, extra = "0.00"),
+            pageOffer("Oferta Entera", "2.00", 1, extra = "12"),
+            pageOffer("Oferta Coma", "3.00", 1, extra = "12,5"),
+            pageOffer("Oferta Punto", "4.00", 1, extra = "12.")
+        )
+    )
+
+    fun pageScenarioOffers(count: Int): ComparatorReportPdfRequest = pageRequest().copy(
+        proposals = (1..count).map { pageOffer("Oferta Ficticia $it", "${100 + it}.00", it) }
+    )
+
+    fun pageScenarioG(): ComparatorReportPdfRequest = pageRequest().copy(
+        supplyHolder = "Comunidad de Propietarios del Edificio Ficticio de la Avenida Imaginaria",
+        tariffName = "Tarifa de acceso ficticia con nombre muy largo 2.0TD",
+        proposals = listOf(
+            pageOffer("Oferta Ficticia con un título comercial muy largo que debe ajustarse en varias líneas", "175.74", 11),
+            pageOffer("Oferta Corta", "-1.00", 0)
+        )
+    )
+
+    fun pageScenarioH(): ComparatorReportPdfRequest {
+        val p = (1..6).map { "P$it" }
+        val prices = listOf(0.1, 0.09, 0.08, 0.07, 0.06, 0.05)
+        return pageRequest().copy(
+            tariffName = "3.0TD",
+            powerTermRows = p.mapIndexed { i, s -> ComparatorReportPeriodValue(s, listOf(15.1, 15.1, 20.0, 20.0, 34.0, 34.5)[i]) },
+            energyConsumedRows = p.mapIndexed { i, s -> ComparatorReportPeriodIntValue(s, listOf(1200, 3400, 2100, 900, 700, 15003)[i]) },
+            customerConditions = pageRequest().customerConditions.copy(powerTermItems = prices, consumedEnergyItems = prices.map { it * 2 }),
+            proposals = listOf(
+                pageOffer("Oferta Seis A", "321.00", 7, power = prices.map { it * 0.9 }, energy = prices.map { it * 1.8 }),
+                pageOffer("Oferta Seis B", "-5.25", -1, power = prices.map { it * 0.8 }, energy = prices.map { it * 1.7 })
+            )
+        )
+    }
+
+    /** Q3 (a): item lists shorter than the rows; Basic prints 0.000000 for the missing index. */
+    fun pageScenarioShortItems(): ComparatorReportPdfRequest = pageRequest().copy(
+        customerConditions = pageRequest().customerConditions.copy(powerTermItems = listOf(0.1), consumedEnergyItems = listOf(0.2)),
+        proposals = listOf(pageOffer("Oferta Corta", "175.74", 11, power = listOf(0.09), energy = emptyList()))
+    )
 }

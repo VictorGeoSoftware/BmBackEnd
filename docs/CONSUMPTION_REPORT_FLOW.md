@@ -327,3 +327,20 @@ contracted-power comparison is plain arithmetic: no exceed flag, verdict, colour
 `ActiveChartModel.markers` (default empty) and the painter's marker drawing are additive: the active/reactive charts
 carry no markers and render unchanged. Previews: `PremiumDemandPreviewTest` writes
 `build/premium-report-preview/demand-*.pdf`. Not yet wired; the route still answers 501.
+
+### Economic comparison page
+
+`PremiumComparisonSection` (landscape, Premium fonts/margins) shows the same comparison as the Basic comparator PDF.
+Source: `dataset.comparison` only — the client-built `ComparatorReportPdfRequest` already checked by
+`ReportDatasetValidator`; `report.proposals` is never read. `ComparisonTableModel` reproduces Basic's cell strings with
+Basic's own rules (copied, not shared, so the Basic service is untouched): 7 offers per page in request order, every
+page repeating the section bar (`request.title`), header row and current-conditions column; prices `%.6f` and powers
+`%.3f` (Locale.US); client amount strings printed verbatim with a `" €"` suffix; tax labels with the client's
+reference; missing price indexes print `0.000000` as Basic; savings `<difference> €` / `<n>%` with Basic's green/red.
+Labels come from `ComparatorReportPdfTexts`; no supply block (the cover shows holder/address/CUPS), no supplier name,
+ranking or advice. `PremiumReportFormat` is never applied to amounts.
+
+Parity rule: `PremiumComparisonSectionTest` extracts each page of the Basic PDF and of the Premium section for the same
+request and requires the same ordered characters (whitespace ignored) once Basic's supply block is removed.
+Previews: `PremiumComparisonPreviewTest` writes `build/premium-report-preview/comparison-*.pdf` and the Basic PDF of
+each request as `comparison-*-basic.pdf`. Not yet wired; the route still answers 501.
