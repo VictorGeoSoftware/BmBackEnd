@@ -14,6 +14,7 @@ import com.bm.backend.models.StudyHistoryStatus
 import com.bm.backend.models.ValueComparison
 import com.bm.backend.utils.ActiveSummaryCalculator
 import com.bm.backend.utils.HistoryCoverageCalculator
+import com.bm.backend.utils.TariffPeriodResolver
 import com.lowagie.text.Document
 import com.lowagie.text.Element
 import com.lowagie.text.Font
@@ -29,13 +30,15 @@ import java.time.temporal.ChronoUnit
 /**
  * Portrait active-energy page (spec report-active-page D2–D9). Every figure comes from [ActiveSummaryCalculator] /
  * [HistoryCoverageCalculator] or the source rows as published; nothing is projected, prorated or advised.
+ * Period columns, rows and bands follow the tariff's energy periods ([TariffPeriodResolver]).
  */
 class PremiumActiveSection : PremiumReportSection {
 
     override fun write(document: Document, writer: PdfWriter, dataset: ReportDataset) {
         val history = dataset.history
         val coverage = HistoryCoverageCalculator.calculate(history)
-        val summary = ActiveSummaryCalculator.calculate(history, coverage, dataset.snapshot, dataset.report.consumptionData)
+        val periods = TariffPeriodResolver.resolve(dataset).energyPeriods
+        val summary = ActiveSummaryCalculator.calculate(history, coverage, dataset.snapshot, dataset.report.consumptionData, periods)
         val latest = summary.windows.firstOrNull { it.kind == ActiveWindowKind.LATEST_12M }
 
         document.setPageSize(PremiumReportTheme.PAGE_PORTRAIT)
@@ -44,10 +47,10 @@ class PremiumActiveSection : PremiumReportSection {
         coverageLine(document, summary)
 
         heading(document, writer, PremiumActiveTexts.WINDOWS_TITLE)
-        document.add(windowTable(summary))
+        document.add(windowTable(summary, periods))
         notes(document, summary, history)
 
-        val distribution = latest?.let { ActiveChartModel.distribution(it) }
+        val distribution = latest?.let { ActiveChartModel.distribution(it, periods) }
         heading(document, writer, PremiumActiveTexts.DISTRIBUTION_TITLE, distribution?.let { it.height.toFloat() + 40f } ?: 60f)
         if (distribution != null) chart(document, writer, distribution)
         else note(document, "${PremiumActiveTexts.DISTRIBUTION_UNAVAILABLE} ${distributionReason(latest)}")
@@ -62,7 +65,7 @@ class PremiumActiveSection : PremiumReportSection {
 
         highIntervals(document, writer, summary)
         comparisons(document, writer, summary, latest)
-        readingsTable(document, writer, history, latest)
+        readingsTable(document, writer, history, latest, periods)
     }
 
     // ---------- text helpers ----------
@@ -88,9 +91,13 @@ class PremiumActiveSection : PremiumReportSection {
     private fun header(text: String, align: Int = Element.ALIGN_RIGHT, background: Color = PremiumReportTheme.COLOR_GRID, color: Color = PremiumReportTheme.COLOR_TEXT) =
         cell(text, PremiumReportTheme.bold(PremiumReportTheme.SIZE_TABLE, color), align, background)
 
-    private fun periodHeaders(table: PdfPTable, suffix: String = "") = (0 until 6).forEach { i ->
-        table.addCell(header("P${i + 1}$suffix", background = PremiumReportTheme.PERIOD_COLORS[i], color = PremiumReportTheme.PERIOD_TEXT_COLORS[i]))
+    /** Headers keep each period's colour (identity by period number). */
+    private fun periodHeaders(table: PdfPTable, periods: List<Int>, suffix: String = "") = periods.forEach { p ->
+        table.addCell(header("P$p$suffix", background = PremiumReportTheme.PERIOD_COLORS[p - 1], color = PremiumReportTheme.PERIOD_TEXT_COLORS[p - 1]))
     }
+
+    private fun widths(vararg lead: Float, periods: List<Int>, trail: Float) =
+        (lead.toList() + List(periods.size) { 1f } + trail).toFloatArray()
 
     private fun table(widths: FloatArray): PdfPTable = PdfPTable(widths).apply {
         widthPercentage = 100f
@@ -142,15 +149,15 @@ class PremiumActiveSection : PremiumReportSection {
 
     // ---------- D4 windows ----------
 
-    private fun windowTable(s: ActiveSummary): PdfPTable {
-        val t = table(floatArrayOf(2.3f, 1.3f, 1.1f, 1f, 1f, 1f, 1f, 1f, 1f, 1.35f))
+    private fun windowTable(s: ActiveSummary, periods: List<Int>): PdfPTable {
+        val t = table(widths(2.3f, 1.3f, 1.1f, periods = periods, trail = 1.35f))
         t.addCell(header(PremiumActiveTexts.COL_PERIOD, Element.ALIGN_LEFT))
         t.addCell(header(PremiumActiveTexts.COL_STATUS, Element.ALIGN_LEFT))
         t.addCell(header(PremiumActiveTexts.COL_COVERED_DAYS))
-        periodHeaders(t, " (kWh)")
+        periodHeaders(t, periods, " (kWh)")
         t.addCell(header(PremiumActiveTexts.COL_TOTAL_KWH))
         if (s.windows.isEmpty()) {
-            t.addCell(cell(PremiumActiveTexts.NO_DATA, align = Element.ALIGN_LEFT, colspan = 10))
+            t.addCell(cell(PremiumActiveTexts.NO_DATA, align = Element.ALIGN_LEFT, colspan = periods.size + 4))
             return t
         }
         s.windows.forEach { w ->
@@ -160,8 +167,10 @@ class PremiumActiveSection : PremiumReportSection {
                 ActiveWindowStatus.COMPLETE, ActiveWindowStatus.INCOMPLETE -> {
                     t.addCell(cell("${w.coveredDays} / ${w.windowDays}"))
                     val shares = w.shares?.let { cells(it) }
-                    cells(w.periodTotals).forEachIndexed { i, v ->
-                        val share = shares?.get(i)?.let { "\n${PremiumReportFormat.percent(it)}" } ?: ""
+                    val totals = cells(w.periodTotals)
+                    periods.forEach { p ->
+                        val v = totals[p - 1]
+                        val share = shares?.get(p - 1)?.let { "\n${PremiumReportFormat.percent(it)}" } ?: ""
                         t.addCell(cell(kwh(v) + share))
                     }
                     val total = if (w.status == ActiveWindowStatus.COMPLETE) kwh(w.total)
@@ -169,9 +178,9 @@ class PremiumActiveSection : PremiumReportSection {
                     t.addCell(cell(total, font = tableBold))
                 }
                 ActiveWindowStatus.OVERLAP_UNRESOLVED ->
-                    t.addCell(cell(PremiumActiveTexts.OVERLAP_NO_FIGURE, align = Element.ALIGN_LEFT, colspan = 8))
+                    t.addCell(cell(PremiumActiveTexts.OVERLAP_NO_FIGURE, align = Element.ALIGN_LEFT, colspan = periods.size + 2))
                 ActiveWindowStatus.UNAVAILABLE ->
-                    t.addCell(cell(PremiumActiveTexts.NO_DATA, align = Element.ALIGN_LEFT, colspan = 8))
+                    t.addCell(cell(PremiumActiveTexts.NO_DATA, align = Element.ALIGN_LEFT, colspan = periods.size + 2))
             }
         }
         return t
@@ -304,15 +313,15 @@ class PremiumActiveSection : PremiumReportSection {
 
     // ---------- D9 readings table ----------
 
-    private fun readingsTable(document: Document, writer: PdfWriter, history: StudyHistory, latest: ActiveWindowSummary?) {
+    private fun readingsTable(document: Document, writer: PdfWriter, history: StudyHistory, latest: ActiveWindowSummary?, periods: List<Int>) {
         if (history.intervals.isEmpty()) return
         heading(document, writer, PremiumActiveTexts.READINGS_TABLE_TITLE)
         val crossing = latest?.crossing.orEmpty().toSet()
-        val t = table(floatArrayOf(1.35f, 1.25f, 0.6f, 1f, 1f, 1f, 1f, 1f, 1f, 1.1f))
+        val t = table(widths(1.35f, 1.25f, 0.6f, periods = periods, trail = 1.1f))
         t.addCell(header(PremiumActiveTexts.COL_FROM, Element.ALIGN_LEFT))
         t.addCell(header(PremiumActiveTexts.COL_TO, Element.ALIGN_LEFT))
         t.addCell(header(PremiumActiveTexts.COL_DAYS))
-        periodHeaders(t)
+        periodHeaders(t, periods)
         t.addCell(header(PremiumActiveTexts.TOTAL))
         history.intervals.forEachIndexed { i, r ->
             val days = ChronoUnit.DAYS.between(r.startDate, r.endDate)
@@ -322,7 +331,7 @@ class PremiumActiveSection : PremiumReportSection {
             t.addCell(cell(PremiumReportFormat.date(to), align = Element.ALIGN_LEFT))
             t.addCell(cell(days.toString()))
             val values = cells(r.active)
-            values.forEach { t.addCell(cell(kwh(it))) }
+            periods.forEach { p -> t.addCell(cell(kwh(values[p - 1]))) }
             val present = values.filterNotNull()
             t.addCell(cell(if (present.isEmpty()) PremiumActiveTexts.MISSING else PremiumReportFormat.kwh(present.sum()), tableBold))
         }

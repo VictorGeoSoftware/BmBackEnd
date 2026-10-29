@@ -1,6 +1,7 @@
 package com.bm.backend.services.premiumreport
 
 import com.bm.backend.models.PeriodValues
+import com.bm.backend.models.TariffPeriodProfile
 import java.math.RoundingMode
 import java.text.DecimalFormat
 import java.text.DecimalFormatSymbols
@@ -26,10 +27,13 @@ object PremiumReportFormat {
     /** Non-breaking space: keeps "P1: 15,1 kW" on one line when the list wraps. */
     const val NBSP = '\u00A0'
 
-    /** `P1: 15,1 kW · P2: 20 kW` (non-breaking inside each entry) for reported periods only; null when none reported. */
-    fun periodPowers(values: PeriodValues): String? =
+    /**
+     * `P1: 15,1 kW · P2: 20 kW` (non-breaking inside each entry) for reported periods of the tariff's [periods] only;
+     * null when none reported.
+     */
+    fun periodPowers(values: PeriodValues, periods: List<Int> = TariffPeriodProfile.ALL_PERIODS): String? =
         listOf(values.p1, values.p2, values.p3, values.p4, values.p5, values.p6)
-            .mapIndexedNotNull { i, v -> v?.let { "P${i + 1}:$NBSP${number(it)}${NBSP}kW" } }
+            .mapIndexedNotNull { i, v -> v?.takeIf { (i + 1) in periods }?.let { "P${i + 1}:$NBSP${number(it)}${NBSP}kW" } }
             .takeIf { it.isNotEmpty() }
             ?.joinToString(" · ")
 

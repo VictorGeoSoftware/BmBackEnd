@@ -7,12 +7,14 @@ import com.bm.backend.models.MeasurementFamily
 import com.bm.backend.models.PeriodValues
 import com.bm.backend.models.StudyHistory
 import com.bm.backend.models.StudyHistoryInterval
+import com.bm.backend.models.TariffPeriodProfile
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
 
 /**
  * Family-agnostic D1 window aggregation: a row covers `[startDate, endDate)`; only rows with at least one
  * non-null cell of the family count; fully contained rows are summed, crossing rows are listed (never prorated).
+ * Null cells are counted only over the tariff's [periods] (default P1–P6).
  * An overlap is value-neutral only when one of the pair has all six cells exactly 0.0 (nulls never qualify).
  */
 object FamilyWindowAggregator {
@@ -38,7 +40,8 @@ object FamilyWindowAggregator {
         family: MeasurementFamily,
         inverted: Set<Int>,
         start: LocalDate,
-        end: LocalDate
+        end: LocalDate,
+        periods: List<Int> = TariffPeriodProfile.ALL_PERIODS
     ): FamilyWindowAggregate {
         val spans = spans(history, family, inverted)
         val contained = spans.filter { it.start >= start && it.endExclusive <= end }
@@ -70,8 +73,8 @@ object FamilyWindowAggregator {
             overlaps = overlaps,
             blockingIndices = blocking,
             periodSums = values(sums),
-            nullCells = contained.sumOf { s -> s.cells.count { it == null } },
-            nullCellPeriods = (0 until 6).filter { p -> contained.any { it.cells[p] == null } }.map { it + 1 }.toSet()
+            nullCells = contained.sumOf { s -> periods.count { p -> s.cells[p - 1] == null } },
+            nullCellPeriods = periods.filter { p -> contained.any { it.cells[p - 1] == null } }.toSet()
         )
     }
 

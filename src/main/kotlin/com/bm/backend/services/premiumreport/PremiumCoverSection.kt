@@ -3,6 +3,9 @@ package com.bm.backend.services.premiumreport
 import com.bm.backend.models.ReportDataset
 import com.bm.backend.models.StudySnapshotFields
 import com.bm.backend.models.StudySnapshotStatus
+import com.bm.backend.models.TariffPeriodProfile
+import com.bm.backend.models.TariffProfileStatus
+import com.bm.backend.utils.TariffPeriodResolver
 import com.lowagie.text.Document
 import com.lowagie.text.Element
 import com.lowagie.text.Image
@@ -13,6 +16,7 @@ import java.time.Clock
 /**
  * Portrait cover: BM logo, approved title/subtitle, issue date and the supply identity. Holder/address come from
  * the broker-entered comparison, CUPS from the study; snapshot rows appear only when published (never placeholders).
+ * Contracted power lists the tariff's power periods; a fallback tariff profile adds one T1–T3 disclosure.
  */
 class PremiumCoverSection(
     private val clock: Clock,
@@ -39,12 +43,21 @@ class PremiumCoverSection(
 
         document.add(PremiumReportBlocks.sectionBar(PremiumReportTexts.SUPPLY_SECTION))
         val fields = dataset.snapshot.fields?.takeIf { dataset.snapshot.status == StudySnapshotStatus.AVAILABLE }
-        document.add(PremiumReportBlocks.labelValueTable(identityRows(dataset) + snapshotRows(fields)))
-        if (fields == null) {
-            document.add(Paragraph(PremiumReportTexts.SNAPSHOT_UNAVAILABLE, PremiumReportTheme.regular(color = PremiumReportTheme.COLOR_MUTED)).apply {
-                spacingBefore = 10f
-            })
-        }
+        val profile = TariffPeriodResolver.resolve(dataset)
+        document.add(PremiumReportBlocks.labelValueTable(identityRows(dataset) + snapshotRows(fields, profile.powerPeriods)))
+        if (fields == null) mutedNote(document, PremiumReportTexts.SNAPSHOT_UNAVAILABLE)
+        tariffNote(profile)?.let { mutedNote(document, it) }
+    }
+
+    private fun mutedNote(document: Document, text: String) =
+        document.add(Paragraph(text, PremiumReportTheme.regular(color = PremiumReportTheme.COLOR_MUTED)).apply { spacingBefore = 10f })
+
+    /** T1–T3: one disclosure when the periods come from the source instead of a supported tariff. */
+    private fun tariffNote(profile: TariffPeriodProfile): String? = when (profile.status) {
+        TariffProfileStatus.SUPPORTED -> null
+        TariffProfileStatus.FALLBACK_UNKNOWN -> PremiumReportTexts.TARIFF_UNKNOWN
+        TariffProfileStatus.FALLBACK_CONFLICT -> PremiumReportTexts.tariffConflict(profile.snapshotTariff.orEmpty(), profile.tariffName.orEmpty())
+        TariffProfileStatus.FALLBACK_INCONSISTENT -> PremiumReportTexts.tariffInconsistent(profile.tariffCode.orEmpty())
     }
 
     private fun identityRows(dataset: ReportDataset): List<Pair<String, String>> = listOf(
@@ -54,12 +67,12 @@ class PremiumCoverSection(
         PremiumReportTexts.TARIFF_LABEL to dataset.comparison.tariffName
     )
 
-    private fun snapshotRows(fields: StudySnapshotFields?): List<Pair<String, String>> {
+    private fun snapshotRows(fields: StudySnapshotFields?, powerPeriods: List<Int>): List<Pair<String, String>> {
         if (fields == null) return emptyList()
         return listOfNotNull(
             present(fields.distributorName)?.let { PremiumReportTexts.DISTRIBUTOR_LABEL to it },
             location(fields)?.let { PremiumReportTexts.LOCATION_LABEL to it },
-            fields.contractedPowerKw?.let(PremiumReportFormat::periodPowers)?.let { PremiumReportTexts.CONTRACTED_POWER_LABEL to it },
+            fields.contractedPowerKw?.let { PremiumReportFormat.periodPowers(it, powerPeriods) }?.let { PremiumReportTexts.CONTRACTED_POWER_LABEL to it },
             present(fields.lastReadingDate)?.let { PremiumReportTexts.LAST_READING_LABEL to PremiumReportFormat.isoDate(it) }
         )
     }
