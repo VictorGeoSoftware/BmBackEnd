@@ -245,3 +245,37 @@ annual consumption and the contracted-power check are never shown. Values wrap a
 
 Previews: `PremiumCoverPreviewTest` writes synthetic `build/premium-report-preview/cover-*.pdf`; convert with
 `pdftoppm -png -r 110` for manual review.
+
+### Active-energy page
+
+`PremiumActiveSection` (portrait, section bar `ENERGÍA ACTIVA`) computes `HistoryCoverageCalculator` and
+`ActiveSummaryCalculator` (history, coverage, snapshot, `report.consumptionData`) from the dataset; it adds no
+calculation, projection, proration or advice. Copy lives in `PremiumActiveTexts` (approved 2026-10-29). Blocks:
+
+1. `Histórico disponible: dd/MM/yyyy – dd/MM/yyyy` (inclusive, `historyEnd − 1`) plus the partial sentence only when the
+   latest window is INCOMPLETE and the history starts after the window start (never for overlap-blocked or
+   unavailable windows, which have their own notes).
+2. Window table (latest, previous): `COMPLETE` → totals and shares; `INCOMPLETE` → period totals and
+   `Parcial: <partialTotal>` with covered/window days, no shares; `OVERLAP_UNRESOLVED` → `Sin cifra firme…`;
+   `UNAVAILABLE` → `Sin datos`. Null values show `—`, never 0. YoY only when `changePct` exists, otherwise the
+   reason. One note per disclosed overlap (zero-row overlaps: "no altera el total"; blocking: "sin resolver").
+3. P1–P6 share chart only for a COMPLETE latest window with shares; otherwise a sentence says why.
+4. Readings chart: one bar per dated source row (not per month) on a true date axis; height = reported kWh / days,
+   width = days. Null-only rows are hatched gaps, zero rows a marker on the axis, rows in an ACTIVE coverage overlap
+   are outlined. At most the 36 most recent rows; the cut is disclosed. Rows with zero or negative span (start ≥ end) are
+   excluded from the chart and from its row count, but still listed in the readings table.
+5. High-consumption intervals with the source window and status always named (fallback to `PREVIOUS_12M` shown).
+6. SIPS (`SIPS (distribuidora)`) and Basic-study (`Consumo anual del estudio básico`) comparisons with source,
+   history and differences; the source is never replaced. The note `El histórico cubre <window>; la fuente no indica
+   su periodo de referencia.` appears only when the latest window is COMPLETE. `NOT_COMPARABLE` shows source values
+   only with a reason from the latest window: OVERLAP_UNRESOLVED → `…tienen lecturas solapadas sin resolver.`;
+   no active history at all → `…no hay histórico de energía activa.`; INCOMPLETE, or UNAVAILABLE only because the
+   rows cross the window boundary → `…la ventana de 12 meses no está completa`. `SOURCE_UNAVAILABLE` → `Fuente no disponible`.
+7. Every history row in source order (inclusive dates, `—` for nulls, `*` for rows crossing the latest window);
+   the table splits across pages with a repeated header.
+
+Charts: `ActiveChartModel` (pure geometry in PDF points: `ChartBar`, `ChartTick`, `ChartBarStyle`; 1/2/5×10ⁿ axis
+ceiling; deterministic) drawn by `ActiveChartPainter` with OpenPDF vector primitives into a `PdfTemplate` image (no
+chart library; labels are real embedded-font text). P1–P6 colours: `PremiumReportTheme.PERIOD_COLORS`, a yellow →
+dark-grey ramp; every bar is also labelled. Previews: `PremiumActivePreviewTest` writes
+`build/premium-report-preview/active-*.pdf`. The page is not yet wired; the route still answers 501.
