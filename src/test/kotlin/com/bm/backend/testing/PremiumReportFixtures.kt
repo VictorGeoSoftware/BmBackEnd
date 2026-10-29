@@ -250,4 +250,36 @@ object PremiumReportFixtures {
     /** F: contracted P2 recorded as 0, P3 missing. */
     fun demandSnapshotMissingZero(): StudySnapshot =
         available(fullFields().copy(contractedPowerKw = PeriodValues(15.1, 0.0, null, 20.0, 34.0, 34.5)))
+
+    // ---- Assembled-document fixtures (report-document) ----
+
+    /** Every family present: active, reactive and demand monthly for 12 months. */
+    fun documentRows() = (0 until 12).map { i ->
+        StudyHistoryInterval(REACTIVE_START.plusMonths(i.toLong()), REACTIVE_START.plusMonths(i + 1L), ACTIVE_MONTH, REACTIVE_MONTH, DEMAND_MONTH)
+    }
+
+    /** No reactive and no demand readings at all (N1 for both families ⇒ both sections omitted). */
+    fun documentActiveOnlyRows() = (0 until 12).map { i ->
+        StudyHistoryInterval(REACTIVE_START.plusMonths(i.toLong()), REACTIVE_START.plusMonths(i + 1L), ACTIVE_MONTH, NULLS, NULLS)
+    }
+
+    /** 130 ten-day intervals ending 2026-07-31 with all three families. */
+    fun documentLongRows(): List<StudyHistoryInterval> {
+        val end = LocalDate.parse("2026-07-31")
+        return (0 until 130).map { i ->
+            val s = end.minusDays(10L * (130 - i))
+            StudyHistoryInterval(s, s.plusDays(10), PeriodValues(130.0 + i % 7, 160.0, 150.0, 200.0, 80.0, 820.0),
+                PeriodValues(30.0 + i % 5, 40.0, 30.0, 50.0, 15.0, 130.0), DEMAND_MONTH.copy(p6 = 30.0 + i % 6))
+        }
+    }
+
+    fun documentDataset(rows: List<StudyHistoryInterval> = documentRows(), offers: Int? = null): ReportDataset {
+        val base = dataset().copy(history = history(rows))
+        return if (offers == null) base
+        else base.copy(comparison = ReportComparisonFixtures.pageScenarioOffers(offers).copy(supplyHolder = "Cliente Prueba S.L.", supplyAddress = "Calle Ficticia 1, 28001 Madrid"))
+    }
+
+    /** History wholly unavailable (not N1): reactive and demand keep their N2 disclosures. */
+    fun documentUnavailableDataset(): ReportDataset =
+        dataset().copy(history = StudyHistory(CUPS, StudyHistoryStatus.UNAVAILABLE, "calculation_error", emptyList()))
 }

@@ -49,9 +49,9 @@ import com.bm.backend.services.GrantedUsersService
 import com.bm.backend.services.HealthService
 import com.bm.backend.services.MetricsAuthService
 import com.bm.backend.services.PremiumReportService
+import com.bm.backend.services.premiumreport.PdfPremiumReportRenderer
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.ReportDatasetService
-import com.bm.backend.services.UnavailablePremiumReportRenderer
 import com.bm.backend.services.UserConsumptionService
 import com.bm.backend.services.UserDataService
 import com.bm.backend.services.UserActivityService
@@ -71,6 +71,7 @@ import io.micrometer.prometheusmetrics.PrometheusMeterRegistry
 import kotlinx.serialization.json.Json
 import org.slf4j.event.Level
 import kotlin.time.Duration.Companion.seconds
+import java.time.Clock
 
 fun main(args: Array<String>) {
     io.ktor.server.netty.EngineMain.main(args)
@@ -218,10 +219,10 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
     val userActivityRepository = UserActivityRepository()
     val jobService = com.bm.backend.services.JobService()
     val comparatorReportPdfService = ComparatorReportPdfService()
-    // `report-document` replaces only the renderer binding; until then the route answers 501 report_unavailable.
+    // Assembled Premium PDF (spec report-document): in-memory, from the stored study only.
     val premiumReportService = PremiumReportService(
         ReportDatasetService(jobService),
-        UnavailablePremiumReportRenderer()
+        PdfPremiumReportRenderer(Clock.systemUTC())
     )
     val userConsumptionService = UserConsumptionService(
         userConsumptionRepository,

@@ -23,6 +23,12 @@ class PdfInspection(val bytes: ByteArray) {
         (1..pageCount).joinToString(" ") { extractor.getTextFromPage(it) }.replace('\u00A0', ' ').replace(Regex("\\s+"), " ").trim()
     }
 
+    /** Text of each page (whitespace collapsed), in page order. */
+    val pageTexts: List<String> by lazy {
+        val extractor = PdfTextExtractor(reader)
+        (1..pageCount).map { extractor.getTextFromPage(it).replace('\u00A0', ' ').replace(Regex("\\s+"), " ").trim() }
+    }
+
     val info: Map<String, String>
         get() = reader.info.mapValues { it.value.toString() }
 

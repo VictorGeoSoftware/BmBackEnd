@@ -210,7 +210,8 @@ enum class JobStatus {
 - Jobs are automatically cleaned up after 1 hour. Cleanup is lazy (on `createJob`); the status/result/
   history/snapshot reads do not check age. The Premium report route (`POST /reports/premium-pdf`) enforces
   the 1 h expiry on read via `JobService.getActiveJob`: an expired study answers 404 `study_not_found`,
-  like a missing or foreign one, and the broker must fetch the supply again.
+  like a missing or foreign one, and the broker must fetch the supply again. A valid Premium request returns
+  `200 application/pdf` (the assembled report, built in memory from the stored study; no portal refetch).
 - Jobs are stored in-memory (will be lost on server restart)
 - Can be upgraded to database storage for persistence if needed
 - Poll interval of 2-3 seconds is recommended (not too aggressive)
