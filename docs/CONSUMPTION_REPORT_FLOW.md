@@ -344,3 +344,15 @@ Parity rule: `PremiumComparisonSectionTest` extracts each page of the Basic PDF 
 request and requires the same ordered characters (whitespace ignored) once Basic's supply block is removed.
 Previews: `PremiumComparisonPreviewTest` writes `build/premium-report-preview/comparison-*.pdf` and the Basic PDF of
 each request as `comparison-*-basic.pdf`. Not yet wired; the route still answers 501.
+
+### Company page
+
+`PremiumCompanySection` (portrait closing page, normally one page; long text may flow, never clipped) renders, in
+order: the BM logo (`/images/logo_briel.png`, same resource as the cover; missing → `IllegalStateException`), the
+section bar `INFORMACIÓN SOBRE PROTECCIÓN DE DATOS`, the line `BRIEL MARNYSOS CONSULTORÍA ENERGÉTICA S.L.U.` and the
+data-protection text `ComparatorReportPdfTexts.DATA_PROTECTION_DISCLAIMER` (9 pt, justified). Copy lives in
+`PremiumCompanyTexts`; the legal text is **referenced**, never copied, and must stay verbatim (user decisions
+2026-10-29: no company/services presentation, no website). Nothing else is printed, and the page ignores the dataset
+(no customer value). `PremiumCompanySectionTest` checks the exact ordered text, the verbatim constant, identical output
+across datasets and forbidden vocabulary. Previews: `PremiumCompanyPreviewTest` writes
+`build/premium-report-preview/company-*.pdf`. Not yet wired; the route still answers 501.
