@@ -272,7 +272,7 @@ key to any client JSON. Errors yield `UNAVAILABLE`/`calculation_error`; inputs a
   Status `COMPLETE` (full union, no gaps/crossing, only value-neutral overlaps), `INCOMPLETE`
   (`partialTotal`, covered/window days, gaps, crossing), `OVERLAP_UNRESOLVED`, `UNAVAILABLE`.
 - **Overlaps (A1, user decision 2026-10-29):** an overlap where one row's ACTIVE P1–P6 are all
-  all `0.0` (blank cells do not qualify) is value-neutral: the window can be `COMPLETE` and the overlap is listed in
+  `0.0` (blank cells do not qualify) is value-neutral: the window can be `COMPLETE` and the overlap is listed in
   `overlapDisclosures` (must be disclosed in the PDF). Any other overlap ⇒ `OVERLAP_UNRESOLVED`, no
   total/shares.
 - **Crossing rows (A2):** listed, excluded from sums, never prorated; they make the window `INCOMPLETE`.
@@ -290,3 +290,35 @@ key to any client JSON. Errors yield `UNAVAILABLE`/`calculation_error`; inputs a
   `SOURCE_UNAVAILABLE` when the source is absent. SIPS/legacy refer to their own (undisclosed) period.
 - **Change (A8):** `(latest − previous) / previous × 100` only when both windows are `COMPLETE` and
   previous > 0; otherwise null with `latest_incomplete`, `previous_incomplete` or `previous_zero`.
+
+## Reactive summary (computed on demand, not exposed)
+
+`ReactiveSummaryCalculator.calculate(history, coverage): ReactiveSummary` (`utils/`) is a pure,
+never-throwing, descriptive calculation of recorded reactive energy (kVArh) over the owner-scoped
+retained history and its `HistoryCoverage`. It is not stored on `Job` and adds no key to any client
+JSON. Errors yield `UNAVAILABLE`/`calculation_error`; inputs are never modified.
+
+- **Window (R1):** `LATEST_12M = [anchor−12m, anchor)` only (anchor = `HistoryCoverage.anchorDate`), D1
+  half-open, same contained/crossing classification as coverage's REACTIVE 12-month window. Rows with all
+  six REACTIVE cells null are not REACTIVE rows. Crossing rows are listed, excluded, never prorated.
+  Status `COMPLETE`, `INCOMPLETE` (`partialTotal`, gaps, crossing), `OVERLAP_UNRESOLVED`, `UNAVAILABLE`
+  (`no_anchor`, `no_reactive_rows`, history/coverage reason or `calculation_error`).
+- **Overlaps (R2):** an overlap is value-neutral only when one row of the pair has all six REACTIVE cells
+  exactly `0.0` (blank cells never qualify); it is disclosed in `overlapDisclosures`. Any other overlap ⇒
+  `OVERLAP_UNRESOLVED`: no total, no ratios; series rows flagged `inUnresolvedOverlap`. Neutrality is judged
+  per family (ACTIVE and REACTIVE independently).
+- **Zero vs missing (R3):** period total = sum of non-null contained cells (null never 0, all-null ⇒ null);
+  `nullCells` counted; `recordedZero = true` (reason `zero_total`) when every non-null contained value is
+  `0.0`; shares only when `COMPLETE` and total > 0.
+- **Ratio (R4–R6):** descriptive quotient reactive kVArh / active kWh (unrounded), per period and overall,
+  with `activeBasis = HISTORY_ACTIVE_LATEST_12M` (history ACTIVE rows of the same window; never SIPS/legacy
+  annual values) and the active window status/dates/totals. Given only when both windows are `COMPLETE`;
+  otherwise null with `reactive_overlap`, `reactive_incomplete`, `active_unavailable`, `active_overlap` or
+  `active_incomplete` (reactive first). Per period also null with `period_missing` or `period_null_cells`
+  (null cell in either family); overall null with `period_null_cells` if any period has one. Active total
+  `0.0` ⇒ null `active_zero` (never NaN/Infinity); reactive `0.0` with active > 0 ⇒ `0.0`.
+- **Series (R7):** contained REACTIVE rows in date order with values as given (nulls preserved); not months.
+- **Reuse (R8):** `utils/FamilyWindowAggregator` (family-agnostic D1 aggregation) is used by the reactive
+  calculator only; `ActiveSummaryCalculator` is unchanged (migration pending, see TECH_DEBT #18).
+- **Exclusions:** no previous-window comparison, projection, power-factor/cos φ calculation, thresholds,
+  penalties, liability, compliance verdicts or meter diagnosis. No unit/decimal correction.

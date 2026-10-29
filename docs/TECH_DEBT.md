@@ -530,6 +530,14 @@ window then gets a firm total with the overlap disclosed. Any other overlap stil
 supersedes the other row; no source evidence supports that today. Revisit if upstream semantics are
 documented.
 
+**Reactive summary (R2, user decision 2026-10-29):** `ReactiveSummaryCalculator` mirrors A1 within the
+REACTIVE family only (one row of the pair with all six REACTIVE cells exactly `0.0`; blanks never
+qualify). Same accepted risk as A1. Neutrality is judged per family.
+
+**Pending migration:** `utils/FamilyWindowAggregator` duplicates the private window/overlap/union logic
+of `ActiveSummaryCalculator`, which was intentionally not refactored in `report-reactive-summary`.
+Migrate the active calculator onto the helper in a dedicated change with its existing tests unchanged.
+
 ---
 
 ## Fixed during this work — do not regress
