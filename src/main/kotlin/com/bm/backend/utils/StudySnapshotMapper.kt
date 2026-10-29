@@ -69,7 +69,7 @@ object StudySnapshotMapper {
                 val fieldsObj = obj["fields"] as? JsonObject ?: throw Malformed()
                 val check = check(obj["checks"])
                 val fields = fields(fieldsObj)
-                if (!sameCups(referenceCups, fields.cups)) {
+                if (!CupsMatch.same(referenceCups, fields.cups)) {
                     return StudySnapshot.unavailable(referenceCups, REASON_CUPS_MISMATCH)
                 }
                 StudySnapshot(
@@ -157,15 +157,5 @@ object StudySnapshotMapper {
         if (!PERIOD_KEYS.containsAll(obj.keys)) throw Malformed()
         val v = PERIOD_KEYS.map { key -> if (key in obj) number(obj[key]) else null }
         return PeriodValues(v[0], v[1], v[2], v[3], v[4], v[5])
-    }
-
-    /** Upstream CUPS rule: equal after trim/upper-case, or equal 20-char core when exactly one side has the suffix. */
-    private fun sameCups(reference: String, candidate: String): Boolean {
-        val a = reference.trim().uppercase()
-        val b = candidate.trim().uppercase()
-        if (a.isEmpty() || b.isEmpty()) return false
-        if (a == b) return true
-        val (shorter, longer) = if (a.length <= b.length) a to b else b to a
-        return shorter.length == 20 && longer.length == 22 && longer.startsWith(shorter)
     }
 }

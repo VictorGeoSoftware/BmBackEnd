@@ -179,3 +179,30 @@ curl "http://localhost:8080/api/v1/price-table-results?tarifaType=2.0TD"
 - Data cleaning removes `=` prefix and other non-alphanumeric characters from N8N response
 - Tarifa filtering is case-insensitive
 - The old GET `/fetch-user-consumption-report` endpoint was renamed to `/get-user-consumption-report` to avoid conflicts
+
+## Premium report commercial dataset (internal)
+
+The Basic economic comparison is computed in the clients (BmApp/PowerAppWeb): they round the raw backend
+proposals (2 dp half-up), add the broker's per-offer fixed amount, compute the current-conditions column from
+broker-typed prices and send the result as `ComparatorReportPdfRequest` to `POST /api/v1/reports/comparator-pdf`.
+That route and its PDF are unchanged.
+
+The Premium dataset (`ReportDatasetService`, `utils/ReportDatasetValidator.kt`) reuses that request **verbatim
+and by identity**; it never recalculates, re-rounds, re-taxes or reorders an amount. It only validates it against
+the owner's completed study, first failure wins, with value-free reason codes:
+
+1. `holder_missing` / `address_missing`: trimmed `supplyHolder`/`supplyAddress` blank or `"--"`.
+2. `cups_mismatch` (shared `utils/CupsMatch.kt` rule), `tariff_mismatch` (`tariffName` vs study `feeType`,
+   trimmed), `consumption_mismatch` (power rows `P1..P6`, unique, equal to subscribed power within 1e-9; energy
+   rows equal to the truncated annual kWh per period).
+3. `no_offers`, `duplicate_offer` (blank or repeated title), `unknown_offer` (title not in the study's current
+   proposals), `stale_offer` (power cost, energy cost or electricity tax more than 0.005 from the raw backend
+   value; IVA/total include the broker's fixed amount and are not cross-checked).
+4. `current_conditions_missing` (any current-conditions amount blank), `invalid_amount` (computed amounts not
+   `^-?\d+\.\d{2}$`; `extraServices` — the broker's fixed amount, offer and current conditions — not in the app
+   input format `^\d*([.,]\d{0,2})?$` with at least one digit, e.g. `"12"`, `"12,5"`, `"12."` are accepted and kept
+   verbatim (user decision F1, 2026-10-29); malformed difference, non-finite list values, tax labels not
+   `^\d+\.\d{2} %$`), `tax_mismatch` (IVA/electricity-tax labels more than 0.005 from the study's percentages).
+
+Not available from any source and therefore absent from the dataset: current supplier name, holder NIF,
+contact data, separate postal fields, penalties.
