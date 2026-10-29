@@ -61,7 +61,9 @@ data class N8nConsumptionData(
     val feeType: String,
     val fileName: String,
     // Raw `data.history` (contract v1); typed by StudyHistoryMapper. Missing in old workflows.
-    val history: JsonElement? = null
+    val history: JsonElement? = null,
+    // Raw `data.snapshot` (contract v1); typed by StudySnapshotMapper. Missing in old workflows.
+    val snapshot: JsonElement? = null
 )
 
 // Consolidated Response Model
