@@ -259,3 +259,34 @@ the history's reason. The input history is never modified, reordered or deduplic
   fetch time); 12/24-month windows `[anchor - n months, anchor)`. Rows are `contained` or
   `crossing` (listed, not prorated); `complete` requires contained coverage of the whole window
   with no gaps and no crossing rows.
+
+## Active summary (computed on demand, not exposed)
+
+`ActiveSummaryCalculator.calculate(history, coverage, snapshot, legacy): ActiveSummary` (`utils/`) is a
+pure, never-throwing calculation over the owner-scoped retained history, its `HistoryCoverage`, the
+`StudySnapshot` and the legacy annual `CleanedConsumptionData`. It is not stored on `Job` and adds no
+key to any client JSON. Errors yield `UNAVAILABLE`/`calculation_error`; inputs are never modified.
+
+- **Windows (A3):** anchor = `HistoryCoverage.anchorDate`; `LATEST_12M = [anchor−12m, anchor)`,
+  `PREVIOUS_12M = [anchor−24m, anchor−12m)`, D1 half-open, same contained/crossing rule as coverage.
+  Status `COMPLETE` (full union, no gaps/crossing, only value-neutral overlaps), `INCOMPLETE`
+  (`partialTotal`, covered/window days, gaps, crossing), `OVERLAP_UNRESOLVED`, `UNAVAILABLE`.
+- **Overlaps (A1, user decision 2026-10-29):** an overlap where one row's ACTIVE P1–P6 are all
+  all `0.0` (blank cells do not qualify) is value-neutral: the window can be `COMPLETE` and the overlap is listed in
+  `overlapDisclosures` (must be disclosed in the PDF). Any other overlap ⇒ `OVERLAP_UNRESOLVED`, no
+  total/shares.
+- **Crossing rows (A2):** listed, excluded from sums, never prorated; they make the window `INCOMPLETE`.
+- **Periods (A4):** period total = sum of non-null contained cells (null never 0; all-null ⇒ null);
+  window total = sum of period totals; shares only when `COMPLETE` and total > 0 (else null, reason
+  `zero_total` when 0). Values are unrounded kWh; no unit/decimal correction.
+- **No projection (A5):** `partial = true` whenever `LATEST_12M` is not `COMPLETE`
+  (incomplete, overlap-blocked or unavailable).
+- **High intervals (A6):** top `HIGH_INTERVAL_COUNT` = 3 contained non-zero-length rows of the latest
+  `COMPLETE` or `INCOMPLETE` window (never `OVERLAP_UNRESOLVED`), ranked by kWh/day (ties: start date, index); rows in a non-neutral overlap
+  excluded. No threshold, no advice.
+- **Source comparison (A7):** SIPS snapshot annual and legacy annual, each kept with provenance;
+  `difference = history − source`, `% = difference / source × 100` (null if source 0/null),
+  `matches` when |difference| < 0.5 kWh. `NOT_COMPARABLE` if `LATEST_12M` is not `COMPLETE`;
+  `SOURCE_UNAVAILABLE` when the source is absent. SIPS/legacy refer to their own (undisclosed) period.
+- **Change (A8):** `(latest − previous) / previous × 100` only when both windows are `COMPLETE` and
+  previous > 0; otherwise null with `latest_incomplete`, `previous_incomplete` or `previous_zero`.
