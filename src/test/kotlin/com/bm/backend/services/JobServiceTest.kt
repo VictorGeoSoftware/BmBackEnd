@@ -83,4 +83,15 @@ class JobServiceTest {
         assertSame(snapshot, jobs.getSnapshot(jobId, "uid-a"))
         assertSame(history, jobs.getHistory(jobId, "uid-a"))
     }
+
+    @Test
+    fun `getActiveJob enforces the one hour expiry without changing getJob`() {
+        val jobs = JobService()
+        val jobId = jobs.createJob("uid-a")
+        val createdAt = jobs.getJob(jobId)!!.createdAt
+        assertSame(jobs.getJob(jobId), jobs.getActiveJob(jobId, createdAt + 60 * 60 * 1000L))
+        assertNull(jobs.getActiveJob(jobId, createdAt + 60 * 60 * 1000L + 1))
+        assertNull(jobs.getActiveJob("missing", createdAt))
+        assertEquals("uid-a", jobs.getJob(jobId)!!.ownerUid)
+    }
 }
