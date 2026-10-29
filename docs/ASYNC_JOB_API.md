@@ -322,3 +322,38 @@ JSON. Errors yield `UNAVAILABLE`/`calculation_error`; inputs are never modified.
   calculator only; `ActiveSummaryCalculator` is unchanged (migration pending, see TECH_DEBT #18).
 - **Exclusions:** no previous-window comparison, projection, power-factor/cos φ calculation, thresholds,
   penalties, liability, compliance verdicts or meter diagnosis. No unit/decimal correction.
+
+## Demand summary (computed on demand, not exposed)
+
+`DemandSummaryCalculator.calculate(history, coverage, snapshot): DemandSummary` (`utils/`) is a pure,
+never-throwing, descriptive calculation of recorded maximeter demand (kW) over the owner-scoped retained
+history, its `HistoryCoverage` and the retained `StudySnapshot`. It is not stored on `Job` and adds no key
+to any client JSON. Errors yield `UNAVAILABLE`/`calculation_error`; inputs are never modified.
+
+- **Window and rows (M1):** `LATEST_12M = [anchor−12m, anchor)` (D1 half-open), same classification as
+  coverage's MAX_DEMAND 12-month window. A demand row is any non-inverted row with at least one non-null
+  `maxDemand` cell, independent of its active/reactive values (a zero-energy row with demand is kept).
+  Only contained rows feed statistics; crossing rows are listed and excluded. Window `COMPLETE`,
+  `INCOMPLETE` (`partial = true`, gaps, crossing, `coveredDays`/`windowDays`) or `UNAVAILABLE`
+  (`no_contained_rows`). Summary `UNAVAILABLE` reasons: history/coverage reason, `no_anchor`,
+  `no_demand_rows`, `calculation_error`.
+- **Peak and overlaps (M2):** `peakKw` = maximum non-null contained reading per period, with the source
+  row index and dates (tie: earliest start, then lowest index). Overlaps are disclosed in
+  `overlapDisclosures` and series `inOverlap`; they never block the peak or drop a row.
+- **Zero vs missing (M3):** `0.0` is a recorded reading; null is never 0. A period without readings has
+  `peakKw = null`, reason `no_readings`. `nullCells` counted. Negative values are kept as given.
+- **Mean (M4):** `meanKw` = arithmetic mean of the non-null contained readings (zeros included, one per row,
+  not day-weighted): "media de los máximos registrados por lectura", not average power. Given only when the
+  window is `COMPLETE` and no contained demand rows overlap; otherwise null with `window_incomplete` or
+  `overlap`. `readings` is always given.
+- **Contracted power side by side (M5):** from `StudySnapshot.fields.contractedPowerKw` when the snapshot is
+  `AVAILABLE` (`contractedSource = SNAPSHOT_CONTRACTED_POWER_KW`): `contractedKw`,
+  `peakMinusContractedKw`, `peakPctOfContracted`. Null with `snapshot_unavailable`, `contracted_missing`,
+  `contracted_zero` or `no_readings`. Allowed on a partial window. Descriptive only: no flag, threshold or
+  verdict. Snapshot `contractedPowerCheck` and SIPS BIE/APM/access/extension rights are not used.
+- **Series (M6):** contained demand rows in date order: values as given (nulls kept), `inOverlap`,
+  `activeAllZero`. Not months; no curve; crossing rows excluded.
+- **Reuse (M7):** `FamilyWindowAggregator` is used unchanged for classification only; its sums and
+  blocking indices are ignored for demand.
+- **Exclusions:** no power optimisation, recommended power, excess-power charges, penalties, liability,
+  meter diagnosis, projection or unit/decimal correction.
