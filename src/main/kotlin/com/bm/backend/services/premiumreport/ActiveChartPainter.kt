@@ -16,6 +16,7 @@ object ActiveChartPainter {
         val t = writer.directContent.createTemplate(model.width.toFloat(), model.height.toFloat())
         grid(t, model)
         model.bars.forEach { bar(t, model, it) }
+        model.markers.forEach { marker(t, it) }
         axes(t, model)
         labels(t, model)
         return Image.getInstance(t)
@@ -69,6 +70,20 @@ object ActiveChartPainter {
             }
             ChartBarStyle.NO_DATA -> hatch(t, x, f(b.y), w, f(b.height))
         }
+        t.restoreState()
+    }
+
+    /** Neutral dark vertical line across the marker's band (same colour for every marker), on a thin white halo. */
+    private fun marker(t: PdfTemplate, k: ChartMarker) {
+        t.saveState()
+        t.setColorStroke(PremiumReportTheme.COLOR_WHITE)
+        t.setLineWidth(3f)
+        t.moveTo(f(k.x), f(k.y)); t.lineTo(f(k.x), f(k.y + k.height))
+        t.stroke()
+        t.setColorStroke(PremiumReportTheme.COLOR_TEXT)
+        t.setLineWidth(1.2f)
+        t.moveTo(f(k.x), f(k.y)); t.lineTo(f(k.x), f(k.y + k.height))
+        t.stroke()
         t.restoreState()
     }
 

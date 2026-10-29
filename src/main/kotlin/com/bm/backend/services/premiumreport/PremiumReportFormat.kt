@@ -80,6 +80,15 @@ object PremiumReportFormat {
     /** Signed one-decimal percentage (`+11,9 %`, `-3,0 %`). */
     fun signedPercent(value: Double): String = percent(value).let { if (!it.startsWith("-") && !it.startsWith("0,0 ")) "+$it" else it }
 
+    /** Signed kW difference with published precision up to 3 decimals (`+0,903`, `-2,5`, `0`; never `-0`). */
+    fun signedNumber(value: Double): String {
+        val symbols = DecimalFormatSymbols(LOCALE).apply { minusSign = '-' }
+        val format = DecimalFormat("#,##0.###", symbols)
+        format.roundingMode = RoundingMode.HALF_UP
+        val text = format.format(value).let { if (it == "-0") "0" else it }
+        return if (text != "0" && !text.startsWith("-")) "+$text" else text
+    }
+
     fun date(value: LocalDate): String = value.format(DATE)
 
     /** Half-open `[start, endExclusive)` shown inclusively: `dd/MM/yyyy – dd/MM/yyyy` (end − 1 day). */

@@ -32,7 +32,9 @@ data class ActiveChartModel(
     val categoryTicks: List<ChartTick>,
     val bars: List<ChartBar>,
     val totalRows: Int,
-    val shownRows: Int
+    val shownRows: Int,
+    /** Reference lines (demanded-power page); empty for every other chart, which therefore draws unchanged. */
+    val markers: List<ChartMarker> = emptyList()
 ) {
     companion object {
         const val WIDTH = 511.0

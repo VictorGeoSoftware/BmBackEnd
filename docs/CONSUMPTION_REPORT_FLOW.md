@@ -302,3 +302,28 @@ threshold, verdict or exclusion statement appears (X1 omitted). Blocks:
 `ReactiveChartModel` returns the shared `ActiveChartModel`, so `ActiveChartPainter` draws it unchanged (the model's
 tick/month helpers are `internal`). Previews: `PremiumReactivePreviewTest` writes
 `build/premium-report-preview/reactive-*.pdf`. Not yet wired; the route still answers 501.
+
+### Demanded-power page
+
+`PremiumDemandSection` (portrait, section bar `POTENCIA DEMANDADA`) computes `HistoryCoverageCalculator` and
+`DemandSummaryCalculator` (with the dataset snapshot) and adds no calculation beyond the presentation-only highest
+P1–P6 value per reading in the readings chart. Values are kW as published (`PremiumReportFormat.number`, differences
+`signedNumber`, percentages `percent`). Every sentence is a row of the approved truth table in
+`docs/specs/report-demand-page.md` (workspace) and lives in `PremiumDemandTexts` (approved 2026-10-29). The
+contracted-power comparison is plain arithmetic: no exceed flag, verdict, colour coding, threshold or advice. Blocks:
+
+1. `Ventana analizada: Últimos 12 meses (<range>)`; when the summary is UNAVAILABLE the page stops after
+   `Ventana analizada: Sin datos` plus "no demand readings" (`no_demand_rows`) or the generic unavailable sentence.
+2. Per-period table (readings, highest recorded value with the dates of its reading, mean of per-reading maxima only
+   when the calculator gives it, else the reason) with its definition caption; status notes (nothing contained in the
+   window — `no_contained_rows` replaces the table —, partial window, crossing readings, recorded zero, null cells,
+   periods without readings, one per overlap disclosure, zero-active readings).
+3. Highest recorded value vs contracted power (`DemandChartModel.comparison`: bars plus a neutral vertical
+   `ChartMarker` line per period) and its table; replaced by a reason when the snapshot is unavailable or the window
+   has no contained reading; partial-window note when INCOMPLETE.
+4. Readings chart (`DemandChartModel.readings`: one bar per `summary.series` row, height = its highest P1–P6 value,
+   width = days, 36-row cap disclosed) and the table of the same rows (`†` overlap, `°` zero active energy).
+
+`ActiveChartModel.markers` (default empty) and the painter's marker drawing are additive: the active/reactive charts
+carry no markers and render unchanged. Previews: `PremiumDemandPreviewTest` writes
+`build/premium-report-preview/demand-*.pdf`. Not yet wired; the route still answers 501.
