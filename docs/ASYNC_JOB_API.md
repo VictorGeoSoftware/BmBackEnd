@@ -211,3 +211,16 @@ enum class JobStatus {
 - Jobs are stored in-memory (will be lost on server restart)
 - Can be upgraded to database storage for persistence if needed
 - Poll interval of 2-3 seconds is recommended (not too aggressive)
+
+## Retained study history (not exposed)
+
+When a PDF, image or CUPS job completes, the backend also keeps the typed dated history from
+the n8n webhook (`Job.history`, see `docs/N8N_INTEGRATION.md`) together with the CUPS on the
+same in-memory job owned by the requesting Firebase uid. It is read only through the
+owner-scoped `JobService.getHistory(jobId, ownerUid)` (null for other owners).
+
+- The client JSON of `/consumption-report-status`, `/consumption-report-result` and
+  `/consumption-report-refresh` is unchanged: it contains no `history` key.
+- Refresh updates proposals/taxes only and keeps the retained history untouched.
+- Retention is memory-only: it is lost on restart and jobs expire after 1 hour, like the
+  annual result. No database table or archive exists.

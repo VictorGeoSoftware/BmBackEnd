@@ -34,5 +34,7 @@ data class Job(
     var progress: Int = 0,
     var result: ConsumptionReportResponse? = null,
     var error: String? = null,
+    // Retained in memory only (never serialized to clients); see docs/ASYNC_JOB_API.md.
+    var history: StudyHistory? = null,
     val createdAt: Long = System.currentTimeMillis()
 )

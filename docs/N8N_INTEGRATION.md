@@ -156,6 +156,25 @@ The API returns the following response structure:
 - **500 Internal Server Error**: Check backend logs for details
 - **Rate limit exceeded**: Implement retry logic with exponential backoff
 
+### Consumption webhook `data.history` (contract v1)
+
+`ExternalApiService.processWithN8nWebhook` decodes the optional `data.history` object
+from the `fetch-user-consumption` webhook as raw JSON (`N8nConsumptionData.history`).
+`utils/StudyHistoryMapper` turns it into the typed `StudyHistory` model
+(`StudyHistoryInterval`, `PeriodValues` with named `p1`..`p6`):
+
+- Values must be JSON numbers or `null`; they are kept as-is as `Double?`
+  (no decimal correction, rounding, unit conversion, reordering or aggregation).
+  Dates are strict ISO `LocalDate`; intervals stay in source order.
+- `AVAILABLE`: `version: 1`, `status: "available"` and an `intervals` array (possibly empty).
+- `UNAVAILABLE` with one reason code (never partial data, never values or the CUPS):
+  upstream `missing` / `invalid_date` / `invalid_measurement`; `not_provided` (no `history`
+  key, older workflow); `unsupported_version` (version other than 1); `malformed`
+  (wrong types, string numbers, non-finite values, period objects without exactly P1–P6,
+  impossible dates, missing groups, `available` with `intervals: null`).
+- A history defect never fails the job or changes the annual result. The legacy `=`-prefixed
+  annual fields are parsed exactly as before. `data.snapshot` is not decoded.
+
 ### Additional Resources
 
 - API Documentation: Available at `http://localhost:8080` when running
