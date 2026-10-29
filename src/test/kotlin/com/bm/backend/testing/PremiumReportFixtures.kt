@@ -193,4 +193,61 @@ object PremiumReportFixtures {
         val s = REACTIVE_START.plusDays(5L * i)
         reactiveRow(s, s.plusDays(5), PeriodValues(10.0, 12.0, 11.0, 15.0, 6.0, 40.0), PeriodValues(2.0 + i % 5, 3.0, 2.0, 4.0, 1.0, 9.0))
     }
+    // ---- Demanded-power page fixtures (synthetic kW; window 31/07/2025 – 30/07/2026; contracted 15,1/15,1/20/20/34/34,5) ----
+
+    val DEMAND_MONTH = PeriodValues(14.2, 15.0, 18.5, 19.25, 30.0, 33.0)
+
+    fun demandRow(start: LocalDate, end: LocalDate, active: PeriodValues, demand: PeriodValues) =
+        StudyHistoryInterval(start, end, active, ones, demand)
+
+    /** 12 monthly rows ending 2026-07-31 (exclusive) with active energy and maximeter demand. */
+    fun demandMonths(demand: (Int) -> PeriodValues = { DEMAND_MONTH }, active: (Int) -> PeriodValues = { ACTIVE_MONTH }) =
+        (0 until 12).map { i ->
+            demandRow(REACTIVE_START.plusMonths(i.toLong()), REACTIVE_START.plusMonths(i + 1L), active(i), demand(i))
+        }
+
+    /** A: complete window; P1 peak 16.103 kW in 31/12/2025 – 30/01/2026, P6 peak 34.75 kW in the last month. */
+    fun demandCompleteRows() = demandMonths(demand = { i ->
+        when (i) {
+            5 -> DEMAND_MONTH.copy(p1 = 16.103)
+            11 -> DEMAND_MONTH.copy(p6 = 34.75)
+            else -> DEMAND_MONTH.copy(p1 = 14.0 + (i % 3) * 0.5)
+        }
+    })
+
+    /** B: demand only for the last 8 months plus one reading crossing the window start. */
+    fun demandIncompleteRows() = demandMonths(demand = { i -> if (i < 4) NULLS else DEMAND_MONTH }) +
+        demandRow(LocalDate.parse("2025-06-30"), LocalDate.parse("2025-08-15"), NULLS, DEMAND_MONTH.copy(p1 = 17.0))
+
+    /** C: complete plus a zero-active reading overlapping 2026-05-31..2026-06-30 whose P6 (40 kW) is the peak. */
+    fun demandOverlapZeroActiveRows() = demandMonths() +
+        demandRow(LocalDate.parse("2026-05-31"), LocalDate.parse("2026-06-30"), ZEROS, DEMAND_MONTH.copy(p6 = 40.0))
+
+    /** D: demand only before the window plus one reading crossing its start; active covers the window. */
+    fun demandOutsideRows() =
+        (0 until 11).map { i ->
+            demandRow(LocalDate.parse("2024-06-30").plusMonths(i.toLong()), LocalDate.parse("2024-06-30").plusMonths(i + 1L), ACTIVE_MONTH, DEMAND_MONTH)
+        } + demandRow(LocalDate.parse("2025-05-30"), LocalDate.parse("2025-08-31"), NULLS, DEMAND_MONTH) +
+            demandMonths(demand = { NULLS })
+
+    /** G: every demand cell recorded as 0.0. */
+    fun demandZeroRows() = demandMonths(demand = { ZEROS })
+
+    /** H: P4–P6 never recorded; P1 null in rows 2 and 5. */
+    fun demandInactiveRows() = demandMonths(demand = { i ->
+        PeriodValues(if (i == 2 || i == 5) null else 14.2, 15.0, 18.5, null, null, null)
+    })
+
+    /** N1: active energy only, no maximeter values. */
+    fun demandNoRows() = demandMonths(demand = { NULLS })
+
+    /** L: 73 five-day rows covering the window exactly (chart cap 36). */
+    fun demandLongRows() = (0 until 73).map { i ->
+        val s = REACTIVE_START.plusDays(5L * i)
+        demandRow(s, s.plusDays(5), ACTIVE_MONTH, DEMAND_MONTH.copy(p6 = 30.0 + i % 5))
+    }
+
+    /** F: contracted P2 recorded as 0, P3 missing. */
+    fun demandSnapshotMissingZero(): StudySnapshot =
+        available(fullFields().copy(contractedPowerKw = PeriodValues(15.1, 0.0, null, 20.0, 34.0, 34.5)))
 }

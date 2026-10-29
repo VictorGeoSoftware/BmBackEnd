@@ -44,4 +44,16 @@ class PremiumReportFormatTest {
         assertEquals("0,00", PremiumReportFormat.decimal2(-0.001))
         assertEquals("1.234,57", PremiumReportFormat.decimal2(1234.567))
     }
+
+    @Test
+    fun `signedNumber keeps published precision with an explicit sign`() {
+        assertEquals("+0,903", PremiumReportFormat.signedNumber(0.903))
+        assertEquals("-2,5", PremiumReportFormat.signedNumber(-2.5))
+        assertEquals("0", PremiumReportFormat.signedNumber(0.0))
+        assertEquals("0", PremiumReportFormat.signedNumber(-0.0))
+        assertEquals("0", PremiumReportFormat.signedNumber(-0.0001))
+        assertEquals("0", PremiumReportFormat.signedNumber(0.0001))
+        assertEquals("+1.003,25", PremiumReportFormat.signedNumber(1003.25))
+        assertEquals("-15,1", PremiumReportFormat.signedNumber(-15.1))
+    }
 }
