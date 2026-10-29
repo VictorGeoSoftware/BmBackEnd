@@ -23,6 +23,24 @@ object PremiumReportTheme {
     val COLOR_GRID = Color(0xCB, 0xD5, 0xE1)
     val COLOR_WHITE: Color = Color.WHITE
 
+    /**
+     * P1–P6 palette (user answer Q1, 2026-10-29): sequential BM-yellow → dark-grey ramp. Every bar also carries
+     * its text label, so colour is never needed to read a value.
+     */
+    val PERIOD_COLORS: List<Color> = listOf(
+        Color(249, 196, 17),
+        Color(214, 170, 36),
+        Color(171, 145, 66),
+        Color(129, 118, 86),
+        Color(90, 92, 98),
+        Color(0x37, 0x41, 0x51)
+    )
+
+    /** Text colour readable on each [PERIOD_COLORS] entry. */
+    val PERIOD_TEXT_COLORS: List<Color> = listOf(COLOR_TEXT, COLOR_TEXT, COLOR_TEXT, COLOR_WHITE, COLOR_WHITE, COLOR_WHITE)
+
+    const val SIZE_TABLE = 8.5f
+    const val SIZE_NOTE = 9f
     const val SIZE_BODY = 10.5f
     const val SIZE_SECTION = 12f
     const val SIZE_SUBTITLE = 14f
@@ -39,6 +57,9 @@ object PremiumReportTheme {
     fun bold(size: Float = SIZE_BODY, color: Color = COLOR_TEXT): Font = Font(bold, size, Font.NORMAL, color)
 
     fun body(): Font = regular()
+
+    /** Embedded regular base font for vector chart text. */
+    fun regularBaseFont(): BaseFont = regular
 
     /** Identity-H + embedded: subsets of the bundled TrueType files are embedded in every PDF. */
     private fun load(resource: String): BaseFont {
