@@ -357,3 +357,15 @@ to any client JSON. Errors yield `UNAVAILABLE`/`calculation_error`; inputs are n
   blocking indices are ignored for demand.
 - **Exclusions:** no power optimisation, recommended power, excess-power charges, penalties, liability,
   meter diagnosis, projection or unit/decimal correction.
+
+## Premium report dataset (assembled on demand, not exposed)
+
+`ReportDatasetService.assemble(ReportDatasetRequest(jobId, comparison), requesterUid)` (`services/`, not wired
+in `Application.kt` and not reachable from any route yet) reads the in-memory job and returns
+`ReportDatasetResult.Assembled(ReportDataset)` or `Rejected(ReportDatasetRejection)`.
+
+- Owner-scoped: another owner's job is indistinguishable from a missing one (`study_not_found`). The job must be
+  `COMPLETED` with result, history and snapshot retained (`study_not_ready` otherwise); an `UNAVAILABLE`
+  history/snapshot is carried, not rejected.
+- Bounded by the same memory-only retention: lost on restart, unavailable once the job expires after 1 hour.
+- See `CONSUMPTION_REPORT_FLOW.md` for the comparison provenance and the validation reasons.
