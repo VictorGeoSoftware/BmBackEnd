@@ -1,0 +1,39 @@
+{
+  "jobId": "synthetic-job",
+  "comparison": {
+    "supplyHolder": "Cliente Ficticio SL",
+    "supplyAddress": "Calle Falsa 1",
+    "cups": "ES0000000000000000AA",
+    "tariffName": "fixed",
+    "powerTermRows": [{"period": "P1", "value": 15.0}, {"period": "P2", "value": 15.0}],
+    "energyConsumedRows": [{"period": "P1", "value": 1000}, {"period": "P2", "value": 2000}],
+    "iva": "21.00 %",
+    "impuestoElectrico": "5.11 %",
+    "customerConditions": {
+      "title": "Condiciones actuales",
+      "powerTermItems": [0.1, 0.05],
+      "annualPowerTermCost": "821.25",
+      "consumedEnergyItems": [0.2, 0.1],
+      "annualEnergyCost": "400.00",
+      "extraServices": "0.00",
+      "electricalTax": "62.47",
+      "iva": "269.63",
+      "totalAnnualPrice": "1553.35"
+    },
+    "proposals": [
+      {
+        "title": "Oferta Ficticia A",
+        "powerTermItems": [0.09, 0.04],
+        "annualPowerTermCost": "711.75",
+        "consumedEnergyItems": [0.18, 0.09],
+        "annualEnergyCost": "360.00",
+        "extraServices": "12.00",
+        "electricalTax": "54.79",
+        "iva": "239.07",
+        "totalAnnualPrice": "1377.61",
+        "annualPriceDifference": "175.74",
+        "annualSavingsPercentage": 11
+      }
+    ]
+  }
+}

@@ -410,6 +410,14 @@ hand. Verified the workflow YAML parses and all keys resolve.
 
 ## 🟡 Low
 
+### 21. Basic and Premium PDF styles are duplicated
+
+`ComparatorReportPdfService` keeps its colours, Helvetica fonts and `buildCell` helper private, so the Premium
+report foundation (`services/premiumreport/PremiumReportTheme`, `PremiumReportBlocks`) copies the same highlight
+colour and bar style instead of sharing them, and uses embedded Liberation Sans while Basic uses non-embedded
+base-14 Helvetica. The Basic PDF was deliberately left untouched (feature `report-cover`). If the two must stay
+visually identical, extract a shared theme in a separate, behaviour-checked change.
+
 ### 10. Grafana's admin password is only honoured on first boot
 
 `GF_SECURITY_ADMIN_PASSWORD` is read when Grafana initialises its database in
@@ -514,7 +522,47 @@ harmless: a test scrapes the registry and asserts both labels are present on
 emitted metrics. Noise, not a bug; worth silencing eventually so it does not
 mask a real ordering problem later.
 
+### 18. History overlap semantics are unresolved
+
+`HistoryCoverageCalculator` discloses overlapping history rows (e.g. a zero-energy row with
+non-zero demand inside a longer energy row) but cannot say whether they are corrections,
+re-reads or separate demand readings. Until distributor/portal evidence settles it, downstream
+report summaries must suppress definitive aggregates over overlapping ranges. The half-open
+`[startDate, endDate)` boundary is a user-approved default inferred from data, not an upstream
+contract statement.
+
+**Active summary exception (A1, user decision 2026-10-29):** `ActiveSummaryCalculator` treats an
+ACTIVE overlap as value-neutral when one row of each overlapping pair has all P1–P6 `0.0` (blank cells do not qualify); the
+window then gets a firm total with the overlap disclosed. Any other overlap still yields
+`OVERLAP_UNRESOLVED` (no firm total/shares). Accepted risk: a zero row could be a correction that
+supersedes the other row; no source evidence supports that today. Revisit if upstream semantics are
+documented.
+
+**Reactive summary (R2, user decision 2026-10-29):** `ReactiveSummaryCalculator` mirrors A1 within the
+REACTIVE family only (one row of the pair with all six REACTIVE cells exactly `0.0`; blanks never
+qualify). Same accepted risk as A1. Neutrality is judged per family.
+
+**Demand summary (M2/M4, user decision 2026-10-29):** `DemandSummaryCalculator` takes the peak
+(maximum recorded kW) over all contained MAX_DEMAND rows, including overlapping ones; overlaps are
+disclosed, never block the peak and drop no row (max is idempotent, so double coverage cannot inflate
+it). Accepted risk: if an overlapping row is a superseded correction its value may still be the peak;
+the peak row's dates are always reported. The mean of per-reading maxima is withheld (`overlap`) when
+any contained demand rows overlap. Revisit if upstream semantics are documented.
+
+**Pending migration:** `utils/FamilyWindowAggregator` duplicates the private window/overlap/union logic
+of `ActiveSummaryCalculator`, which was intentionally not refactored in `report-reactive-summary`.
+Migrate the active calculator onto the helper in a dedicated change with its existing tests unchanged.
+
 ---
+
+### 22. Premium report route: no per-route body-size limit; StatusPages logs exception text
+
+Recorded by `report-document` (user answer Q5 a, 2026-10-29; low notes from `report-api-access`).
+`POST /api/v1/reports/premium-pdf` has no route-specific request-body size limit (only the server defaults apply),
+and failures raised outside the renderer (e.g. during body deserialisation) reach the global `StatusPages` handler,
+which logs the exception message/stack. Renderer failures themselves are mapped to `500 report_generation_failed`
+and log only `errorType`/requestId/uid. If needed, add a per-route limit (e.g. 1 MiB ⇒ 413) and a scrubbed
+StatusPages log in a separate, tested change.
 
 ## Fixed during this work — do not regress
 
