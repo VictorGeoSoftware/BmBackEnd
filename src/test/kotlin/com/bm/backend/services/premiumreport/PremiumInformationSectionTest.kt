@@ -2,7 +2,6 @@ package com.bm.backend.services.premiumreport
 
 import com.bm.backend.models.ReportDataset
 import com.bm.backend.models.StudySnapshot
-import com.bm.backend.services.ComparatorReportPdfTexts
 import com.bm.backend.testing.PdfInspection
 import com.bm.backend.testing.PremiumReportFixtures
 import com.bm.backend.testing.PremiumReportFixtures.CUPS
@@ -12,10 +11,9 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 
-class PremiumCompanySectionTest {
-    private val section = PremiumCompanySection()
+class PremiumInformationSectionTest {
+    private val section = PremiumInformationSection()
 
     private fun render(ds: ReportDataset, s: PremiumReportSection = section) = PremiumReportPdf.render(listOf(s), ds)
     /** OpenPDF stamps /CreationDate, /ModDate, a random /ID and a random font-subset tag (XXXXXX+) per render; mask only those. */
@@ -46,32 +44,17 @@ class PremiumCompanySectionTest {
     fun `catalogue - page text equals the approved strings in order and nothing else`() {
         val pdf = PdfInspection(render(dataset()))
         assertEquals(listOf(true), pdf.portraitPages)
-        val expected = norm(PremiumCompanyTexts.ORDERED.joinToString(" "))
-        assertEquals(expected, norm(pdf.text))
-        assertEquals(
-            listOf(
-                "INFORMACIÓN SOBRE PROTECCIÓN DE DATOS",
-                "BRIEL MARNYSOS CONSULTORÍA ENERGÉTICA S.L.U.",
-                ComparatorReportPdfTexts.DATA_PROTECTION_DISCLAIMER
-            ),
-            PremiumCompanyTexts.ORDERED
-        )
+        assertEquals(norm(PremiumInformationTexts.ORDERED.joinToString(" ")), norm(pdf.text))
+        assertEquals("INFORMACIÓN Y MANTENIMIENTO DE SU PÓLIZA ELÉCTRICA", PremiumInformationTexts.ORDERED.first())
     }
 
     @Test
-    fun `catalogue - texts object declares exactly the approved strings`() {
-        val strings = PremiumCompanyTexts::class.java.declaredFields
-            .filter { it.type == String::class.java }
-            .map { it.isAccessible = true; it.get(PremiumCompanyTexts) as String }
-            .toSet()
-        assertEquals(setOf("INFORMACIÓN SOBRE PROTECCIÓN DE DATOS", "BRIEL MARNYSOS CONSULTORÍA ENERGÉTICA S.L.U."), strings)
-    }
-
-    @Test
-    fun `verbatim - data protection text is the unchanged constant`() {
-        val literal = "BRIEL MARNYSOS CONSULTORÍA ENERGÉTICA S.L.U., como Responsable del tratamiento, de los datos personales proporcionados para la ejecución de la relación precontractual o contractual, le informa que sus datos serán tratados de conformidad con lo dispuesto en el Reglamento General (UE) 2016/679, de protección de datos (RGPD) y en la L.O. 3/2018, de protección de datos y garantía de los derechos digitales (LOPDGDD), con la finalidad de poder cumplir con las obligaciones mercantiles, contables y fiscales, y serán conservadas durante un plazo mínimo de 6 años por obligación legal, procediéndose posteriormente a su eliminación con medidas de seguridad adecuadas para garantizar la seudonimización de los datos o la destrucción total de los mismos. Los datos podrán ser cedidos a empresas energéticas o colaboradores por ser necesario para prestarle el servicio. Por último le informamos que puede ejercer los derechos de acceso, rectificación, portabilidad y supresión de sus datos, y los de limitación y oposición a su tratamiento, dirigiendo comunicación, motivada y acreditada, a dpo@brielmarnysos.com, o presentar una reclamación ante la autoridad competente (www.aepd.es)"
-        assertEquals(literal, ComparatorReportPdfTexts.DATA_PROTECTION_DISCLAIMER)
-        assertTrue(norm(PdfInspection(render(dataset())).text).endsWith(norm(literal)))
+    fun `catalogue - services 1 to 5 and advice 1 to 7 in order, rebranded, no web or data-protection text`() {
+        assertEquals((1..5).map { "$it.-" }, PremiumInformationTexts.SERVICES.map { it.substringBefore(' ') })
+        assertEquals((1..7).map { "$it.-" }, PremiumInformationTexts.ADVICE.map { it.substringBefore(' ') })
+        assertTrue(PremiumInformationTexts.INTRO.first().startsWith("Desde PowerApp queremos agradecerle"))
+        val all = PremiumInformationTexts.ORDERED.joinToString(" ").lowercase()
+        listOf("briel", "marnysos", "www.", "trayectoria", "protección de datos", "**").forEach { assertFalse(it in all, it) }
     }
 
     @Test
@@ -94,14 +77,6 @@ class PremiumCompanySectionTest {
     }
 
     @Test
-    fun `forbidden vocabulary absent`() {
-        val text = norm(PdfInspection(render(dataset())).text)
-            .replace(norm(ComparatorReportPdfTexts.DATA_PROTECTION_DISCLAIMER), "").lowercase()
-        listOf("penaliz", "recargo", "garantiz", "ahorro garantizado", "recomend", "optimi", "diagn",
-            "años de experiencia", "clientes", "www.brielmarnysos.com").forEach { assertFalse(it in text, "found '$it'") }
-    }
-
-    @Test
     fun `fonts - only embedded Liberation Sans`() {
         val fonts = PdfInspection(render(dataset())).fonts
         assertTrue(fonts.isNotEmpty())
@@ -109,11 +84,5 @@ class PremiumCompanySectionTest {
             assertTrue(embedded, "font $name not embedded")
             assertTrue("LiberationSans" in name, "unexpected font $name")
         }
-    }
-
-    @Test
-    fun `E missing logo fails loudly`() {
-        val broken = PremiumCompanySection(logoResource = "/images/does_not_exist.png")
-        assertThrows<IllegalStateException> { render(dataset(), broken) }
     }
 }

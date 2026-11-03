@@ -29,7 +29,8 @@ class TariffPeriodResolverTest {
 
     @Test
     fun `supported table is the only tariff definition`() {
-        assertEquals(setOf("2.0TD", "3.0TD"), TariffPeriodResolver.SUPPORTED.keys)
+        assertEquals(setOf("2.0TD", "3.0TD", "6.1TD", "6.2TD", "6.3TD", "6.4TD"), TariffPeriodResolver.SUPPORTED.keys)
+        listOf("6.1TD", "6.2TD", "6.3TD", "6.4TD").forEach { assertEquals(all to all, TariffPeriodResolver.SUPPORTED[it], it) }
         assertEquals(p13 to p12, TariffPeriodResolver.SUPPORTED["2.0TD"])
         assertEquals(all to all, TariffPeriodResolver.SUPPORTED["3.0TD"])
     }
@@ -43,7 +44,9 @@ class TariffPeriodResolverTest {
             Case(null, "2,0TD", TariffProfileStatus.SUPPORTED, "2.0TD", p13, p12),
             Case("", "2.0TD", TariffProfileStatus.SUPPORTED, "2.0TD", p13, p12),
             Case("3.0TD ML", "3.0TD", TariffProfileStatus.SUPPORTED, "3.0TD", all, all),
-            Case("6.1TD", "6.1TD", TariffProfileStatus.FALLBACK_UNKNOWN, "6.1TD", p13, p12),
+            Case("6.1TD", "6.1TD", TariffProfileStatus.SUPPORTED, "6.1TD", all, all),
+            Case(null, "6.4TD", TariffProfileStatus.SUPPORTED, "6.4TD", all, all),
+            Case("9.9TD", "9.9TD", TariffProfileStatus.FALLBACK_UNKNOWN, "9.9TD", p13, p12),
             Case(null, "", TariffProfileStatus.FALLBACK_UNKNOWN, null, p13, p12),
             Case("garbage", "fixed", TariffProfileStatus.FALLBACK_UNKNOWN, null, p13, p12),
             Case("2.0TD", "3.0TD", TariffProfileStatus.FALLBACK_CONFLICT, null, p13, p12),

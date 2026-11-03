@@ -79,7 +79,7 @@ class PremiumTariffSectionTest {
 
     @Test
     fun `4 unknown tariff discloses T1 and shows the periods present in the source`() {
-        listOf(F.tariffDataset("6.1TD", "6.1TD"), F.tariffDataset(null, "")).forEach { ds ->
+        listOf(F.tariffDataset("9.9TD", "9.9TD"), F.tariffDataset(null, "")).forEach { ds ->
             val pdf = render(ds)
             assertCoverOnly(pdf, t1)
             listOf("P4", "P5", "P6").forEach { assertFalse(pdf.text.contains(it), it) }

@@ -15,7 +15,8 @@ class PremiumTariffPreviewTest {
             "20td-typical" to F.tariffDataset(),
             "20td-zeros" to F.tariffDataset(rows = F.tariff20Rows(zeros = true), zeros = true),
             "30td-typical" to F.documentDataset(),
-            "unknown-61td" to F.tariffDataset("6.1TD", "6.1TD"),
+            "unknown-99td" to F.tariffDataset("9.9TD", "9.9TD"),
+            "supported-61td" to F.tariffDataset("6.1TD", "6.1TD"),
             "conflict" to F.tariffDataset("2.0TD", "3.0TD"),
             "inconsistent" to F.tariffDataset(rows = F.tariff20InconsistentRows())
         ).forEach { (name, d) ->

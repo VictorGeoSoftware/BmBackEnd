@@ -22,7 +22,11 @@ object TariffPeriodResolver {
     /** Supported tariffs: code → (energy periods, power periods). */
     val SUPPORTED: Map<String, Pair<List<Int>, List<Int>>> = mapOf(
         "2.0TD" to ((1..3).toList() to (1..2).toList()),
-        "3.0TD" to ((1..6).toList() to (1..6).toList())
+        "3.0TD" to ((1..6).toList() to (1..6).toList()),
+        "6.1TD" to ((1..6).toList() to (1..6).toList()),
+        "6.2TD" to ((1..6).toList() to (1..6).toList()),
+        "6.3TD" to ((1..6).toList() to (1..6).toList()),
+        "6.4TD" to ((1..6).toList() to (1..6).toList())
     )
 
     private val CODE = Regex("^(\\d)[.,_]?(\\d)\\s*TD\\b")
