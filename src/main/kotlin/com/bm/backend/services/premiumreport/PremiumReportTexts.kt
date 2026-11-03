@@ -2,9 +2,9 @@ package com.bm.backend.services.premiumreport
 
 /** Approved Spanish copy for the Premium report cover (user answers 2026-10-29). Later pages add their own objects. */
 object PremiumReportTexts {
-    const val TITLE = "ESTUDIO COMPLETO DE SUMINISTRO ELÉCTRICO"
+    const val TITLE = "INFORME COMPLETO DE SUMINISTRO ELÉCTRICO"
     const val SUBTITLE = "Análisis de consumo y oferta económica"
-    const val AUTHOR = "BM"
+    const val AUTHOR = "PowerApp"
 
     const val ISSUE_DATE_LABEL = "Fecha del informe:"
     const val SUPPLY_SECTION = "DATOS DEL SUMINISTRO"

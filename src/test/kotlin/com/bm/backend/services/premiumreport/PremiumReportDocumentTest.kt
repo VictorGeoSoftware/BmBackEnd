@@ -36,13 +36,13 @@ class PremiumReportDocumentTest {
         PdfInspection(PremiumReportPdf.render(listOf(section), dataset)).pageCount
 
     @Test
-    fun `A and B sections in Q1 order with increasing start pages, company last`() {
+    fun `A and B sections in Q1 order with increasing start pages, information page last`() {
         val d = F.documentDataset()
         val pdf = render(d)
         assertTrue(pdf.isPdf)
         assertTrue(pdf.pageTexts[0].contains(PremiumReportTexts.TITLE))
         val starts = listOf(PremiumActiveTexts.SECTION, PremiumReactiveTexts.SECTION, PremiumDemandTexts.SECTION,
-            d.comparison.title, PremiumCompanyTexts.DATA_PROTECTION_SECTION).map { pdf.firstPage(it) }
+            d.comparison.title, PremiumInformationTexts.TITLE).map { pdf.firstPage(it) }
         assertTrue(starts.all { it > 1 }, "$starts")
         assertEquals(starts.sorted().distinct(), starts, "$starts")
         assertEquals(pdf.pageCount, starts.last())
@@ -53,7 +53,7 @@ class PremiumReportDocumentTest {
         val d = F.documentDataset()
         val pdf = render(d)
         val comparison = pdf.firstPage(d.comparison.title)
-        val company = pdf.firstPage(PremiumCompanyTexts.DATA_PROTECTION_SECTION)
+        val company = pdf.firstPage(PremiumInformationTexts.TITLE)
         pdf.portraitPages.forEachIndexed { i, portrait ->
             assertEquals((i + 1) !in comparison until company, portrait, "page ${i + 1}")
         }
@@ -68,6 +68,24 @@ class PremiumReportDocumentTest {
     }
 
     @Test
+    fun `G PowerApp branding only - watermark on every page, header logo from page 2, no Briel text or logo`() {
+        val watermark = 409 to 518
+        val logo = 1045 to 256
+        val briel = 1049 to 617
+        listOf(F.documentDataset(), F.documentUnavailableDataset(), F.documentDataset(offers = 15),
+            F.documentDataset(F.documentActiveOnlyRows())).forEach { d ->
+            val pdf = render(d)
+            assertTrue(pdf.portraitPages.contains(false), "landscape comparison page expected")
+            pdf.pageImageSizes.forEachIndexed { i, images ->
+                assertTrue(watermark in images, "page ${i + 1} watermark: $images")
+                assertTrue(logo in images, "page ${i + 1} logo: $images")
+                assertFalse(briel in images, "page ${i + 1} Briel logo")
+            }
+            listOf("briel", "marnysos").forEach { assertFalse(it in pdf.text.lowercase(), it) }
+        }
+    }
+
+    @Test
     fun `E only embedded Liberation Sans, neutral metadata`() {
         val bytes = renderer.render(F.documentDataset())
         val pdf = PdfInspection(bytes)
@@ -77,8 +95,8 @@ class PremiumReportDocumentTest {
             assertTrue(Regex("/?[A-Z]{6}\\+LiberationSans(-Bold)?").matches(name), name)
         }
         assertEquals(PremiumReportTexts.TITLE, pdf.info["Title"])
-        assertEquals("BM", pdf.info["Author"])
-        assertEquals("BM", pdf.info["Creator"])
+        assertEquals("PowerApp", pdf.info["Author"])
+        assertEquals("PowerApp", pdf.info["Creator"])
         val metadata = pdf.info.values.joinToString(" ") + String(PdfReader(bytes).metadata ?: ByteArray(0), Charsets.UTF_8)
         listOf(F.CUPS, F.JOB_ID, "Cliente Prueba", "Calle Ficticia").forEach { assertFalse(metadata.contains(it), it) }
     }
