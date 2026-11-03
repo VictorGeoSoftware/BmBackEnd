@@ -59,7 +59,7 @@ class PremiumDemandSection : PremiumReportSection {
         comparison(document, writer, summary, w, periods)
 
         // Blocks 4–5: readings chart and table.
-        val readings = DemandChartModel.readings(summary.series)
+        val readings = DemandChartModel.readings(summary.historySeries)
         heading(document, writer, PremiumDemandTexts.READINGS_CHART_TITLE, readings?.let { it.height.toFloat() + 70f } ?: 60f)
         if (readings == null) {
             note(document, PremiumDemandTexts.READINGS_CHART_UNAVAILABLE)
@@ -67,7 +67,6 @@ class PremiumDemandSection : PremiumReportSection {
         }
         chart(document, readings, writer)
         note(document, PremiumDemandTexts.readingsCaption(periods))
-        if (readings.shownRows < readings.totalRows) note(document, PremiumDemandTexts.readingsCap(readings.shownRows, readings.totalRows))
         readingsTable(document, writer, summary, periods)
     }
 
@@ -231,7 +230,7 @@ class PremiumDemandSection : PremiumReportSection {
         periods.forEach { n ->
             t.addCell(header("P$n${PremiumDemandTexts.UNIT_SUFFIX}", background = PremiumReportTheme.PERIOD_COLORS[n - 1], color = PremiumReportTheme.PERIOD_TEXT_COLORS[n - 1]))
         }
-        s.series.forEach { p ->
+        s.historySeries.forEach { p ->
             val marks = (if (p.inOverlap) PremiumDemandTexts.OVERLAP_MARK else "") + (if (p.activeAllZero) PremiumDemandTexts.ACTIVE_ZERO_MARK else "")
             t.addCell(cell(PremiumReportFormat.date(p.start) + marks, align = Element.ALIGN_LEFT))
             t.addCell(cell(PremiumReportFormat.date(p.endExclusive.minusDays(1)), align = Element.ALIGN_LEFT))
@@ -241,7 +240,7 @@ class PremiumDemandSection : PremiumReportSection {
         }
         document.add(t)
         note(document, PremiumDemandTexts.DATES_NOTE)
-        if (s.series.any { it.inOverlap }) note(document, PremiumDemandTexts.OVERLAP_FOOTNOTE)
-        if (s.series.any { it.activeAllZero }) note(document, PremiumDemandTexts.ACTIVE_ZERO_FOOTNOTE)
+        if (s.historySeries.any { it.inOverlap }) note(document, PremiumDemandTexts.OVERLAP_FOOTNOTE)
+        if (s.historySeries.any { it.activeAllZero }) note(document, PremiumDemandTexts.ACTIVE_ZERO_FOOTNOTE)
     }
 }

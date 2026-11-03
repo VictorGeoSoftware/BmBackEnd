@@ -6,7 +6,6 @@ import com.bm.backend.testing.PdfInspection
 import com.bm.backend.testing.PremiumReportFixtures
 import com.bm.backend.testing.PremiumReportFixtures.activeDataset
 import com.bm.backend.testing.PremiumReportFixtures.history
-import com.bm.backend.utils.HistoryCoverageCalculator
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
@@ -20,7 +19,7 @@ class PremiumActiveSectionTest {
     private fun assertHasNot(text: String, vararg parts: String) = parts.forEach { assertFalse(it in text, "unexpected '$it' in: $text") }
 
     @Test
-    fun `A two-year sample shows firm figures, YoY, overlap disclosure and the high-interval window`() {
+    fun `A two-year sample shows firm figures, YoY, overlap disclosure and the per-reading chart`() {
         val pdf = render(activeDataset(history(PremiumReportFixtures.sampleRows())))
         assertTrue(pdf.isPdf)
         assertTrue(pdf.portraitPages.all { it })
@@ -29,15 +28,11 @@ class PremiumActiveSectionTest {
             "72.677", "64.948", "7.201", "8.225", "7.467", "9.031", "3.684", "37.069", "9,9 %",
             "Variación interanual: +11,9 %",
             "Lecturas solapadas 31/05/2026–29/06/2026: una de ellas sin consumo; no altera el total.",
-            "Intervalos de mayor consumo medio diario",
-            "Calculado sobre últimos 12 meses (31/07/2025 – 30/07/2026) (Completo)",
-            "kWh/día", "P1 7.201 kWh (9,9 %)",
-            "El histórico cubre últimos 12 meses (31/07/2025 – 30/07/2026); la fuente no indica su periodo de referencia.")
-        // kWh/día in the high-interval table always has exactly one decimal.
-        val perDay = Regex("\\d{2}/\\d{2}/\\d{4} \\d{2}/\\d{2}/\\d{4} \\d+ [\\d.]+ ([\\d.,]+) P\\d").findAll(text).map { it.groupValues[1] }.toList()
-        assertTrue(perDay.size >= 3, text)
-        perDay.forEach { assertTrue(Regex("^[\\d.]+,\\d$").matches(it), "kWh/día '$it' must have one decimal") }
-        assertHasNot(text, "Histórico inferior a 12 meses", "Parcial:", "Sin cifra firme")
+            "P1 7.201 kWh (9,9 %)", "Consumo de energía activa por lectura", PremiumActiveTexts.READINGS_CAPTION)
+        // Feedback 2026-11-03: daily averages, high intervals and source comparisons are gone.
+        assertHasNot(text, "Histórico inferior a 12 meses", "Parcial:", "Sin cifra firme", "kWh/día",
+            "Consumo medio diario por lectura", "Intervalos de mayor consumo medio diario", "Comparación con fuentes anuales",
+            "SIPS (distribuidora)", "Consumo anual del estudio básico", "El histórico cubre")
     }
 
     @Test
@@ -55,12 +50,9 @@ class PremiumActiveSectionTest {
         val text = render(activeDataset(history(PremiumReportFixtures.overlapRows()))).text
         assertHas(text, "Sin cifra firme: lecturas solapadas sin resolver",
             "Distribución por periodo no disponible: lecturas solapadas sin resolver.")
-        assertTrue("Calculado sobre 12 meses anteriores (31/07/2024 – 30/07/2025)" in text ||
-            "No hay intervalos disponibles para clasificar." in text, text)
         assertHas(text, "Variación interanual no disponible (los últimos 12 meses tienen lecturas solapadas sin resolver).")
         assertHasNot(text, "72.677", "Variación interanual: +",
-            "Histórico inferior a 12 meses completos", "no están completos", "no está completa", "El histórico cubre")
-        assertHas(text, "Comparación no posible: los últimos 12 meses tienen lecturas solapadas sin resolver.")
+            "Histórico inferior a 12 meses completos", "no están completos", "no está completa", "El histórico cubre", "Comparación no posible")
     }
 
     @Test
@@ -75,9 +67,8 @@ class PremiumActiveSectionTest {
     fun `D unavailable history renders the empty texts without charts`() {
         val pdf = render(activeDataset(StudyHistory.unavailable(PremiumReportFixtures.CUPS, "not_captured")))
         val text = pdf.text
-        assertHas(text, "ENERGÍA ACTIVA", "Sin datos", "No hay intervalos disponibles para clasificar.",
-            "Comparación no posible: no hay histórico de energía activa.")
-        assertHasNot(text, "no está completa", "El histórico cubre")
+        assertHas(text, "ENERGÍA ACTIVA", "Sin datos")
+        assertHasNot(text, "no está completa", "El histórico cubre", "Comparación no posible", PremiumActiveTexts.READINGS_CHART_TITLE)
         assertHasNot(text, "kWh/día", "not_captured", "Histórico inferior a 12 meses completos")
     }
 
@@ -86,30 +77,21 @@ class PremiumActiveSectionTest {
         val d = java.time.LocalDate.parse("2025-01-01")
         val rows = listOf(PremiumReportFixtures.row(d, java.time.LocalDate.parse("2026-07-31"), PremiumReportFixtures.pv(1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0)))
         val text = render(activeDataset(history(rows))).text
-        assertHas(text, "Sin datos", "Comparación no posible: la ventana de 12 meses no está completa",
+        assertHas(text, "Sin datos",
             "Variación interanual no disponible (los últimos 12 meses no están completos).",
-            "Distribución por periodo no disponible: no hay 12 meses completos.", "No hay intervalos disponibles para clasificar.")
+            "Distribución por periodo no disponible: no hay 12 meses completos.")
         assertHasNot(text, "no hay histórico de energía activa", "El histórico cubre", "Histórico inferior a 12 meses completos")
     }
 
     @Test
-    fun `E comparisons keep source and history values with provenance`() {
-        val text = render(activeDataset(history(PremiumReportFixtures.sampleRows()))).text
-        assertHas(text, "SIPS (distribuidora)", "Consumo anual del estudio básico", "37.169", "-100", "+201",
-            "El histórico cubre últimos 12 meses (31/07/2025 – 30/07/2026); la fuente no indica su periodo de referencia.")
-        val partial = render(activeDataset(history(PremiumReportFixtures.partialRows()))).text
-        assertHas(partial, "Comparación no posible: la ventana de 12 meses no está completa", "37.169", "72.777")
-    }
-
-    @Test
-    fun `F long history flows across pages with every row and the chart cap disclosed`() {
+    fun `F long history flows across pages with every row and no chart cap`() {
         val rows = PremiumReportFixtures.longRows()
         val pdf = render(activeDataset(history(rows)))
         assertTrue(pdf.pageCount >= 2)
         val text = pdf.text
         val fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy")
         rows.forEach { assertTrue(it.startDate.format(fmt) in text, "missing ${it.startDate}") }
-        assertHas(text, "Se muestran las 36 lecturas más recientes de 40.")
+        assertHasNot(text, "lecturas más recientes")
         assertTrue(Regex("Desde Hasta Días").findAll(text).count() >= 2, "header not repeated")
     }
 
@@ -130,8 +112,6 @@ class PremiumActiveSectionTest {
         val ds = activeDataset(history(PremiumReportFixtures.sampleRows()))
         val a = render(ds); val b = render(ds)
         assertEquals(a.text, b.text)
-        val h = ds.history
-        assertEquals(ActiveChartModel.readings(h, HistoryCoverageCalculator.calculate(h)), ActiveChartModel.readings(h, HistoryCoverageCalculator.calculate(h)))
         val fonts = a.fonts
         fonts.forEach { (name, embedded) ->
             assertTrue(embedded, "font $name not embedded")

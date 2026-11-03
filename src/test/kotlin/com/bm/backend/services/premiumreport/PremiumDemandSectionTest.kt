@@ -73,7 +73,6 @@ class PremiumDemandSectionTest {
         "K8" to lit(T.NO_READINGS_CELL),
         "G0" to lit(T.READINGS_CHART_TITLE),
         "G2" to lit(T.READINGS_CAPTION),
-        "G3" to lit(T.readingsCap(0, 0).substringAfter("0 ").substringBefore(" 0")),
         "G4" to lit(T.READINGS_CHART_UNAVAILABLE),
         "T0" to lit(T.READINGS_TABLE_TITLE),
         "T1" to lit(T.DATES_NOTE),
@@ -93,7 +92,7 @@ class PremiumDemandSectionTest {
 
     /** G1 (readings chart unit and bar labels) lives in the chart model; it is present iff the readings chart is. */
     private fun g1(ds: ReportDataset): Boolean =
-        DemandChartModel.readings(summary(ds).series)?.let { m ->
+        DemandChartModel.readings(summary(ds).historySeries)?.let { m ->
             m.unit == T.UNIT && m.bars.all { Regex("^$date – $date: $num ${T.UNIT}$").matches(it.label) }
         } ?: false
 
@@ -158,7 +157,7 @@ class PremiumDemandSectionTest {
         val s = summary(ds)
         assertEquals(StudyHistoryStatus.AVAILABLE, s.status)
         assertEquals(DemandWindowStatus.UNAVAILABLE, s.window!!.status)
-        assertScenario(ds, "H0 W1 H1 N3 N5 K0 KU2 G0 G4", listOf(w1, T.crossing(1)))
+        assertScenario(ds, "H0 W1 H1 N3 N5 K0 KU2 G0 G1 G2 T0 T1", listOf(w1, T.crossing(1)))
     }
 
     @Test
@@ -196,9 +195,13 @@ class PremiumDemandSectionTest {
     }
 
     @Test
-    fun `L more than 36 readings are capped in the chart and disclosed, the table lists all`() {
+    fun `L the full history is charted and listed without a cap`() {
         val ds = ds(PremiumReportFixtures.demandLongRows())
-        val text = assertScenario(ds, "$baseA G3", listOf(w1, T.readingsCap(36, 73)))
+        val text = assertScenario(ds, baseA, listOf(w1))
+        val fmt = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")
+        val all = summary(ds).historySeries
+        assertEquals(all.size, DemandChartModel.readings(all)!!.bars.size)
+        all.forEach { assertTrue(it.start.format(fmt) in text, "missing ${it.start}") }
         assertTrue(Regex("Desde Hasta Días").findAll(text).count() >= 2, "header not repeated")
         assertTrue("26/07/2026" in text && "31/07/2025" in text)
     }
@@ -219,7 +222,7 @@ class PremiumDemandSectionTest {
         val a = render(ds); val b = render(ds)
         assertEquals(a.text, b.text)
         val s = summary(ds)
-        assertEquals(DemandChartModel.readings(s.series), DemandChartModel.readings(s.series))
+        assertEquals(DemandChartModel.readings(s.historySeries), DemandChartModel.readings(s.historySeries))
         assertEquals(DemandChartModel.comparison(s.periods), DemandChartModel.comparison(s.periods))
         assertTrue(a.fonts.isNotEmpty())
         a.fonts.forEach { (name, embedded) ->

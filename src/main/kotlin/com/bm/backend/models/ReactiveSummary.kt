@@ -20,7 +20,9 @@ data class ReactiveSummary(
     val ratioReason: String?,
     val ratios: List<ReactiveRatio>,
     val overallRatio: ReactiveRatio,
-    val series: List<ReactiveSeriesPoint>
+    val series: List<ReactiveSeriesPoint>,
+    /** Every dated reactive row of the history up to the anchor (same construction as [series]), date order. */
+    val historySeries: List<ReactiveSeriesPoint> = emptyList()
 ) {
     companion object {
         fun unavailable(reason: String, ratioReason: String? = null): ReactiveSummary = ReactiveSummary(

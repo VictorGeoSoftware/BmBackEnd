@@ -35,11 +35,12 @@ data class ActiveChartModel(
     val totalRows: Int,
     val shownRows: Int,
     /** Reference lines (demanded-power page); empty for every other chart, which therefore draws unchanged. */
-    val markers: List<ChartMarker> = emptyList()
+    val markers: List<ChartMarker> = emptyList(),
+    /** Tariff periods shown as a colour legend above the plot (stacked per-reading charts); empty elsewhere. */
+    val legend: List<Int> = emptyList()
 ) {
     companion object {
         const val WIDTH = 511.0
-        const val READINGS_CAP = 36
         private const val VALUE_DIVISIONS = 5
 
         /** Smallest 1/2/5×10ⁿ ≥ [value]; 1 when the value is not positive. */
@@ -88,62 +89,6 @@ data class ActiveChartModel(
                 horizontal = true, axisMax = axisMax, unit = "%",
                 valueTicks = ticks(axisMax, plotWidth) { "${tickNumber(it)} %" },
                 categoryTicks = emptyList(), bars = bars, totalRows = periods.size, shownRows = periods.size
-            )
-        }
-
-        /**
-         * One vertical bar per source row on a true date axis (D6): height = row kWh/day (sum of reported cells over
-         * its days), width = its days. The most recent [READINGS_CAP] dated rows are shown. Null-only rows are gaps,
-         * zero rows zero markers, rows in a disclosed ACTIVE overlap are outlined. Null when no dated row exists.
-         */
-        fun readings(history: StudyHistory, coverage: HistoryCoverage): ActiveChartModel? {
-            if (history.status != StudyHistoryStatus.AVAILABLE) return null
-            val dated = history.intervals.indices
-                .filter { ChronoUnit.DAYS.between(history.intervals[it].startDate, history.intervals[it].endDate) > 0 }
-                .sortedWith(compareBy<Int>({ history.intervals[it].startDate }, { history.intervals[it].endDate }, { it }))
-            if (dated.isEmpty()) return null
-            val shown = dated.takeLast(READINGS_CAP)
-            val overlapping = coverage.families[MeasurementFamily.ACTIVE]?.overlaps.orEmpty()
-                .flatMap { listOf(it.firstIndex, it.secondIndex) }.toSet()
-            val start = shown.minOf { history.intervals[it].startDate }
-            val end = shown.maxOf { history.intervals[it].endDate }
-            val span = ChronoUnit.DAYS.between(start, end).toDouble()
-
-            val plotLeft = 46.0
-            val plotBottom = 30.0
-            val plotWidth = WIDTH - plotLeft - 10.0
-            val plotHeight = 150.0
-            val perDay = shown.associateWith { i ->
-                val a = history.intervals[i].active
-                val cells = listOf(a.p1, a.p2, a.p3, a.p4, a.p5, a.p6).filterNotNull()
-                val days = ChronoUnit.DAYS.between(history.intervals[i].startDate, history.intervals[i].endDate)
-                if (cells.isEmpty()) null else cells.sum() / days
-            }
-            val axisMax = niceCeiling(perDay.values.filterNotNull().maxOrNull() ?: 0.0)
-            fun x(d: LocalDate) = plotLeft + ChronoUnit.DAYS.between(start, d) / span * plotWidth
-
-            val bars = shown.map { i ->
-                val r = history.intervals[i]
-                val days = ChronoUnit.DAYS.between(r.startDate, r.endDate)
-                val v = perDay[i]
-                val style = when {
-                    v == null -> ChartBarStyle.NO_DATA
-                    v == 0.0 -> ChartBarStyle.ZERO_MARKER
-                    i in overlapping -> ChartBarStyle.OUTLINED
-                    else -> ChartBarStyle.FILLED
-                }
-                val label = "${PremiumReportFormat.inclusiveRange(r.startDate, r.endDate)}: " +
-                    (v?.let { "${PremiumReportFormat.decimal1(it)} kWh/día" } ?: "—")
-                ChartBar(i, null, v, label, x(r.startDate), plotBottom, days / span * plotWidth,
-                    if (v == null) plotHeight else v / axisMax * plotHeight, style)
-            }
-            return ActiveChartModel(
-                width = WIDTH, height = plotBottom + plotHeight + 16.0,
-                plotLeft = plotLeft, plotBottom = plotBottom, plotWidth = plotWidth, plotHeight = plotHeight,
-                horizontal = false, axisMax = axisMax, unit = "kWh/día",
-                valueTicks = ticks(axisMax, plotHeight) { PremiumReportFormat.decimal1(it) },
-                categoryTicks = monthTicks(start, end).map { ChartTick(x(it) - plotLeft, monthLabel(it)) },
-                bars = bars, totalRows = dated.size, shownRows = shown.size
             )
         }
 
