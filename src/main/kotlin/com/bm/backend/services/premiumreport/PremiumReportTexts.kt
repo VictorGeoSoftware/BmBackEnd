@@ -2,9 +2,9 @@ package com.bm.backend.services.premiumreport
 
 /** Approved Spanish copy for the Premium report cover (user answers 2026-10-29). Later pages add their own objects. */
 object PremiumReportTexts {
-    const val TITLE = "ESTUDIO COMPLETO DE SUMINISTRO ELÉCTRICO"
+    const val TITLE = "INFORME COMPLETO DE SUMINISTRO ELÉCTRICO"
     const val SUBTITLE = "Análisis de consumo y oferta económica"
-    const val AUTHOR = "BM"
+    const val AUTHOR = "PowerApp"
 
     const val ISSUE_DATE_LABEL = "Fecha del informe:"
     const val SUPPLY_SECTION = "DATOS DEL SUMINISTRO"
@@ -26,4 +26,10 @@ object PremiumReportTexts {
         "Las fuentes indican tarifas distintas ($snapshot / $tariffName): se muestran los periodos presentes en la fuente."
     fun tariffInconsistent(code: String) =
         "La fuente publica valores en periodos que no corresponden a la tarifa $code: se muestran los periodos presentes en la fuente."
+
+    /** Caption of the per-reading stacked charts (active, reactive). */
+    fun stackedReadingsCaption(unit: String) =
+        "Cada barra es una lectura de la fuente (no un mes), en el mismo orden que la tabla; su altura es el total " +
+            "de la lectura ($unit), dividido por periodo. Contorno sin relleno: lectura solapada. Banda rayada: lectura " +
+            "sin valores. Raya sobre el eje: lectura con valor 0."
 }

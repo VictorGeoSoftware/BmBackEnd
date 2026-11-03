@@ -41,7 +41,7 @@ class PremiumCoverSectionTest {
             "Fecha de la última lectura:" to "31/07/2026"
         ).forEach { (label, value) -> assertTrue(text.hasRow(label, value), "missing '$label $value' in: $text") }
         listOf(
-            "ESTUDIO COMPLETO DE SUMINISTRO ELÉCTRICO",
+            "INFORME COMPLETO DE SUMINISTRO ELÉCTRICO",
             "Análisis de consumo y oferta económica",
             "Fecha del informe: 29/10/2026",
             "DATOS DEL SUMINISTRO"
@@ -99,7 +99,7 @@ class PremiumCoverSectionTest {
         val info = pdf.info.values.joinToString(" ")
         listOf(CUPS, "Cliente Prueba", "CLIENTE PRUEBA", "Calle Ficticia", "CALLE FICTICIA")
             .forEach { assertFalse(it in info, "metadata leaked '$it'") }
-        assertEquals("BM", pdf.info["Author"])
+        assertEquals("PowerApp", pdf.info["Author"])
         assertEquals(PremiumReportTexts.TITLE, pdf.info["Title"])
     }
 

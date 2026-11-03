@@ -61,7 +61,7 @@ class DemandChartModelTest {
     fun `existing chart models carry no markers`() {
         val rows = PremiumReportFixtures.reactiveCompleteRows()
         val r = com.bm.backend.utils.ReactiveSummaryCalculator.calculate(history(rows), HistoryCoverageCalculator.calculate(history(rows)))
-        assertTrue(ReactiveChartModel.readings(r.series)!!.markers.isEmpty())
+        assertTrue(StackedReadingsChart.model(r.series.map { ReadingSlot(it.start, it.endExclusive, it.values, false) }, (1..6).toList(), "kVArh").markers.isEmpty())
         assertTrue(ReactiveChartModel.distribution(r.window!!)!!.markers.isEmpty())
     }
 
@@ -87,12 +87,13 @@ class DemandChartModelTest {
     }
 
     @Test
-    fun `readings chart zero rows are markers, empty series has no chart and long series are capped`() {
+    fun `readings chart zero rows are markers, empty series has no chart and the full history is never capped`() {
         assertTrue(DemandChartModel.readings(summary(PremiumReportFixtures.demandZeroRows()).series)!!.bars.all { it.style == ChartBarStyle.ZERO_MARKER })
         assertNull(DemandChartModel.readings(emptyList()))
-        val long = DemandChartModel.readings(summary(PremiumReportFixtures.demandLongRows()).series)!!
-        assertEquals(ActiveChartModel.READINGS_CAP, long.bars.size)
-        assertEquals(36, long.shownRows)
-        assertEquals(73, long.totalRows)
+        val s = summary(PremiumReportFixtures.demandLongRows())
+        val long = DemandChartModel.readings(s.historySeries)!!
+        assertEquals(s.historySeries.size, long.bars.size)
+        assertEquals(long.totalRows, long.shownRows)
+        assertEquals(73, long.bars.size)
     }
 }

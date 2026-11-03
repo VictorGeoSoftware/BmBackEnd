@@ -73,7 +73,6 @@ object DemandSummaryCalculator {
         val start = anchor.minusMonths(WINDOW_MONTHS)
         val agg = FamilyWindowAggregator.aggregate(history, MeasurementFamily.MAX_DEMAND, inverted, start, anchor, periods)
         val wStatus = status(agg)
-        val overlapIndices = agg.overlaps.flatMap { listOf(it.firstIndex, it.secondIndex) }.toSet()
         val window = DemandWindowSummary(
             start = agg.start,
             endExclusive = agg.endExclusive,
@@ -140,7 +139,26 @@ object DemandSummaryCalculator {
             )
         }
 
-        val series = rows.map { (i, r) ->
+        val series = points(history, agg)
+        val historySeries = points(history, FamilyWindowAggregator.wholeHistory(history, MeasurementFamily.MAX_DEMAND, inverted, anchor, periods))
+
+        return DemandSummary(
+            status = StudyHistoryStatus.AVAILABLE,
+            reason = null,
+            anchorDate = anchor,
+            window = window,
+            contractedSource = DemandContractedSource.SNAPSHOT_CONTRACTED_POWER_KW,
+            snapshotReason = snapshotReason,
+            periods = statistics,
+            series = series,
+            historySeries = historySeries
+        )
+    }
+
+    private fun points(history: StudyHistory, a: FamilyWindowAggregate): List<DemandSeriesPoint> {
+        val overlapIndices = a.overlaps.flatMap { listOf(it.firstIndex, it.secondIndex) }.toSet()
+        return a.contained.map { i ->
+            val r = history.intervals[i]
             DemandSeriesPoint(
                 index = i,
                 start = r.startDate,
@@ -151,17 +169,6 @@ object DemandSummaryCalculator {
                 activeAllZero = FamilyWindowAggregator.isZeroRow(r.active)
             )
         }
-
-        return DemandSummary(
-            status = StudyHistoryStatus.AVAILABLE,
-            reason = null,
-            anchorDate = anchor,
-            window = window,
-            contractedSource = DemandContractedSource.SNAPSHOT_CONTRACTED_POWER_KW,
-            snapshotReason = snapshotReason,
-            periods = statistics,
-            series = series
-        )
     }
 
     private fun finite(v: Double): Double? = v.takeIf { it.isFinite() }

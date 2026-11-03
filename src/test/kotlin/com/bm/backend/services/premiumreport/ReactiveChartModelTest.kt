@@ -44,35 +44,4 @@ class ReactiveChartModelTest {
         assertEquals("P4 —", m.bars[3].label)
         assertEquals(ChartBarStyle.NO_DATA, m.bars[3].style)
     }
-
-    @Test
-    fun `readings chart has one bar per series row on a date axis with kVArh per day`() {
-        val s = summary(PremiumReportFixtures.reactiveCompleteRows())
-        val m = ReactiveChartModel.readings(s.series)!!
-        assertEquals("kVArh/día", m.unit)
-        assertEquals(s.series.size, m.bars.size)
-        val span = java.time.temporal.ChronoUnit.DAYS.between(s.series.minOf { it.start }, s.series.maxOf { it.endExclusive }).toDouble()
-        s.series.forEachIndexed { i, p ->
-            val b = m.bars[i]
-            assertEquals(p.index, b.sourceIndex)
-            assertTrue(abs(b.value!! - p.total!! / p.days) < 1e-6)
-            assertTrue(abs(b.width - p.days / span * m.plotWidth) < 1e-6)
-            val style = if (p.total == 0.0) ChartBarStyle.ZERO_MARKER else if (p.inUnresolvedOverlap) ChartBarStyle.OUTLINED else ChartBarStyle.FILLED
-            assertEquals(style, b.style)
-        }
-        assertTrue(m.bars.any { it.style == ChartBarStyle.ZERO_MARKER })
-        assertTrue(m.bars.first().label.endsWith(" kVArh/día"))
-        val e = summary(PremiumReportFixtures.reactiveOverlapRows())
-        assertTrue(ReactiveChartModel.readings(e.series)!!.bars.any { it.style == ChartBarStyle.OUTLINED })
-    }
-
-    @Test
-    fun `readings chart caps at 36 rows and is null when the series is empty`() {
-        val s = summary(PremiumReportFixtures.reactiveLongRows())
-        val m = ReactiveChartModel.readings(s.series)!!
-        assertEquals(73, m.totalRows)
-        assertEquals(36, m.shownRows)
-        assertEquals(s.series.takeLast(36).map { it.index }, m.bars.map { it.sourceIndex })
-        assertNull(ReactiveChartModel.readings(emptyList()))
-    }
 }

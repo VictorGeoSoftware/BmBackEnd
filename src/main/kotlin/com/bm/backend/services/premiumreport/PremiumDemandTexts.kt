@@ -67,7 +67,7 @@ object PremiumDemandTexts {
     const val NO_READINGS_CELL = "No calculado: sin lecturas"
 
     // G0–G4 / T0–T3.
-    const val READINGS_CHART_TITLE = "Máxima registrada por lectura (últimos 12 meses)"
+    const val READINGS_CHART_TITLE = "Máxima registrada por lectura"
     val READINGS_CAPTION = readingsCaption(TariffPeriodProfile.ALL_PERIODS)
 
     /** T4a contiguous (`entre P1 y P2`), T4b single (`en P2`), T4c non-contiguous (`en P1, P3`) power periods. */
@@ -81,10 +81,9 @@ object PremiumDemandTexts {
         return "Cada barra es una lectura de la fuente (no un mes): la altura es el mayor valor de maxímetro registrado $where " +
             "en esa lectura (kW) y la anchura los días que cubre. Contorno sin relleno: lectura solapada. Raya sobre el eje: lectura con valor 0."
     }
-    fun readingsCap(shown: Int, total: Int) = PremiumActiveTexts.readingsCap(shown, total)
     const val READINGS_CHART_UNAVAILABLE =
-        "Gráfico de lecturas no disponible: no hay lecturas de potencia demandada dentro de los últimos 12 meses."
-    const val READINGS_TABLE_TITLE = "Lecturas de potencia demandada (últimos 12 meses)"
+        "Gráfico de lecturas no disponible: no hay lecturas de potencia demandada con fechas válidas."
+    const val READINGS_TABLE_TITLE = "Lecturas de potencia demandada"
     const val COL_FROM = PremiumActiveTexts.COL_FROM
     const val COL_TO = PremiumActiveTexts.COL_TO
     const val COL_DAYS = PremiumActiveTexts.COL_DAYS

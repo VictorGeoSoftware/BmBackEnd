@@ -4,14 +4,12 @@ import com.bm.backend.models.ActiveSummary
 import com.bm.backend.models.ActiveWindowKind
 import com.bm.backend.models.ActiveWindowStatus
 import com.bm.backend.models.ActiveWindowSummary
-import com.bm.backend.models.AnnualSource
-import com.bm.backend.models.AnnualSourceComparison
-import com.bm.backend.models.ComparisonStatus
+import com.bm.backend.models.HistoryCoverage
+import com.bm.backend.models.MeasurementFamily
 import com.bm.backend.models.PeriodValues
 import com.bm.backend.models.ReportDataset
 import com.bm.backend.models.StudyHistory
 import com.bm.backend.models.StudyHistoryStatus
-import com.bm.backend.models.ValueComparison
 import com.bm.backend.utils.ActiveSummaryCalculator
 import com.bm.backend.utils.HistoryCoverageCalculator
 import com.bm.backend.utils.TariffPeriodResolver
@@ -55,16 +53,7 @@ class PremiumActiveSection : PremiumReportSection {
         if (distribution != null) chart(document, writer, distribution)
         else note(document, "${PremiumActiveTexts.DISTRIBUTION_UNAVAILABLE} ${distributionReason(latest)}")
 
-        val readings = ActiveChartModel.readings(history, coverage)
-        heading(document, writer, PremiumActiveTexts.READINGS_CHART_TITLE, readings?.let { it.height.toFloat() + 70f } ?: 60f)
-        if (readings != null) {
-            chart(document, writer, readings)
-            note(document, PremiumActiveTexts.READINGS_CAPTION)
-            if (readings.shownRows < readings.totalRows) note(document, PremiumActiveTexts.readingsCap(readings.shownRows, readings.totalRows))
-        } else note(document, PremiumActiveTexts.READINGS_CHART_UNAVAILABLE)
-
-        highIntervals(document, writer, summary)
-        comparisons(document, writer, summary, latest)
+        readingsChart(document, writer, history, coverage, periods)
         readingsTable(document, writer, history, latest, periods)
     }
 
@@ -237,78 +226,18 @@ class PremiumActiveSection : PremiumReportSection {
         document.add(holder)
     }
 
-    // ---------- D7 high intervals ----------
+    // ---------- per-reading chart (feedback 2026-11-03) ----------
 
-    private fun highIntervals(document: Document, writer: PdfWriter, s: ActiveSummary) {
-        heading(document, writer, PremiumActiveTexts.HIGH_TITLE)
-        val first = s.highIntervals.firstOrNull()
-        val source = first?.let { h -> s.windows.firstOrNull { h.index in it.contained } }
-        if (first == null || source == null) {
-            note(document, PremiumActiveTexts.HIGH_EMPTY)
-            return
+    private fun readingsChart(document: Document, writer: PdfWriter, history: StudyHistory, coverage: HistoryCoverage, periods: List<Int>) {
+        if (history.intervals.isEmpty()) return
+        val overlapping = coverage.families[MeasurementFamily.ACTIVE]?.overlaps.orEmpty()
+            .flatMap { listOf(it.firstIndex, it.secondIndex) }.toSet()
+        val slots = history.intervals.mapIndexed { i, r -> ReadingSlot(r.startDate, r.endDate, r.active, i in overlapping) }
+        StackedReadingsChart.charts(slots, periods, PremiumActiveTexts.UNIT_KWH).forEachIndexed { i, model ->
+            if (i == 0) heading(document, writer, PremiumActiveTexts.READINGS_CHART_TITLE, model.height.toFloat() + 70f)
+            chart(document, writer, model)
         }
-        note(document, "${PremiumActiveTexts.HIGH_CAPTION} ${windowLabel(source)} (${statusText(source)})")
-        val t = table(floatArrayOf(1.2f, 1.2f, 0.7f, 1f, 1f, 1.3f))
-        t.addCell(header(PremiumActiveTexts.COL_FROM, Element.ALIGN_LEFT))
-        t.addCell(header(PremiumActiveTexts.COL_TO, Element.ALIGN_LEFT))
-        listOf(PremiumActiveTexts.COL_DAYS, PremiumActiveTexts.COL_KWH, PremiumActiveTexts.COL_KWH_DAY).forEach { t.addCell(header(it)) }
-        t.addCell(header(PremiumActiveTexts.COL_DOMINANT, Element.ALIGN_CENTER))
-        s.highIntervals.forEach { h ->
-            t.addCell(cell(PremiumReportFormat.date(h.start), align = Element.ALIGN_LEFT))
-            t.addCell(cell(PremiumReportFormat.date(h.endExclusive.minusDays(1)), align = Element.ALIGN_LEFT))
-            t.addCell(cell(h.days.toString()))
-            t.addCell(cell(PremiumReportFormat.kwh(h.totalKwh)))
-            t.addCell(cell(PremiumReportFormat.decimal1(h.kwhPerDay)))
-            t.addCell(cell(h.dominantPeriod?.let { "P$it" } ?: PremiumActiveTexts.MISSING, align = Element.ALIGN_CENTER))
-        }
-        document.add(t)
-    }
-
-    // ---------- D8 comparisons ----------
-
-    private fun comparisons(document: Document, writer: PdfWriter, s: ActiveSummary, latest: ActiveWindowSummary?) {
-        heading(document, writer, PremiumActiveTexts.COMPARISON_TITLE)
-        if (latest?.status == ActiveWindowStatus.COMPLETE) note(document, PremiumActiveTexts.comparisonNote(windowLabel(latest)))
-        // "No history" only when there truly is none; a latest window empty only because its rows cross the
-        // window boundary is reported as not complete (true), never as "no history".
-        val hasActiveHistory = s.status == StudyHistoryStatus.AVAILABLE && s.historyStart != null
-        val notComparable = when {
-            latest?.status == ActiveWindowStatus.OVERLAP_UNRESOLVED -> PremiumActiveTexts.NOT_COMPARABLE_OVERLAP
-            latest == null || (latest.status == ActiveWindowStatus.UNAVAILABLE && !hasActiveHistory) ->
-                PremiumActiveTexts.NOT_COMPARABLE_NO_HISTORY
-            else -> PremiumActiveTexts.NOT_COMPARABLE
-        }
-        s.comparisons.forEach { c -> comparison(document, writer, c, notComparable) }
-    }
-
-    private fun comparison(document: Document, writer: PdfWriter, c: AnnualSourceComparison, notComparable: String) {
-        if (writer.getVerticalPosition(true) - document.bottom() < 190f) document.newPage()
-        val label = if (c.source == AnnualSource.SIPS_SNAPSHOT) PremiumActiveTexts.SOURCE_SIPS else PremiumActiveTexts.SOURCE_LEGACY
-        document.add(Paragraph(label, PremiumReportTheme.bold()).apply { spacingBefore = 8f; spacingAfter = 2f; keepTogether = true })
-        when (c.status) {
-            ComparisonStatus.SOURCE_UNAVAILABLE -> { note(document, PremiumActiveTexts.SOURCE_UNAVAILABLE); return }
-            ComparisonStatus.NOT_COMPARABLE -> note(document, notComparable)
-            ComparisonStatus.COMPARED -> Unit
-        }
-        val compared = c.status == ComparisonStatus.COMPARED
-        val t = table(floatArrayOf(1f, 1.3f, 1.3f, 1.3f, 1.2f))
-        t.addCell(header(PremiumActiveTexts.COL_PERIOD, Element.ALIGN_LEFT))
-        t.addCell(header("${PremiumActiveTexts.COL_SOURCE} (kWh)"))
-        t.addCell(header("${PremiumActiveTexts.COL_HISTORY} (kWh)"))
-        t.addCell(header(PremiumActiveTexts.COL_DIFF_KWH))
-        t.addCell(header(PremiumActiveTexts.COL_DIFF_PCT))
-        (c.periods + c.total).forEach { v -> comparisonRow(t, v, compared) }
-        document.add(t)
-    }
-
-    private fun comparisonRow(t: PdfPTable, v: ValueComparison, compared: Boolean) {
-        val bold = v.period == null
-        val font = if (bold) tableBold else tableFont
-        t.addCell(cell(v.period?.let { "P$it" } ?: PremiumActiveTexts.TOTAL, font, Element.ALIGN_LEFT))
-        t.addCell(cell(kwh(v.sourceKwh), font))
-        t.addCell(cell(if (compared) kwh(v.historyKwh) else PremiumActiveTexts.MISSING, font))
-        t.addCell(cell(v.differenceKwh?.takeIf { compared }?.let { PremiumReportFormat.signedKwh(it) } ?: PremiumActiveTexts.MISSING, font))
-        t.addCell(cell(v.differencePct?.takeIf { compared }?.let { PremiumReportFormat.signedPercent(it) } ?: PremiumActiveTexts.MISSING, font))
+        note(document, PremiumActiveTexts.READINGS_CAPTION)
     }
 
     // ---------- D9 readings table ----------

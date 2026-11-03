@@ -14,7 +14,7 @@ import com.lowagie.text.pdf.PdfWriter
 import java.time.Clock
 
 /**
- * Portrait cover: BM logo, approved title/subtitle, issue date and the supply identity. Holder/address come from
+ * Portrait cover: PowerApp logo, approved title/subtitle, issue date and the supply identity. Holder/address come from
  * the broker-entered comparison, CUPS from the study; snapshot rows appear only when published (never placeholders).
  * Contracted power lists the tariff's power periods; a fallback tariff profile adds one T1–T3 disclosure.
  */
@@ -106,8 +106,8 @@ class PremiumCoverSection(
     }
 
     companion object {
-        const val LOGO_RESOURCE = "/images/logo_briel.png"
-        private const val LOGO_MAX_WIDTH = 240f
-        private const val LOGO_MAX_HEIGHT = 141f
+        const val LOGO_RESOURCE = "/images/powerapp_logo.png"
+        private const val LOGO_MAX_WIDTH = 300f
+        private const val LOGO_MAX_HEIGHT = 74f
     }
 }

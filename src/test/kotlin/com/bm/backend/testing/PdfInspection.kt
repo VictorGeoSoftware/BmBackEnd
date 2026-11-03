@@ -47,6 +47,17 @@ class PdfInspection(val bytes: ByteArray) {
             return result
         }
 
+    /** Pixel sizes (width x height) of the image XObjects each page references, in page order. */
+    val pageImageSizes: List<Set<Pair<Int, Int>>>
+        get() = (1..pageCount).map { page ->
+            val xobjects = reader.getPageN(page).getAsDict(PdfName.RESOURCES)?.getAsDict(PdfName.XOBJECT)
+            xobjects?.keys.orEmpty().mapNotNull { key ->
+                val stream = PdfReader.getPdfObject(xobjects!!.get(key)) as? PdfDictionary ?: return@mapNotNull null
+                if (stream.getAsName(PdfName.SUBTYPE) != PdfName.IMAGE) return@mapNotNull null
+                stream.getAsNumber(PdfName.WIDTH).intValue() to stream.getAsNumber(PdfName.HEIGHT).intValue()
+            }.toSet()
+        }
+
     private fun embedded(font: PdfDictionary): Boolean {
         val descendants: PdfArray? = font.getAsArray(PdfName.DESCENDANTFONTS)
         val target = descendants?.getAsDict(0) ?: font

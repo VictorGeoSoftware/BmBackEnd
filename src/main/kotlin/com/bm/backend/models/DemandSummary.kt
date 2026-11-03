@@ -14,7 +14,9 @@ data class DemandSummary(
     val contractedSource: DemandContractedSource,
     val snapshotReason: String?,
     val periods: List<DemandPeriodStatistic>,
-    val series: List<DemandSeriesPoint>
+    val series: List<DemandSeriesPoint>,
+    /** Every dated maximeter row of the history up to the anchor (same construction as [series]), date order. */
+    val historySeries: List<DemandSeriesPoint> = emptyList()
 ) {
     companion object {
         fun unavailable(reason: String): DemandSummary = DemandSummary(

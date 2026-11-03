@@ -1,7 +1,8 @@
 package com.bm.backend.services.premiumreport
 
 /**
- * Spanish copy of the reactive-energy page (spec report-reactive-page truth table, approved by the user 2026-10-29).
+ * Spanish copy of the reactive-energy page (spec report-reactive-page truth table, approved by the user 2026-10-29;
+ * full-history readings with a per-reading chart by feedback 2026-11-03).
  * Phrases with the same meaning as the active page reference [PremiumActiveTexts] instead of duplicating them.
  * Descriptive only: no penalties, power factor, thresholds, verdicts or advice (X1 omitted, Q3 (b)).
  */
@@ -71,15 +72,9 @@ object PremiumReactiveTexts {
     const val RATIO_ACTIVE_INCOMPLETE = "la energía activa no cubre por completo los últimos 12 meses."
 
     // G0–G4 / T0–T2.
-    const val READINGS_CHART_TITLE = "Energía reactiva media diaria por lectura (últimos 12 meses)"
-    const val UNIT_PER_DAY = "kVArh/día"
-    const val READINGS_CAPTION =
-        "Cada barra es una lectura de la fuente (no un mes): la altura es la energía reactiva media diaria (kVArh/día) " +
-            "y la anchura los días que cubre. Contorno sin relleno: lectura solapada sin resolver. Raya sobre el eje: lectura con valor 0."
-    fun readingsCap(shown: Int, total: Int) = PremiumActiveTexts.readingsCap(shown, total)
-    const val READINGS_CHART_UNAVAILABLE =
-        "Gráfico de lecturas no disponible: no hay lecturas de energía reactiva dentro de los últimos 12 meses."
-    const val READINGS_TABLE_TITLE = "Lecturas de energía reactiva (últimos 12 meses)"
+    const val READINGS_CHART_TITLE = "Energía reactiva por lectura"
+    val READINGS_CAPTION: String get() = PremiumReportTexts.stackedReadingsCaption(UNIT)
+    const val READINGS_TABLE_TITLE = "Lecturas de energía reactiva"
     const val COL_FROM = PremiumActiveTexts.COL_FROM
     const val COL_TO = PremiumActiveTexts.COL_TO
     const val COL_DAYS = PremiumActiveTexts.COL_DAYS
