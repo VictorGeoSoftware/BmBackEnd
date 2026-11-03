@@ -110,17 +110,13 @@ class PremiumTariffSectionTest {
     }
 
     @Test
-    fun `6b legacy out-of-tariff value discloses T3 and is shown`() {
+    fun `6b legacy out-of-tariff value discloses T3 and keeps the P5 column`() {
         val pdf = render(F.tariff20LegacyP5Dataset())
         assertCoverOnly(pdf, PremiumReportTexts.tariffInconsistent("2.0TD"))
         val active = pdf.between(PremiumActiveTexts.SECTION, PremiumReactiveTexts.SECTION)
         assertTrue(active.contains("P5 (kWh)"))
-        val legacy = active.substringAfter("Consumo anual del estudio básico")
-        val rows = Regex("P(\\d) ([\\d.]+) ").findAll(legacy.substringBefore("Total")).map { it.groupValues[1] to it.groupValues[2].replace(".", "").toInt() }.toList()
-        assertEquals(listOf("1", "2", "3", "5"), rows.map { it.first }, legacy)
-        val total = Regex("Total ([\\d.]+) ").find(legacy)!!.groupValues[1].replace(".", "").toInt()
-        assertEquals(3120, total)
-        assertEquals(total, rows.sumOf { it.second })
+        // The annual-source comparison was removed (feedback 2026-11-03); T3 on the cover and the P5 column remain.
+        assertFalse(active.contains("Consumo anual del estudio básico"))
     }
 
     @Test

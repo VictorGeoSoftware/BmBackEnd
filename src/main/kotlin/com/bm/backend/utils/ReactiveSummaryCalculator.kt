@@ -113,20 +113,8 @@ object ReactiveSummaryCalculator {
             }
         }
 
-        val series = reactive.contained
-            .map { i -> i to history.intervals[i] }
-            .map { (i, row) ->
-                val c = cells(row.reactive)
-                ReactiveSeriesPoint(
-                    index = i,
-                    start = row.startDate,
-                    endExclusive = row.endDate,
-                    days = FamilyWindowAggregator.days(row.startDate, row.endDate),
-                    values = row.reactive,
-                    total = if (c.all { it == null }) null else c.filterNotNull().sum(),
-                    inUnresolvedOverlap = i in reactive.blockingIndices
-                )
-            }
+        val series = points(history, reactive)
+        val historySeries = points(history, FamilyWindowAggregator.wholeHistory(history, MeasurementFamily.REACTIVE, inverted, anchor, periods))
 
         return ReactiveSummary(
             status = StudyHistoryStatus.AVAILABLE,
@@ -142,9 +130,25 @@ object ReactiveSummaryCalculator {
             ratioReason = ratioReason,
             ratios = ratios,
             overallRatio = overall,
-            series = series
+            series = series,
+            historySeries = historySeries
         )
     }
+
+    private fun points(history: StudyHistory, a: FamilyWindowAggregate): List<ReactiveSeriesPoint> =
+        a.contained.map { i ->
+            val row = history.intervals[i]
+            val c = cells(row.reactive)
+            ReactiveSeriesPoint(
+                index = i,
+                start = row.startDate,
+                endExclusive = row.endDate,
+                days = FamilyWindowAggregator.days(row.startDate, row.endDate),
+                values = row.reactive,
+                total = if (c.all { it == null }) null else c.filterNotNull().sum(),
+                inUnresolvedOverlap = i in a.blockingIndices
+            )
+        }
 
     private fun window(a: FamilyWindowAggregate, status: ReactiveWindowStatus, periods: List<Int>): ReactiveWindowSummary {
         val sums = cells(a.periodSums)

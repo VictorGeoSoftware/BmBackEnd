@@ -67,10 +67,7 @@ class PremiumReactiveSectionTest {
         "U4" to T.RATIO_ACTIVE_OVERLAP,
         "U5" to T.RATIO_ACTIVE_INCOMPLETE,
         "G0" to T.READINGS_CHART_TITLE,
-        "G1" to T.UNIT_PER_DAY,
         "G2" to T.READINGS_CAPTION,
-        "G3" to T.readingsCap(0, 0).substringAfter("0 ").substringBefore(" 0"),
-        "G4" to T.READINGS_CHART_UNAVAILABLE,
         "T0" to T.READINGS_TABLE_TITLE,
         "T1" to T.DATES_NOTE,
         "T2" to T.OVERLAP_FOOTNOTE
@@ -85,7 +82,7 @@ class PremiumReactiveSectionTest {
 
     private fun ids(spec: String): Set<String> = spec.split(' ').filter { it.isNotBlank() }.flatMap { id ->
         when (id) {
-            "G0–G2" -> listOf("G0", "G1", "G2")
+            "G0–G2" -> listOf("G0", "G2")
             else -> listOf(id)
         }
     }.toSet()
@@ -146,7 +143,7 @@ class PremiumReactiveSectionTest {
         assertEquals(com.bm.backend.models.StudyHistoryStatus.AVAILABLE, s.status)
         assertEquals(com.bm.backend.models.ReactiveWindowStatus.UNAVAILABLE, s.window!!.status)
         val text = render(ds).text
-        assertSentences(text, "H0 W1 H1 C1 C6 N3 N5a D0 D2 Q0 B1 U0 U2 G0 G4",
+        assertSentences(text, "H0 W1 H1 C1 C6 N3 N5a D0 D2 Q0 B1 U0 U2 G0–G2 T0 T1",
             listOf(w1, b1, "${T.RATIO_UNAVAILABLE} ${T.RATIO_REACTIVE_INCOMPLETE}"))
     }
 
@@ -198,9 +195,13 @@ class PremiumReactiveSectionTest {
     }
 
     @Test
-    fun `L more than 36 readings are capped in the chart and disclosed, the table lists all`() {
-        val text = render(ds(PremiumReportFixtures.reactiveLongRows())).text
-        assertSentences(text, "H0 W1 H1 C1 C3 D0 D1 Q0 B1 B2 G0–G2 G3 T0 T1", listOf(w1, b1, T.readingsCap(36, 73)))
+    fun `L the full history is listed and charted without a cap`() {
+        val ds = ds(PremiumReportFixtures.reactiveLongRows())
+        val text = render(ds).text
+        assertSentences(text, "H0 W1 H1 C1 C3 D0 D1 Q0 B1 B2 G0–G2 T0 T1", listOf(w1, b1))
+        val fmt = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")
+        val all = summary(ds).historySeries
+        all.forEach { assertTrue(it.start.format(fmt) in text, "missing ${it.start}") }
         assertTrue(Regex("Desde Hasta Días").findAll(text).count() >= 2, "header not repeated")
         assertTrue("26/07/2026" in text && "31/07/2025" in text)
     }
@@ -222,7 +223,6 @@ class PremiumReactiveSectionTest {
         val a = render(ds); val b = render(ds)
         assertEquals(a.text, b.text)
         val s = summary(ds)
-        assertEquals(ReactiveChartModel.readings(s.series), ReactiveChartModel.readings(s.series))
         assertEquals(ReactiveChartModel.distribution(s.window!!), ReactiveChartModel.distribution(s.window!!))
         assertTrue(a.fonts.isNotEmpty())
         a.fonts.forEach { (name, embedded) ->

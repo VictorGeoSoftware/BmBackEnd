@@ -19,6 +19,7 @@ object ActiveChartPainter {
         model.markers.forEach { marker(t, it) }
         axes(t, model)
         labels(t, model)
+        legend(t, model)
         return Image.getInstance(t)
     }
 
@@ -109,6 +110,23 @@ object ActiveChartPainter {
         t.lineTo(f(m.plotLeft + m.plotWidth), f(m.plotBottom))
         t.stroke()
         t.restoreState()
+    }
+
+    /** Coloured squares with `Pn`, right-aligned above the plot. */
+    private fun legend(t: PdfTemplate, m: ActiveChartModel) {
+        if (m.legend.isEmpty()) return
+        val item = 34f
+        var x = f(m.plotLeft + m.plotWidth) - item * m.legend.size
+        val y = f(m.plotBottom + m.plotHeight) + 14f
+        m.legend.forEach { p ->
+            t.saveState()
+            t.setColorFill(PremiumReportTheme.PERIOD_COLORS[p - 1])
+            t.rectangle(x, y, 8f, 8f)
+            t.fill()
+            t.restoreState()
+            text(t, "P$p", x + 11f, y + 1f, TICK_SIZE, PdfContentByte.ALIGN_LEFT)
+            x += item
+        }
     }
 
     private fun text(t: PdfTemplate, s: String, x: Float, y: Float, size: Float, align: Int, color: Color = PremiumReportTheme.COLOR_TEXT) {

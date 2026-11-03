@@ -57,15 +57,12 @@ class PremiumReactiveSection : PremiumReportSection {
 
         quotient(document, writer, summary, w)
 
-        val readings = ReactiveChartModel.readings(summary.series)
-        heading(document, writer, PremiumReactiveTexts.READINGS_CHART_TITLE, readings?.let { it.height.toFloat() + 70f } ?: 60f)
-        if (readings == null) {
-            note(document, PremiumReactiveTexts.READINGS_CHART_UNAVAILABLE)
-            return
+        val slots = summary.historySeries.map { ReadingSlot(it.start, it.endExclusive, it.values, it.inUnresolvedOverlap) }
+        StackedReadingsChart.charts(slots, periods, PremiumReactiveTexts.UNIT).forEachIndexed { i, model ->
+            if (i == 0) heading(document, writer, PremiumReactiveTexts.READINGS_CHART_TITLE, model.height.toFloat() + 70f)
+            chart(document, writer, model)
         }
-        chart(document, writer, readings)
-        note(document, PremiumReactiveTexts.READINGS_CAPTION)
-        if (readings.shownRows < readings.totalRows) note(document, PremiumReactiveTexts.readingsCap(readings.shownRows, readings.totalRows))
+        if (slots.isNotEmpty()) note(document, PremiumReactiveTexts.READINGS_CAPTION)
         readingsTable(document, writer, summary, periods)
     }
 
@@ -253,7 +250,7 @@ class PremiumReactiveSection : PremiumReportSection {
         t.addCell(header(PremiumReactiveTexts.COL_DAYS))
         periodHeaders(t, periods, PremiumReactiveTexts.UNIT_SUFFIX)
         t.addCell(header(PremiumReactiveTexts.COL_TOTAL_KVARH))
-        s.series.forEach { p ->
+        s.historySeries.forEach { p ->
             val mark = if (p.inUnresolvedOverlap) PremiumReactiveTexts.OVERLAP_MARK else ""
             t.addCell(cell(PremiumReportFormat.date(p.start) + mark, align = Element.ALIGN_LEFT))
             t.addCell(cell(PremiumReportFormat.date(p.endExclusive.minusDays(1)), align = Element.ALIGN_LEFT))
@@ -263,7 +260,7 @@ class PremiumReactiveSection : PremiumReportSection {
             t.addCell(cell(kvarh(p.total), tableBold))
         }
         document.add(t)
-        if (s.series.any { it.inUnresolvedOverlap }) note(document, PremiumReactiveTexts.OVERLAP_FOOTNOTE)
+        if (s.historySeries.any { it.inUnresolvedOverlap }) note(document, PremiumReactiveTexts.OVERLAP_FOOTNOTE)
         note(document, PremiumReactiveTexts.DATES_NOTE)
     }
 }

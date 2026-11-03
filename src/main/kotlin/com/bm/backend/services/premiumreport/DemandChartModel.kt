@@ -54,15 +54,15 @@ object DemandChartModel {
     }
 
     /**
-     * One vertical bar per series row (contained latest-window rows, date order) on a true date axis (V4):
-     * height = highest non-null P1–P6 value of that row in kW (not per day), width = days. Zero ⇒ zero marker,
-     * overlapping rows outlined. The most recent [ActiveChartModel.READINGS_CAP] rows are shown. Null when empty.
+     * One vertical bar per series row (date order; the page passes the full history, feedback 2026-11-03) on a true
+     * date axis (V4): height = highest non-null P1–P6 value of that row in kW (not per day), width = days.
+     * Zero ⇒ zero marker, overlapping rows outlined. Every row is shown. Null when empty.
      */
     fun readings(series: List<DemandSeriesPoint>): ActiveChartModel? {
         val dated = series.filter { it.days > 0 }
             .sortedWith(compareBy<DemandSeriesPoint>({ it.start }, { it.endExclusive }, { it.index }))
         if (dated.isEmpty()) return null
-        val shown = dated.takeLast(ActiveChartModel.READINGS_CAP)
+        val shown = dated
         val start = shown.minOf { it.start }
         val end = shown.maxOf { it.endExclusive }
         val span = ChronoUnit.DAYS.between(start, end).toDouble()
