@@ -23,6 +23,7 @@ class PremiumReactivePreviewTest {
             "reactive-f-active-unavailable" to activeDataset(history(PremiumReportFixtures.reactiveNoActiveRows())),
             "reactive-g-nulls" to activeDataset(history(PremiumReportFixtures.reactiveNullRows())),
             "reactive-l-long" to activeDataset(history(PremiumReportFixtures.reactiveLongRows())),
+            "reactive-p-penalty" to activeDataset(history(PremiumReportFixtures.reactivePenaltyRows())),
             "reactive-n2-unavailable" to activeDataset(StudyHistory.unavailable(PremiumReportFixtures.CUPS, "not_captured"))
         )
         cases.forEach { (name, ds) ->
