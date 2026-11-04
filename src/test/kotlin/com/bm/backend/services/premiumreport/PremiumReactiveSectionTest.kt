@@ -67,13 +67,12 @@ class PremiumReactiveSectionTest {
         "U4" to T.RATIO_ACTIVE_OVERLAP,
         "U5" to T.RATIO_ACTIVE_INCOMPLETE,
         "G0" to T.READINGS_CHART_TITLE,
-        "G2" to T.READINGS_CAPTION,
         "T0" to T.READINGS_TABLE_TITLE,
         "T1" to T.DATES_NOTE,
         "T2" to T.OVERLAP_FOOTNOTE
     )
 
-    private val forbidden = listOf("penaliz", "factor de potencia", "cos", "φ", "exceso", "cumple", "umbral", "33 %", "€",
+    private val forbidden = listOf("Cada barra es una lectura", "penaliz", "factor de potencia", "cos", "φ", "exceso", "cumple", "umbral", "33 %", "€",
         "optimi", "recomend", "Información descriptiva", PremiumReportFixtures.CUPS)
 
     private fun ds(rows: List<StudyHistoryInterval>) = activeDataset(history(rows))
@@ -82,7 +81,7 @@ class PremiumReactiveSectionTest {
 
     private fun ids(spec: String): Set<String> = spec.split(' ').filter { it.isNotBlank() }.flatMap { id ->
         when (id) {
-            "G0–G2" -> listOf("G0", "G2")
+            "G0–G2" -> listOf("G0")
             else -> listOf(id)
         }
     }.toSet()

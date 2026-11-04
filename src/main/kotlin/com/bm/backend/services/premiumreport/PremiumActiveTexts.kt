@@ -49,7 +49,6 @@ object PremiumActiveTexts {
 
     // Per-reading chart (feedback 2026-11-03).
     const val UNIT_KWH = "kWh"
-    val READINGS_CAPTION: String get() = PremiumReportTexts.stackedReadingsCaption(UNIT_KWH)
 
     // D9 readings table.
     const val COL_FROM = "Desde"
