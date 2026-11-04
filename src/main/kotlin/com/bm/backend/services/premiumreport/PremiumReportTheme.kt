@@ -24,20 +24,20 @@ object PremiumReportTheme {
     val COLOR_WHITE: Color = Color.WHITE
 
     /**
-     * P1–P6 palette (user answer Q1, 2026-10-29): sequential BM-yellow → dark-grey ramp. Every bar also carries
-     * its text label, so colour is never needed to read a value.
+     * P1–P6 palette of the original study (Excel chart series, feedback 2026-11-04): red, orange, yellow, light blue,
+     * blue, green. P4 uses a close equivalent of the Excel theme light blue. Every bar also carries its label or legend.
      */
     val PERIOD_COLORS: List<Color> = listOf(
-        Color(249, 196, 17),
-        Color(214, 170, 36),
-        Color(171, 145, 66),
-        Color(129, 118, 86),
-        Color(90, 92, 98),
-        Color(0x37, 0x41, 0x51)
+        Color(0xFF, 0x00, 0x00),
+        Color(0xFF, 0xC0, 0x00),
+        Color(0xFF, 0xFF, 0x00),
+        Color(0xBD, 0xD7, 0xEE),
+        Color(0x00, 0x70, 0xC0),
+        Color(0x92, 0xD0, 0x50)
     )
 
     /** Text colour readable on each [PERIOD_COLORS] entry. */
-    val PERIOD_TEXT_COLORS: List<Color> = listOf(COLOR_TEXT, COLOR_TEXT, COLOR_TEXT, COLOR_WHITE, COLOR_WHITE, COLOR_WHITE)
+    val PERIOD_TEXT_COLORS: List<Color> = listOf(COLOR_WHITE, COLOR_TEXT, COLOR_TEXT, COLOR_TEXT, COLOR_WHITE, COLOR_TEXT)
 
     const val SIZE_TABLE = 8.5f
     const val SIZE_NOTE = 9f

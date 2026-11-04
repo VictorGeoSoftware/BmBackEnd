@@ -73,7 +73,6 @@ object PremiumReactiveTexts {
 
     // G0–G4 / T0–T2.
     const val READINGS_CHART_TITLE = "Energía reactiva por lectura"
-    val READINGS_CAPTION: String get() = PremiumReportTexts.stackedReadingsCaption(UNIT)
     const val READINGS_TABLE_TITLE = "Lecturas de energía reactiva"
     const val COL_FROM = PremiumActiveTexts.COL_FROM
     const val COL_TO = PremiumActiveTexts.COL_TO

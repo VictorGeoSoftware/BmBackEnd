@@ -21,7 +21,7 @@ data class ReactiveSummary(
     val ratios: List<ReactiveRatio>,
     val overallRatio: ReactiveRatio,
     val series: List<ReactiveSeriesPoint>,
-    /** Every dated reactive row of the history up to the anchor (same construction as [series]), date order. */
+    /** Reactive rows of the last 24 months up to the anchor ([com.bm.backend.utils.ReportHistoryRange]; same construction as [series]), date order. */
     val historySeries: List<ReactiveSeriesPoint> = emptyList()
 ) {
     companion object {

@@ -15,7 +15,7 @@ data class DemandSummary(
     val snapshotReason: String?,
     val periods: List<DemandPeriodStatistic>,
     val series: List<DemandSeriesPoint>,
-    /** Every dated maximeter row of the history up to the anchor (same construction as [series]), date order. */
+    /** Maximeter rows of the last 24 months up to the anchor ([com.bm.backend.utils.ReportHistoryRange]; same construction as [series]), date order. */
     val historySeries: List<DemandSeriesPoint> = emptyList()
 ) {
     companion object {

@@ -12,6 +12,7 @@ import com.bm.backend.models.StudyHistory
 import com.bm.backend.models.StudyHistoryStatus
 import com.bm.backend.utils.ActiveSummaryCalculator
 import com.bm.backend.utils.HistoryCoverageCalculator
+import com.bm.backend.utils.ReportHistoryRange
 import com.bm.backend.utils.TariffPeriodResolver
 import com.lowagie.text.Document
 import com.lowagie.text.Element
@@ -53,8 +54,9 @@ class PremiumActiveSection : PremiumReportSection {
         if (distribution != null) chart(document, writer, distribution)
         else note(document, "${PremiumActiveTexts.DISTRIBUTION_UNAVAILABLE} ${distributionReason(latest)}")
 
-        readingsChart(document, writer, history, coverage, periods)
-        readingsTable(document, writer, history, latest, periods)
+        val recent = ReportHistoryRange.indices(history, coverage.anchorDate)
+        readingsChart(document, writer, history, recent, coverage, periods)
+        readingsTable(document, writer, history, recent, latest, periods)
     }
 
     // ---------- text helpers ----------
@@ -228,22 +230,20 @@ class PremiumActiveSection : PremiumReportSection {
 
     // ---------- per-reading chart (feedback 2026-11-03) ----------
 
-    private fun readingsChart(document: Document, writer: PdfWriter, history: StudyHistory, coverage: HistoryCoverage, periods: List<Int>) {
-        if (history.intervals.isEmpty()) return
+    private fun readingsChart(document: Document, writer: PdfWriter, history: StudyHistory, recent: List<Int>, coverage: HistoryCoverage, periods: List<Int>) {
         val overlapping = coverage.families[MeasurementFamily.ACTIVE]?.overlaps.orEmpty()
             .flatMap { listOf(it.firstIndex, it.secondIndex) }.toSet()
-        val slots = history.intervals.mapIndexed { i, r -> ReadingSlot(r.startDate, r.endDate, r.active, i in overlapping) }
-        StackedReadingsChart.charts(slots, periods, PremiumActiveTexts.UNIT_KWH).forEachIndexed { i, model ->
-            if (i == 0) heading(document, writer, PremiumActiveTexts.READINGS_CHART_TITLE, model.height.toFloat() + 70f)
-            chart(document, writer, model)
-        }
-        note(document, PremiumActiveTexts.READINGS_CAPTION)
+        val slots = recent.map { i -> history.intervals[i].let { r -> ReadingSlot(r.startDate, r.endDate, r.active, i in overlapping) } }
+        if (slots.isEmpty()) return
+        val model = StackedReadingsChart.model(slots, periods, PremiumActiveTexts.UNIT_KWH)
+        heading(document, writer, PremiumActiveTexts.READINGS_CHART_TITLE, model.height.toFloat() + 40f)
+        chart(document, writer, model)
     }
 
     // ---------- D9 readings table ----------
 
-    private fun readingsTable(document: Document, writer: PdfWriter, history: StudyHistory, latest: ActiveWindowSummary?, periods: List<Int>) {
-        if (history.intervals.isEmpty()) return
+    private fun readingsTable(document: Document, writer: PdfWriter, history: StudyHistory, recent: List<Int>, latest: ActiveWindowSummary?, periods: List<Int>) {
+        if (recent.isEmpty()) return
         heading(document, writer, PremiumActiveTexts.READINGS_TABLE_TITLE)
         val crossing = latest?.crossing.orEmpty().toSet()
         val t = table(widths(1.35f, 1.25f, 0.6f, periods = periods, trail = 1.1f))
@@ -252,7 +252,8 @@ class PremiumActiveSection : PremiumReportSection {
         t.addCell(header(PremiumActiveTexts.COL_DAYS))
         periodHeaders(t, periods)
         t.addCell(header(PremiumActiveTexts.TOTAL))
-        history.intervals.forEachIndexed { i, r ->
+        recent.forEach { i ->
+            val r = history.intervals[i]
             val days = ChronoUnit.DAYS.between(r.startDate, r.endDate)
             val to = if (days > 0) r.endDate.minusDays(1) else r.endDate
             val mark = if (i in crossing) "*" else ""

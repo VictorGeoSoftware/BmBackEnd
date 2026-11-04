@@ -68,19 +68,23 @@ class StackedReadingsChartTest {
     }
 
     @Test
-    fun `long histories split into consecutive charts of at most 36 readings, none hidden`() {
-        val slots = (0L until 80L).map { slot(it, pv(1.0, 0.0, 0.0, 0.0, 0.0, 0.0)) }
-        val charts = StackedReadingsChart.charts(slots, all, "kWh")
-        assertEquals(listOf(36, 36, 8), charts.map { it.totalRows })
-        assertEquals(80, charts.sumOf { c -> c.bars.map { it.sourceIndex }.distinct().size })
-        charts.forEach { c -> assertTrue(c.categoryTicks.size <= 12) }
+    fun `many readings stay in one chart with one rotated label per bar`() {
+        val slots = (0L until 36L).map { slot(it, pv(1.0, 0.0, 0.0, 0.0, 0.0, 0.0)) }
+        val m = StackedReadingsChart.model(slots, all, "kWh")
+        assertEquals(36, m.totalRows)
+        assertEquals(36, m.bars.map { it.sourceIndex }.distinct().size)
+        assertEquals(36, m.categoryTicks.size)
+        assertTrue(m.categoryTicks.all { it.rotated })
+        val dense = StackedReadingsChart.model((0L until 72L).map { slot(it, pv(1.0, 0.0, 0.0, 0.0, 0.0, 0.0)) }, all, "kWh")
+        assertEquals(72, dense.bars.size)
+        assertEquals(36, dense.categoryTicks.size)
     }
 
     @Test
-    fun `category labels are the inclusive end month of a reading and the model is deterministic`() {
+    fun `category labels are the inclusive end date of a reading and the model is deterministic`() {
         val slots = listOf(ReadingSlot(LocalDate.parse("2025-07-31"), LocalDate.parse("2025-08-31"), pv(1.0, 0.0, 0.0, 0.0, 0.0, 0.0), false))
         val m = StackedReadingsChart.model(slots, all, "kWh")
-        assertEquals(listOf("08/25"), m.categoryTicks.map { it.label })
+        assertEquals(listOf("30/08/25"), m.categoryTicks.map { it.label })
         assertEquals(m, StackedReadingsChart.model(slots, all, "kWh"))
     }
 }

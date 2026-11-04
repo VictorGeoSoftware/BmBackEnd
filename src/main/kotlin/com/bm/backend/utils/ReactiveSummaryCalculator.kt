@@ -114,7 +114,7 @@ object ReactiveSummaryCalculator {
         }
 
         val series = points(history, reactive)
-        val historySeries = points(history, FamilyWindowAggregator.wholeHistory(history, MeasurementFamily.REACTIVE, inverted, anchor, periods))
+        val historySeries = points(history, FamilyWindowAggregator.aggregate(history, MeasurementFamily.REACTIVE, inverted, ReportHistoryRange.start(anchor), anchor, periods))
 
         return ReactiveSummary(
             status = StudyHistoryStatus.AVAILABLE,

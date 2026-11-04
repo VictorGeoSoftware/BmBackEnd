@@ -140,7 +140,7 @@ object DemandSummaryCalculator {
         }
 
         val series = points(history, agg)
-        val historySeries = points(history, FamilyWindowAggregator.wholeHistory(history, MeasurementFamily.MAX_DEMAND, inverted, anchor, periods))
+        val historySeries = points(history, FamilyWindowAggregator.aggregate(history, MeasurementFamily.MAX_DEMAND, inverted, ReportHistoryRange.start(anchor), anchor, periods))
 
         return DemandSummary(
             status = StudyHistoryStatus.AVAILABLE,
