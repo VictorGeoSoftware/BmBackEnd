@@ -23,11 +23,11 @@ class PremiumInformationSection : PremiumReportSection {
         document.newPage()
         val page = writer.pageNumber
 
-        document.add(bar(PremiumInformationTexts.TITLE, COLOR_TITLE))
+        document.add(bar(PremiumInformationTexts.TITLE, COLOR_TITLE).apply { setSpacingBefore(6f); setSpacingAfter(10f) })
         PremiumInformationTexts.INTRO.forEach { document.add(paragraph(it, indent = 0f)) }
-        document.add(bar(PremiumInformationTexts.SERVICES_TITLE, COLOR_SERVICES).apply { setSpacingBefore(8f) })
+        document.add(bar(PremiumInformationTexts.SERVICES_TITLE, COLOR_SERVICES).apply { setSpacingBefore(BAR_GAP) })
         PremiumInformationTexts.SERVICES.forEach { document.add(paragraph(it)) }
-        document.add(bar(PremiumInformationTexts.ADVICE_TITLE, COLOR_ADVICE).apply { setSpacingBefore(8f) })
+        document.add(bar(PremiumInformationTexts.ADVICE_TITLE, COLOR_ADVICE).apply { setSpacingBefore(BAR_GAP) })
         PremiumInformationTexts.ADVICE.forEach { document.add(paragraph(it)) }
 
         check(writer.pageNumber == page) { "Information page copy does not fit on one page" }
@@ -35,14 +35,14 @@ class PremiumInformationSection : PremiumReportSection {
 
     private fun bar(title: String, background: Color): PdfPTable = PdfPTable(1).apply {
         widthPercentage = 100f
-        setSpacingAfter(6f)
+        setSpacingAfter(8f)
         addCell(
             PremiumReportBlocks.cell(
                 title,
                 font = PremiumReportTheme.bold(PremiumReportTheme.SIZE_SECTION - 1f, PremiumReportTheme.COLOR_WHITE),
                 background = background,
                 align = Element.ALIGN_RIGHT,
-                padding = 4f
+                padding = 5f
             ).apply { setPaddingRight(8f) }
         )
     }
@@ -61,17 +61,20 @@ class PremiumInformationSection : PremiumReportSection {
             addCell(PdfPCell(phrase).apply {
                 border = Rectangle.NO_BORDER
                 horizontalAlignment = Element.ALIGN_LEFT
-                setLeading(0f, 1.25f)
+                setLeading(0f, 1.3f)
                 setPadding(0f)
                 setPaddingLeft(indent)
-                setPaddingBottom(5f)
+                setPaddingBottom(PARAGRAPH_GAP)
             })
         }
     }
 
     private companion object {
-        const val SIZE = PremiumReportTheme.SIZE_NOTE
+        /** Body size raised in the layout pass (2026-11-04) so the page reads like the original and fills the sheet. */
+        const val SIZE = PremiumReportTheme.SIZE_BODY
         const val ITEM_INDENT = 24f
+        const val BAR_GAP = 16f
+        const val PARAGRAPH_GAP = 8f
         /** Reference page palette: red title, green services, dark-blue advice. */
         val COLOR_TITLE = Color(0xC0, 0x1B, 0x1B)
         val COLOR_SERVICES = Color(0x4E, 0x8A, 0x3E)

@@ -17,7 +17,7 @@ object GroupedReadingsChart {
         val plotLeft = 46.0
         val plotBottom = 48.0
         val plotWidth = ActiveChartModel.WIDTH - plotLeft - 10.0
-        val plotHeight = 150.0
+        val plotHeight = 125.0
         val cells = slots.map { s -> listOf(s.values.p1, s.values.p2, s.values.p3, s.values.p4, s.values.p5, s.values.p6) }
         val max = cells.flatMap { c -> periods.mapNotNull { c[it - 1] } }.maxOrNull() ?: 0.0
         val axisMax = ActiveChartModel.niceCeiling(max)

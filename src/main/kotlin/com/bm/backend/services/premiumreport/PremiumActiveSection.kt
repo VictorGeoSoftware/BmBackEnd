@@ -260,7 +260,7 @@ class PremiumActiveSection : PremiumReportSection {
         val last24 = range.total?.let { (if (range.partial) "${PremiumActiveTexts.PARTIAL_PREFIX} " else "") + "${PremiumReportFormat.kwh(it)} kWh" }
             ?: rangeReason(range)
         val diff = s.changePct?.let { PremiumReportFormat.signedPercent(it) } ?: "${PremiumActiveTexts.YOY_UNAVAILABLE_SHORT} (${yoyReason(s)})"
-        heading(document, writer, PremiumActiveTexts.SUMMARY_TITLE, 90f)
+        heading(document, writer, PremiumActiveTexts.SUMMARY_TITLE, 100f)
         val t = table(floatArrayOf(2.2f, 2f)).apply { keepTogether = true }
         listOf(PremiumActiveTexts.LAST_12M to last12, PremiumActiveTexts.LAST_24M to last24, PremiumActiveTexts.DIFF_TWO_YEARS to diff).forEach { (k, v) ->
             t.addCell(cell(k, tableBold, Element.ALIGN_LEFT))
@@ -294,7 +294,7 @@ class PremiumActiveSection : PremiumReportSection {
         periods: List<Int>, range: ActiveRangeTotals
     ) {
         if (recent.isEmpty()) return
-        heading(document, writer, PremiumActiveTexts.READINGS_TABLE_TITLE)
+        heading(document, writer, PremiumActiveTexts.READINGS_TABLE_TITLE, PremiumReportBlocks.tableNeed(recent.size + 2))
         val crossing = latest?.crossing.orEmpty().toSet()
         val t = table(widths(1.35f, 1.25f, 0.6f, periods = periods, trail = 1.1f))
         t.addCell(header(PremiumActiveTexts.COL_FROM, Element.ALIGN_LEFT))

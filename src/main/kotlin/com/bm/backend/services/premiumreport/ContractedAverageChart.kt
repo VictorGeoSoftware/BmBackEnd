@@ -13,7 +13,7 @@ object ContractedAverageChart {
     val AVERAGE_COLOR = Color(0xC5, 0xD7, 0x8D)
 
     fun model(contracted: PeriodValues, averages: PeriodValues, periods: List<Int>): ActiveChartModel {
-        val band = 24.0
+        val band = 20.0
         val plotLeft = 40.0
         val plotBottom = 18.0
         val plotWidth = ActiveChartModel.WIDTH - plotLeft - 16.0
