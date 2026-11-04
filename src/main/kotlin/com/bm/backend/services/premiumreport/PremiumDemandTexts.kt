@@ -1,7 +1,5 @@
 package com.bm.backend.services.premiumreport
 
-import com.bm.backend.models.TariffPeriodProfile
-
 /**
  * Spanish copy of the demanded-power page (spec report-demand-page truth table, approved by the user 2026-10-29).
  * Phrases with the same meaning as the active/reactive pages reference [PremiumActiveTexts]/[PremiumReactiveTexts].
@@ -67,22 +65,17 @@ object PremiumDemandTexts {
     const val NO_READINGS_CELL = "No calculado: sin lecturas"
 
     // G0–G4 / T0–T3.
-    const val READINGS_CHART_TITLE = "Máxima registrada por lectura"
-    val READINGS_CAPTION = readingsCaption(TariffPeriodProfile.ALL_PERIODS)
-
-    /** T4a contiguous (`entre P1 y P2`), T4b single (`en P2`), T4c non-contiguous (`en P1, P3`) power periods. */
-    fun readingsCaption(periods: List<Int>): String {
-        val contiguous = periods.size >= 2 && periods.zipWithNext().all { (a, b) -> b == a + 1 }
-        val where = when {
-            periods.size == 1 -> "en P${periods[0]}"
-            contiguous -> "entre P${periods.first()} y P${periods.last()}"
-            else -> "en " + periods.joinToString(", ") { "P$it" }
-        }
-        return "Cada barra es una lectura de la fuente (no un mes): la altura es el mayor valor de maxímetro registrado $where " +
-            "en esa lectura (kW) y la anchura los días que cubre. Contorno sin relleno: lectura solapada. Raya sobre el eje: lectura con valor 0."
-    }
+    // Original study's blocks (spec report-original-fidelity, feedback 2026-11-04).
+    const val READINGS_CHART_TITLE = "Registro de potencias demandadas (últimos 24 meses)"
+    const val CONTRACTED_AVERAGE_TITLE = "Potencia contratada y potencia media demandada"
+    const val LEGEND_CONTRACTED = "Potencia contratada"
+    const val LEGEND_AVERAGE = "Potencia media demandada"
+    const val ROW_CONTRACTED = "Potencia contratada"
+    const val ROW_AVERAGE = "Promedio aritmético"
+    const val AVERAGE_NOTE =
+        "Promedio aritmético: media de las potencias demandadas de los últimos 24 meses por periodo, sin contar las lecturas con valor 0."
     const val READINGS_CHART_UNAVAILABLE =
-        "Gráfico de lecturas no disponible: no hay lecturas de potencia demandada con fechas válidas."
+        "No hay lecturas de potencia demandada en los últimos 24 meses."
     const val READINGS_TABLE_TITLE = "Lecturas de potencia demandada"
     const val COL_FROM = PremiumActiveTexts.COL_FROM
     const val COL_TO = PremiumActiveTexts.COL_TO

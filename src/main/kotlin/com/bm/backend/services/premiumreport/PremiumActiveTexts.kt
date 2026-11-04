@@ -56,5 +56,17 @@ object PremiumActiveTexts {
     const val COL_DAYS = "Días"
     const val TOTAL = "Total"
     const val CROSSING_NOTE = "* Lectura que cruza el límite de la ventana; no se suma."
+    const val TOTAL_BY_PERIOD = "Total por tramos horarios"
+    const val SHARE_BY_PERIOD = "Porcentajes por tramos horarios"
+
+    // Original study's summary blocks (spec report-original-fidelity).
+    const val SUMMARY_TITLE = "Resumen de consumo"
+    const val LAST_12M = "Consumo últimos 12 meses"
+    const val LAST_24M = "Consumo últimos 24 meses"
+    const val DIFF_TWO_YEARS = "Diferencia consumo últimos dos años"
+    const val YOY_UNAVAILABLE_SHORT = "No disponible"
+    const val PIE_TITLE = "Porcentajes por tramos horarios (últimos 24 meses)"
+    const val PIE_UNAVAILABLE = "Gráfico de porcentajes no disponible."
+    const val ZERO_TOTAL = "el consumo total es 0."
     const val DATES_NOTE = "Fechas inclusivas; valores en kWh tal como los publica la fuente."
 }

@@ -72,7 +72,8 @@ class PremiumDemandSectionTest {
         "K7" to lit(T.CONTRACTED_ZERO),
         "K8" to lit(T.NO_READINGS_CELL),
         "G0" to lit(T.READINGS_CHART_TITLE),
-        "G2" to lit(T.READINGS_CAPTION),
+        "G2" to lit(T.AVERAGE_NOTE),
+        "G5" to lit(T.CONTRACTED_AVERAGE_TITLE),
         "G4" to lit(T.READINGS_CHART_UNAVAILABLE),
         "T0" to lit(T.READINGS_TABLE_TITLE),
         "T1" to lit(T.DATES_NOTE),
@@ -90,13 +91,13 @@ class PremiumDemandSectionTest {
     private fun summary(ds: ReportDataset) =
         DemandSummaryCalculator.calculate(ds.history, HistoryCoverageCalculator.calculate(ds.history), ds.snapshot)
 
-    /** G1 (readings chart unit and bar labels) lives in the chart model; it is present iff the readings chart is. */
-    private fun g1(ds: ReportDataset): Boolean =
-        DemandChartModel.readings(summary(ds).historySeries)?.let { m ->
-            m.unit == T.UNIT && m.bars.all { Regex("^$date – $date: $num ${T.UNIT}$").matches(it.label) }
-        } ?: false
+    /** G1 (grouped readings chart unit and bar labels) lives in the chart model; present iff there are 24-month readings. */
+    private fun g1(ds: ReportDataset): Boolean = summary(ds).historySeries.takeIf { it.isNotEmpty() }?.let { series ->
+        val m = GroupedReadingsChart.model(series.map { ReadingSlot(it.start, it.endExclusive, it.values, it.inOverlap) }, (1..6).toList(), T.UNIT)
+        m.unit == T.UNIT && m.bars.all { Regex("^$date – $date$").matches(it.label) }
+    } ?: false
 
-    private val baseA = "H0 W1 H1 C1 C2 S1 K0 K1 K2 K4 K5 G0 G1 G2 T0 T1"
+    private val baseA = "H0 W1 H1 C1 C2 S1 K0 K1 K2 K4 K5 G0 G1 G2 G5 T0 T1"
 
     private fun assertScenario(ds: ReportDataset, expected: String, exact: List<String> = emptyList()): String {
         val want = expected.split(' ').filter { it.isNotBlank() }.toSet()
@@ -136,7 +137,7 @@ class PremiumDemandSectionTest {
         val ds = ds(PremiumReportFixtures.demandIncompleteRows())
         val w = summary(ds).window!!
         assertEquals(DemandWindowStatus.INCOMPLETE, w.status)
-        val text = assertScenario(ds, "H0 W1 H1 C1 C2 M1 S1 N4 N5 K0 K1 K2 K3 K4 K5 G0 G1 G2 T0 T1",
+        val text = assertScenario(ds, "H0 W1 H1 C1 C2 M1 S1 N4 N5 K0 K1 K2 K3 K4 K5 G0 G1 G2 G5 T0 T1",
             listOf(w1, T.partialWindow(w.coveredDays, w.windowDays), T.crossing(1)))
         assertFalse("17" in squash(text).substringAfter(squash(T.STATS_TITLE)).substringBefore(squash(T.STATS_CAPTION)),
             "crossing value is not a peak")
@@ -145,7 +146,7 @@ class PremiumDemandSectionTest {
     @Test
     fun `C overlap with a zero-active reading keeps its demand, discloses it and it can be the peak`() {
         val ds = ds(PremiumReportFixtures.demandOverlapZeroActiveRows())
-        val text = assertScenario(ds, "H0 W1 H1 C1 C2 M2 S1 N9 N10 K0 K1 K2 K4 K5 G0 G1 G2 T0 T1 T2 T3",
+        val text = assertScenario(ds, "H0 W1 H1 C1 C2 M2 S1 N9 N10 K0 K1 K2 K4 K5 G0 G1 G2 G5 T0 T1 T2 T3",
             listOf(w1, T.overlapNote("31/05/2026–29/06/2026"), "P6 13 40 31/05/2026 – 29/06/2026",
                 "31/05/2026†° 29/06/2026 30", "P6 40 34,5 +5,5 115,9 %"))
         assertTrue(squash("31/05/2026† 29/06/2026 30") in squash(text), text)
@@ -157,7 +158,7 @@ class PremiumDemandSectionTest {
         val s = summary(ds)
         assertEquals(StudyHistoryStatus.AVAILABLE, s.status)
         assertEquals(DemandWindowStatus.UNAVAILABLE, s.window!!.status)
-        assertScenario(ds, "H0 W1 H1 N3 N5 K0 KU2 G0 G1 G2 T0 T1", listOf(w1, T.crossing(1)))
+        assertScenario(ds, "H0 W1 H1 N3 N5 K0 KU2 G0 G1 G2 G5 T0 T1", listOf(w1, T.crossing(1)))
     }
 
     @Test
@@ -182,7 +183,8 @@ class PremiumDemandSectionTest {
         assertFalse(T.MISSING in text, "no dash for recorded zeros: $text")
         val s = summary(ds)
         assertTrue(DemandChartModel.comparison(s.periods).bars.all { it.style == ChartBarStyle.ZERO_MARKER })
-        assertTrue(DemandChartModel.readings(s.series)!!.bars.all { it.style == ChartBarStyle.ZERO_MARKER })
+        // Grouped chart: zero values draw no bar (the table shows the 0).
+        assertTrue(GroupedReadingsChart.model(s.historySeries.map { ReadingSlot(it.start, it.endExclusive, it.values, it.inOverlap) }, (1..6).toList(), T.UNIT).bars.isEmpty())
     }
 
     @Test
@@ -200,7 +202,6 @@ class PremiumDemandSectionTest {
         val text = assertScenario(ds, baseA, listOf(w1))
         val fmt = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")
         val all = summary(ds).historySeries
-        assertEquals(all.size, DemandChartModel.readings(all)!!.bars.size)
         all.forEach { assertTrue(it.start.format(fmt) in text, "missing ${it.start}") }
         assertTrue(Regex("Desde Hasta Días").findAll(text).count() >= 2, "header not repeated")
         assertTrue("26/07/2026" in text && "31/07/2025" in text)
@@ -222,7 +223,8 @@ class PremiumDemandSectionTest {
         val a = render(ds); val b = render(ds)
         assertEquals(a.text, b.text)
         val s = summary(ds)
-        assertEquals(DemandChartModel.readings(s.historySeries), DemandChartModel.readings(s.historySeries))
+        val slots = s.historySeries.map { ReadingSlot(it.start, it.endExclusive, it.values, it.inOverlap) }
+        assertEquals(GroupedReadingsChart.model(slots, (1..6).toList(), T.UNIT), GroupedReadingsChart.model(slots, (1..6).toList(), T.UNIT))
         assertEquals(DemandChartModel.comparison(s.periods), DemandChartModel.comparison(s.periods))
         assertTrue(a.fonts.isNotEmpty())
         a.fonts.forEach { (name, embedded) ->

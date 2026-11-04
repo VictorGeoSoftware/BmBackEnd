@@ -1,5 +1,6 @@
 package com.bm.backend.services.premiumreport
 
+import com.bm.backend.models.ActiveRangeTotals
 import com.bm.backend.models.ActiveSummary
 import com.bm.backend.models.ActiveWindowKind
 import com.bm.backend.models.ActiveWindowStatus
@@ -10,6 +11,7 @@ import com.bm.backend.models.PeriodValues
 import com.bm.backend.models.ReportDataset
 import com.bm.backend.models.StudyHistory
 import com.bm.backend.models.StudyHistoryStatus
+import com.bm.backend.utils.ActiveRangeCalculator
 import com.bm.backend.utils.ActiveSummaryCalculator
 import com.bm.backend.utils.HistoryCoverageCalculator
 import com.bm.backend.utils.ReportHistoryRange
@@ -55,8 +57,10 @@ class PremiumActiveSection : PremiumReportSection {
         else note(document, "${PremiumActiveTexts.DISTRIBUTION_UNAVAILABLE} ${distributionReason(latest)}")
 
         val recent = ReportHistoryRange.indices(history, coverage.anchorDate)
+        val range = ActiveRangeCalculator.calculate(history, coverage, periods)
         readingsChart(document, writer, history, recent, coverage, periods)
-        readingsTable(document, writer, history, recent, latest, periods)
+        readingsTable(document, writer, history, recent, latest, periods, range)
+        if (recent.isNotEmpty()) rangeSummary(document, writer, summary, range, periods)
     }
 
     // ---------- text helpers ----------
@@ -182,19 +186,7 @@ class PremiumActiveSection : PremiumReportSection {
         if (change != null) {
             document.add(Paragraph("${PremiumActiveTexts.YOY} ${PremiumReportFormat.signedPercent(change)}", PremiumReportTheme.bold()).apply { spacingBefore = 6f })
         } else {
-            val latest = s.windows.firstOrNull { it.kind == ActiveWindowKind.LATEST_12M }
-            val previous = s.windows.firstOrNull { it.kind == ActiveWindowKind.PREVIOUS_12M }
-            val reason = when {
-                latest?.status == ActiveWindowStatus.OVERLAP_UNRESOLVED -> PremiumActiveTexts.YOY_LATEST_OVERLAP
-                previous?.status == ActiveWindowStatus.OVERLAP_UNRESOLVED -> PremiumActiveTexts.YOY_PREVIOUS_OVERLAP
-                else -> when (s.changeReason) {
-                ActiveSummaryCalculator.LATEST_INCOMPLETE -> PremiumActiveTexts.YOY_LATEST_INCOMPLETE
-                ActiveSummaryCalculator.PREVIOUS_INCOMPLETE -> PremiumActiveTexts.YOY_PREVIOUS_INCOMPLETE
-                ActiveSummaryCalculator.PREVIOUS_ZERO -> PremiumActiveTexts.YOY_PREVIOUS_ZERO
-                else -> PremiumActiveTexts.YOY_NO_DATA
-                }
-            }
-            note(document, "${PremiumActiveTexts.YOY_UNAVAILABLE} ($reason).")
+            note(document, "${PremiumActiveTexts.YOY_UNAVAILABLE} (${yoyReason(s)}).")
         }
         s.windows.forEach { w ->
             w.overlapDisclosures.forEach { o ->
@@ -240,9 +232,67 @@ class PremiumActiveSection : PremiumReportSection {
         chart(document, writer, model)
     }
 
+    private fun yoyReason(s: ActiveSummary): String {
+        val latest = s.windows.firstOrNull { it.kind == ActiveWindowKind.LATEST_12M }
+        val previous = s.windows.firstOrNull { it.kind == ActiveWindowKind.PREVIOUS_12M }
+        return when {
+            latest?.status == ActiveWindowStatus.OVERLAP_UNRESOLVED -> PremiumActiveTexts.YOY_LATEST_OVERLAP
+            previous?.status == ActiveWindowStatus.OVERLAP_UNRESOLVED -> PremiumActiveTexts.YOY_PREVIOUS_OVERLAP
+            else -> when (s.changeReason) {
+                ActiveSummaryCalculator.LATEST_INCOMPLETE -> PremiumActiveTexts.YOY_LATEST_INCOMPLETE
+                ActiveSummaryCalculator.PREVIOUS_INCOMPLETE -> PremiumActiveTexts.YOY_PREVIOUS_INCOMPLETE
+                ActiveSummaryCalculator.PREVIOUS_ZERO -> PremiumActiveTexts.YOY_PREVIOUS_ZERO
+                else -> PremiumActiveTexts.YOY_NO_DATA
+            }
+        }
+    }
+
+    // ---------- original study's summary blocks (spec report-original-fidelity) ----------
+
+    private fun rangeSummary(document: Document, writer: PdfWriter, s: ActiveSummary, range: ActiveRangeTotals, periods: List<Int>) {
+        val latest = s.windows.firstOrNull { it.kind == ActiveWindowKind.LATEST_12M }
+        val last12 = when {
+            latest?.total != null -> "${PremiumReportFormat.kwh(latest.total)} kWh"
+            latest?.partialTotal != null -> "${PremiumActiveTexts.PARTIAL_PREFIX} ${PremiumReportFormat.kwh(latest.partialTotal)} kWh"
+            latest?.status == ActiveWindowStatus.OVERLAP_UNRESOLVED -> PremiumActiveTexts.OVERLAP_NO_FIGURE
+            else -> PremiumActiveTexts.NO_DATA
+        }
+        val last24 = range.total?.let { (if (range.partial) "${PremiumActiveTexts.PARTIAL_PREFIX} " else "") + "${PremiumReportFormat.kwh(it)} kWh" }
+            ?: rangeReason(range)
+        val diff = s.changePct?.let { PremiumReportFormat.signedPercent(it) } ?: "${PremiumActiveTexts.YOY_UNAVAILABLE_SHORT} (${yoyReason(s)})"
+        heading(document, writer, PremiumActiveTexts.SUMMARY_TITLE, 90f)
+        val t = table(floatArrayOf(2.2f, 2f)).apply { keepTogether = true }
+        listOf(PremiumActiveTexts.LAST_12M to last12, PremiumActiveTexts.LAST_24M to last24, PremiumActiveTexts.DIFF_TWO_YEARS to diff).forEach { (k, v) ->
+            t.addCell(cell(k, tableBold, Element.ALIGN_LEFT))
+            t.addCell(cell(v, tableFont, Element.ALIGN_LEFT))
+        }
+        document.add(t)
+
+        val pie = range.shares?.let { PieChartModel.of(it, periods) }
+        heading(document, writer, PremiumActiveTexts.PIE_TITLE, (pie?.height?.toFloat() ?: 20f) + 40f)
+        if (pie == null) {
+            note(document, "${PremiumActiveTexts.PIE_UNAVAILABLE} ${rangeReason(range)}")
+            return
+        }
+        document.add(PdfPTable(1).apply {
+            widthPercentage = 100f
+            keepTogether = true
+            addCell(PdfPCell(PieChartPainter.image(writer, pie), false).apply { border = Rectangle.NO_BORDER; setPadding(0f) })
+        })
+    }
+
+    private fun rangeReason(range: ActiveRangeTotals) = when (range.reason) {
+        ActiveRangeCalculator.OVERLAP -> PremiumActiveTexts.OVERLAP_NO_FIGURE
+        null -> PremiumActiveTexts.ZERO_TOTAL
+        else -> PremiumActiveTexts.NO_DATA
+    }
+
     // ---------- D9 readings table ----------
 
-    private fun readingsTable(document: Document, writer: PdfWriter, history: StudyHistory, recent: List<Int>, latest: ActiveWindowSummary?, periods: List<Int>) {
+    private fun readingsTable(
+        document: Document, writer: PdfWriter, history: StudyHistory, recent: List<Int>, latest: ActiveWindowSummary?,
+        periods: List<Int>, range: ActiveRangeTotals
+    ) {
         if (recent.isEmpty()) return
         heading(document, writer, PremiumActiveTexts.READINGS_TABLE_TITLE)
         val crossing = latest?.crossing.orEmpty().toSet()
@@ -264,6 +314,21 @@ class PremiumActiveSection : PremiumReportSection {
             periods.forEach { p -> t.addCell(cell(kwh(values[p - 1]))) }
             val present = values.filterNotNull()
             t.addCell(cell(if (present.isEmpty()) PremiumActiveTexts.MISSING else PremiumReportFormat.kwh(present.sum()), tableBold))
+        }
+        // Original study's "Total / Porcentajes por tramos horarios" rows over the same 24-month readings.
+        val totals = range.periodTotals?.let { cells(it) }
+        val shares = range.shares?.let { cells(it) }
+        t.addCell(cell(PremiumActiveTexts.TOTAL_BY_PERIOD, tableBold, Element.ALIGN_LEFT, PremiumReportTheme.COLOR_GRID, colspan = 3))
+        if (totals == null) {
+            t.addCell(cell(rangeReason(range), tableFont, Element.ALIGN_LEFT, PremiumReportTheme.COLOR_GRID, colspan = periods.size + 1))
+        } else {
+            periods.forEach { p -> t.addCell(cell(kwh(totals[p - 1]), tableBold, background = PremiumReportTheme.COLOR_GRID)) }
+            t.addCell(cell(range.total?.let { PremiumReportFormat.kwh(it) } ?: PremiumActiveTexts.MISSING, tableBold, background = PremiumReportTheme.COLOR_GRID))
+        }
+        if (shares != null) {
+            t.addCell(cell(PremiumActiveTexts.SHARE_BY_PERIOD, tableBold, Element.ALIGN_LEFT, colspan = 3))
+            periods.forEach { p -> t.addCell(cell(shares[p - 1]?.let { PremiumReportFormat.percent(it) } ?: PremiumActiveTexts.MISSING)) }
+            t.addCell(cell(""))
         }
         document.add(t)
         if (crossing.isNotEmpty()) note(document, PremiumActiveTexts.CROSSING_NOTE)

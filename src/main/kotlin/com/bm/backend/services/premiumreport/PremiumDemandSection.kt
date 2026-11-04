@@ -6,7 +6,10 @@ import com.bm.backend.models.DemandWindowStatus
 import com.bm.backend.models.DemandWindowSummary
 import com.bm.backend.models.PeriodValues
 import com.bm.backend.models.ReportDataset
+import com.bm.backend.models.StudySnapshotStatus
+import com.bm.backend.models.DemandRangeAverages
 import com.bm.backend.models.StudyHistoryStatus
+import com.bm.backend.utils.DemandRangeCalculator
 import com.bm.backend.utils.DemandSummaryCalculator
 import com.bm.backend.utils.HistoryCoverageCalculator
 import com.bm.backend.utils.TariffPeriodResolver
@@ -58,16 +61,37 @@ class PremiumDemandSection : PremiumReportSection {
         // Block 3: comparison with contracted power.
         comparison(document, writer, summary, w, periods)
 
-        // Blocks 4–5: readings chart and table.
-        val readings = DemandChartModel.readings(summary.historySeries)
-        heading(document, writer, PremiumDemandTexts.READINGS_CHART_TITLE, readings?.let { it.height.toFloat() + 70f } ?: 60f)
-        if (readings == null) {
+        // Blocks 4–6 (original study, feedback 2026-11-04): readings table with contracted/average rows, grouped
+        // readings chart and contracted-vs-average chart, over the last 24 months.
+        if (summary.historySeries.isEmpty()) {
             note(document, PremiumDemandTexts.READINGS_CHART_UNAVAILABLE)
             return
         }
-        chart(document, readings, writer)
-        note(document, PremiumDemandTexts.readingsCaption(periods))
-        readingsTable(document, writer, summary, periods)
+        val contracted = dataset.snapshot.fields?.takeIf { dataset.snapshot.status == StudySnapshotStatus.AVAILABLE }?.contractedPowerKw
+        val averages = DemandRangeCalculator.averages(summary.historySeries)
+        readingsTable(document, writer, summary, periods, contracted, averages)
+
+        val slots = summary.historySeries.map { ReadingSlot(it.start, it.endExclusive, it.values, it.inOverlap) }
+        val grouped = GroupedReadingsChart.model(slots, periods, PremiumDemandTexts.UNIT)
+        heading(document, writer, PremiumDemandTexts.READINGS_CHART_TITLE, grouped.height.toFloat() + 40f)
+        chart(document, grouped, writer)
+
+        if (contracted != null) {
+            val split = ContractedAverageChart.model(contracted, averages.means, periods)
+            heading(document, writer, PremiumDemandTexts.CONTRACTED_AVERAGE_TITLE, split.height.toFloat() + 60f)
+            chart(document, split, writer)
+            document.add(legend())
+        }
+    }
+
+    private fun legend(): PdfPTable = PdfPTable(floatArrayOf(0.25f, 3f, 0.25f, 3f)).apply {
+        widthPercentage = 70f
+        horizontalAlignment = Element.ALIGN_LEFT
+        setSpacingBefore(4f)
+        addCell(cell("", background = ContractedAverageChart.CONTRACTED_COLOR))
+        addCell(cell(PremiumDemandTexts.LEGEND_CONTRACTED, align = Element.ALIGN_LEFT))
+        addCell(cell("", background = ContractedAverageChart.AVERAGE_COLOR))
+        addCell(cell(PremiumDemandTexts.LEGEND_AVERAGE, align = Element.ALIGN_LEFT))
     }
 
     companion object {
@@ -80,6 +104,7 @@ class PremiumDemandSection : PremiumReportSection {
     // ---------- helpers ----------
 
     private val tableFont get() = PremiumReportTheme.regular(PremiumReportTheme.SIZE_TABLE)
+    private val tableBold get() = PremiumReportTheme.bold(PremiumReportTheme.SIZE_TABLE)
     private fun cells(v: PeriodValues) = listOf(v.p1, v.p2, v.p3, v.p4, v.p5, v.p6)
     private fun range(w: DemandWindowSummary) = PremiumReportFormat.inclusiveRange(w.start, w.endExclusive)
     private fun kw(v: Double?) = v?.let { PremiumReportFormat.number(it) } ?: PremiumDemandTexts.MISSING
@@ -221,7 +246,10 @@ class PremiumDemandSection : PremiumReportSection {
 
     // ---------- T0–T3 readings table ----------
 
-    private fun readingsTable(document: Document, writer: PdfWriter, s: DemandSummary, periods: List<Int>) {
+    private fun readingsTable(
+        document: Document, writer: PdfWriter, s: DemandSummary, periods: List<Int>,
+        contracted: PeriodValues?, averages: DemandRangeAverages
+    ) {
         heading(document, writer, PremiumDemandTexts.READINGS_TABLE_TITLE)
         val t = table((listOf(1.45f, 1.25f, 0.6f) + List(periods.size) { 1f }).toFloatArray())
         t.addCell(header(PremiumDemandTexts.COL_FROM, Element.ALIGN_LEFT))
@@ -238,7 +266,14 @@ class PremiumDemandSection : PremiumReportSection {
             val values = cells(p.values)
             periods.forEach { n -> t.addCell(cell(kw(values[n - 1]))) }
         }
+        val contractedCells = contracted?.let { cells(it) }
+        t.addCell(cell(PremiumDemandTexts.ROW_CONTRACTED, tableBold, Element.ALIGN_LEFT, PremiumReportTheme.COLOR_GRID, colspan = 3))
+        periods.forEach { n -> t.addCell(cell(kw(contractedCells?.get(n - 1)), tableBold, background = PremiumReportTheme.COLOR_GRID)) }
+        val means = cells(averages.means)
+        t.addCell(cell(PremiumDemandTexts.ROW_AVERAGE, tableBold, Element.ALIGN_LEFT, colspan = 3))
+        periods.forEach { n -> t.addCell(cell(means[n - 1]?.let { PremiumReportFormat.number(it) } ?: PremiumDemandTexts.MISSING, tableBold)) }
         document.add(t)
+        note(document, PremiumDemandTexts.AVERAGE_NOTE)
         note(document, PremiumDemandTexts.DATES_NOTE)
         if (s.historySeries.any { it.inOverlap }) note(document, PremiumDemandTexts.OVERLAP_FOOTNOTE)
         if (s.historySeries.any { it.activeAllZero }) note(document, PremiumDemandTexts.ACTIVE_ZERO_FOOTNOTE)

@@ -20,6 +20,7 @@ object ActiveChartPainter {
         axes(t, model)
         labels(t, model)
         legend(t, model)
+        model.bars.forEach { b -> b.innerLabel?.let { text(t, it, f(b.x + b.width / 2), f(b.y + b.height / 2) - 3f, TICK_SIZE, PdfContentByte.ALIGN_CENTER) } }
         return Image.getInstance(t)
     }
 
@@ -44,7 +45,7 @@ object ActiveChartPainter {
 
     private fun bar(t: PdfTemplate, m: ActiveChartModel, b: ChartBar) {
         t.saveState()
-        val fill: Color = b.period?.let { PremiumReportTheme.PERIOD_COLORS[it - 1] } ?: BAR_COLOR
+        val fill: Color = b.color ?: b.period?.let { PremiumReportTheme.PERIOD_COLORS[it - 1] } ?: BAR_COLOR
         // Small inset so adjacent readings stay visually separate while keeping their true extent.
         val inset = if (m.horizontal) 0f else minOf(0.4f, f(b.width) / 4)
         val x = f(b.x) + inset
@@ -141,7 +142,7 @@ object ActiveChartPainter {
         val muted = PremiumReportTheme.COLOR_MUTED
         if (m.horizontal) {
             m.valueTicks.forEach { text(t, it.label, f(m.plotLeft + it.position), f(m.plotBottom) - 11f, TICK_SIZE, PdfContentByte.ALIGN_CENTER, muted) }
-            m.bars.forEach { b -> text(t, b.label, 0f, f(b.y + b.height / 2) - 3f, LABEL_SIZE, PdfContentByte.ALIGN_LEFT) }
+            m.bars.filter { it.label.isNotEmpty() }.forEach { b -> text(t, b.label, 0f, f(b.y + b.height / 2) - 3f, LABEL_SIZE, PdfContentByte.ALIGN_LEFT) }
         } else {
             m.valueTicks.forEach { text(t, it.label, f(m.plotLeft) - 4f, f(m.plotBottom + it.position) - 3f, TICK_SIZE, PdfContentByte.ALIGN_RIGHT, muted) }
             m.categoryTicks.forEach {

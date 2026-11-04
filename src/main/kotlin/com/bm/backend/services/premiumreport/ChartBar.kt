@@ -13,5 +13,9 @@ data class ChartBar(
     val y: Double,
     val width: Double,
     val height: Double,
-    val style: ChartBarStyle
+    val style: ChartBarStyle,
+    /** Fill overriding the period colour (contracted-vs-average chart); null elsewhere. */
+    val color: java.awt.Color? = null,
+    /** Text centred inside the bar (contracted-vs-average chart); null elsewhere. */
+    val innerLabel: String? = null
 )
