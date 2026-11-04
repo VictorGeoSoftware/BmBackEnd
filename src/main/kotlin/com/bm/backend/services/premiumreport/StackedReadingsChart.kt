@@ -6,20 +6,18 @@ import java.time.temporal.ChronoUnit
  * Per-reading chart of a readings table (feedback 2026-11-03, option a): one equal-width slot per source reading in
  * table order, its bar stacked by the tariff [periods] with the published cells (height = their sum, the table's
  * Total). Nothing is prorated or relabelled as a month. All-null readings are a hatched band, all-zero readings a
- * zero marker, readings in a disclosed overlap an unfilled outline. Long histories are split into consecutive
- * charts of at most [MAX_SLOTS] readings so that every reading is shown.
+ * zero marker, readings in a disclosed overlap an unfilled outline. Drawn like the original study (feedback
+ * 2026-11-04): one chart, every bar labelled with its inclusive end date (`dd/MM/yy`, rotated; every n-th bar beyond
+ * [MAX_LABELS] readings).
  */
 object StackedReadingsChart {
-    const val MAX_SLOTS = 36
-    private const val MAX_LABELS = 12
-    private const val BAR_FRACTION = 0.7
-
-    fun charts(slots: List<ReadingSlot>, periods: List<Int>, unit: String): List<ActiveChartModel> =
-        slots.chunked(MAX_SLOTS).map { model(it, periods, unit) }
+    private const val BAR_FRACTION = 0.6
+    private const val MAX_LABELS = 36
+    private val LABEL_FORMAT = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yy")
 
     fun model(slots: List<ReadingSlot>, periods: List<Int>, unit: String): ActiveChartModel {
         val plotLeft = 46.0
-        val plotBottom = 30.0
+        val plotBottom = 48.0
         val plotWidth = ActiveChartModel.WIDTH - plotLeft - 10.0
         val plotHeight = 150.0
         val totals = slots.map { total(it, periods) }
@@ -45,10 +43,12 @@ object StackedReadingsChart {
                 }
             }
         }
+        // Every bar is labelled up to MAX_LABELS readings (a normal 24-month history); denser histories label every n-th, newest kept.
         val step = Math.ceil(slots.size / MAX_LABELS.toDouble()).toInt().coerceAtLeast(1)
         val categoryTicks = slots.indices.filter { (slots.size - 1 - it) % step == 0 }.map { i ->
-            val to = slots[i].let { if (ChronoUnit.DAYS.between(it.start, it.endExclusive) > 0) it.endExclusive.minusDays(1) else it.endExclusive }
-            ChartTick(slotWidth * i + slotWidth / 2, "%02d/%02d".format(to.monthValue, to.year % 100))
+            val s = slots[i]
+            val to = if (ChronoUnit.DAYS.between(s.start, s.endExclusive) > 0) s.endExclusive.minusDays(1) else s.endExclusive
+            ChartTick(slotWidth * i + slotWidth / 2, to.format(LABEL_FORMAT), rotated = true)
         }
         return ActiveChartModel(
             width = ActiveChartModel.WIDTH, height = plotBottom + plotHeight + 30.0,

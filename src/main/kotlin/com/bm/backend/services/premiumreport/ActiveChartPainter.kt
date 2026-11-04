@@ -129,11 +129,11 @@ object ActiveChartPainter {
         }
     }
 
-    private fun text(t: PdfTemplate, s: String, x: Float, y: Float, size: Float, align: Int, color: Color = PremiumReportTheme.COLOR_TEXT) {
+    private fun text(t: PdfTemplate, s: String, x: Float, y: Float, size: Float, align: Int, color: Color = PremiumReportTheme.COLOR_TEXT, rotation: Float = 0f) {
         t.beginText()
         t.setFontAndSize(PremiumReportTheme.regularBaseFont(), size)
         t.setColorFill(color)
-        t.showTextAligned(align, s, x, y, 0f)
+        t.showTextAligned(align, s, x, y, rotation)
         t.endText()
     }
 
@@ -148,7 +148,8 @@ object ActiveChartPainter {
                 val x = f(m.plotLeft + it.position)
                 t.saveState(); t.setColorStroke(muted); t.setLineWidth(0.5f)
                 t.moveTo(x, f(m.plotBottom)); t.lineTo(x, f(m.plotBottom) - 3f); t.stroke(); t.restoreState()
-                text(t, it.label, x, f(m.plotBottom) - 13f, TICK_SIZE, PdfContentByte.ALIGN_CENTER, muted)
+                if (it.rotated) text(t, it.label, x + 3f, f(m.plotBottom) - 7f, TICK_SIZE, PdfContentByte.ALIGN_RIGHT, muted, 45f)
+                else text(t, it.label, x, f(m.plotBottom) - 13f, TICK_SIZE, PdfContentByte.ALIGN_CENTER, muted)
             }
             text(t, m.unit, f(m.plotLeft) - 4f, f(m.plotBottom + m.plotHeight) + 6f, LABEL_SIZE, PdfContentByte.ALIGN_LEFT)
         }

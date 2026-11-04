@@ -58,11 +58,11 @@ class PremiumReactiveSection : PremiumReportSection {
         quotient(document, writer, summary, w)
 
         val slots = summary.historySeries.map { ReadingSlot(it.start, it.endExclusive, it.values, it.inUnresolvedOverlap) }
-        StackedReadingsChart.charts(slots, periods, PremiumReactiveTexts.UNIT).forEachIndexed { i, model ->
-            if (i == 0) heading(document, writer, PremiumReactiveTexts.READINGS_CHART_TITLE, model.height.toFloat() + 70f)
+        if (slots.isNotEmpty()) {
+            val model = StackedReadingsChart.model(slots, periods, PremiumReactiveTexts.UNIT)
+            heading(document, writer, PremiumReactiveTexts.READINGS_CHART_TITLE, model.height.toFloat() + 40f)
             chart(document, writer, model)
         }
-        if (slots.isNotEmpty()) note(document, PremiumReactiveTexts.READINGS_CAPTION)
         readingsTable(document, writer, summary, periods)
     }
 

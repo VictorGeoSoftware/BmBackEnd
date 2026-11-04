@@ -35,18 +35,6 @@ object FamilyWindowAggregator {
     fun hasRows(history: StudyHistory, family: MeasurementFamily, inverted: Set<Int>): Boolean =
         spans(history, family, inverted).isNotEmpty()
 
-    /** [aggregate] over the whole history: from the earliest row start up to [end] (the anchor). */
-    fun wholeHistory(
-        history: StudyHistory,
-        family: MeasurementFamily,
-        inverted: Set<Int>,
-        end: LocalDate,
-        periods: List<Int> = TariffPeriodProfile.ALL_PERIODS
-    ): FamilyWindowAggregate {
-        val start = history.intervals.minOfOrNull { it.startDate }?.coerceAtMost(end) ?: end
-        return aggregate(history, family, inverted, start, end, periods)
-    }
-
     fun aggregate(
         history: StudyHistory,
         family: MeasurementFamily,

@@ -28,11 +28,11 @@ class PremiumActiveSectionTest {
             "72.677", "64.948", "7.201", "8.225", "7.467", "9.031", "3.684", "37.069", "9,9 %",
             "Variación interanual: +11,9 %",
             "Lecturas solapadas 31/05/2026–29/06/2026: una de ellas sin consumo; no altera el total.",
-            "P1 7.201 kWh (9,9 %)", "Consumo de energía activa por lectura", PremiumActiveTexts.READINGS_CAPTION)
+            "P1 7.201 kWh (9,9 %)", "Consumo de energía activa por lectura")
         // Feedback 2026-11-03: daily averages, high intervals and source comparisons are gone.
         assertHasNot(text, "Histórico inferior a 12 meses", "Parcial:", "Sin cifra firme", "kWh/día",
             "Consumo medio diario por lectura", "Intervalos de mayor consumo medio diario", "Comparación con fuentes anuales",
-            "SIPS (distribuidora)", "Consumo anual del estudio básico", "El histórico cubre")
+            "SIPS (distribuidora)", "Consumo anual del estudio básico", "El histórico cubre", "Cada barra es una lectura")
     }
 
     @Test
@@ -84,15 +84,17 @@ class PremiumActiveSectionTest {
     }
 
     @Test
-    fun `F long history flows across pages with every row and no chart cap`() {
+    fun `F long history lists and charts exactly the readings of the last 24 months`() {
         val rows = PremiumReportFixtures.longRows()
-        val pdf = render(activeDataset(history(rows)))
-        assertTrue(pdf.pageCount >= 2)
-        val text = pdf.text
+        val text = render(activeDataset(history(rows))).text
         val fmt = DateTimeFormatter.ofPattern("dd/MM/yyyy")
-        rows.forEach { assertTrue(it.startDate.format(fmt) in text, "missing ${it.startDate}") }
-        assertHasNot(text, "lecturas más recientes")
-        assertTrue(Regex("Desde Hasta Días").findAll(text).count() >= 2, "header not repeated")
+        val start = java.time.LocalDate.parse("2024-07-31")
+        val (recent, older) = rows.partition { it.startDate >= start }
+        assertEquals(24, recent.size)
+        recent.forEach { assertTrue(it.startDate.format(fmt) in text, "missing ${it.startDate}") }
+        // The first row's date also opens the "Histórico disponible" line; the other older rows must not be listed.
+        older.drop(1).forEach { assertFalse(it.startDate.format(fmt) in text, "unexpected ${it.startDate}") }
+        assertHasNot(text, "lecturas más recientes", "Cada barra es una lectura")
     }
 
     @Test
