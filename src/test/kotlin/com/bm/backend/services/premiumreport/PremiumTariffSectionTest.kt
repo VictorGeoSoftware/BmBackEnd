@@ -42,8 +42,6 @@ class PremiumTariffSectionTest {
         assertFalse(demand.contains("Sin lecturas en la fuente para"))
         assertFalse(demand.contains(PremiumDemandTexts.NULL_CELLS))
         assertFalse(demand.contains("P3"), "demand shows only P1–P2")
-        assertTrue(demand.contains(PremiumDemandTexts.readingsCaption(listOf(1, 2))))
-        assertTrue(demand.contains("entre P1 y P2"))
         assertTrue(demand.contains("P2${PremiumDemandTexts.UNIT_SUFFIX}"))
     }
 
@@ -66,8 +64,7 @@ class PremiumTariffSectionTest {
     fun `3 three point zero TD keeps six periods and no tariff note`() {
         val pdf = render(F.documentDataset())
         assertFalse(pdf.text.contains(sourcePeriods))
-        assertTrue(pdf.text.contains(PremiumDemandTexts.readingsCaption((1..6).toList())))
-        assertTrue(pdf.text.contains("entre P1 y P6"))
+        assertTrue(pdf.text.contains("P6 (kW)"))
         assertTrue(pdf.text.contains("P6 (kWh)"))
     }
 
@@ -126,20 +123,6 @@ class PremiumTariffSectionTest {
         val page = pdf.pageTexts.first { it.contains(ds.comparison.title) }
         assertTrue(page.contains("P1") && page.contains("P2") && page.contains("P3"))
         assertFalse(page.contains("P4"))
-    }
-
-    @Test
-    fun `T4 caption variants`() {
-        val c6 = PremiumDemandTexts.readingsCaption((1..6).toList())
-        assertEquals(
-            "Cada barra es una lectura de la fuente (no un mes): la altura es el mayor valor de maxímetro registrado entre P1 y P6 " +
-                "en esa lectura (kW) y la anchura los días que cubre. Contorno sin relleno: lectura solapada. Raya sobre el eje: lectura con valor 0.",
-            c6
-        )
-        assertEquals(c6, PremiumDemandTexts.READINGS_CAPTION)
-        assertTrue(PremiumDemandTexts.readingsCaption(listOf(1, 2)).contains("registrado entre P1 y P2 en esa lectura (kW)"))
-        assertTrue(PremiumDemandTexts.readingsCaption(listOf(2)).contains("registrado en P2 en esa lectura (kW)"))
-        assertTrue(PremiumDemandTexts.readingsCaption(listOf(1, 3, 5)).contains("registrado en P1, P3, P5 en esa lectura (kW)"))
     }
 
     @Test

@@ -1,16 +1,13 @@
 package com.bm.backend.services.premiumreport
 
 import com.bm.backend.models.DemandPeriodStatistic
-import com.bm.backend.models.DemandSeriesPoint
 import com.bm.backend.models.PeriodValues
 import com.bm.backend.models.TariffPeriodProfile
-import java.time.LocalDate
-import java.time.temporal.ChronoUnit
 
 /**
- * Pure geometry of the demanded-power charts (spec report-demand-page V3/V4). Both factories return the shared
- * [ActiveChartModel] so [ActiveChartPainter] draws them. Values are kW exactly as the demand summary gives them;
- * the only presentation-only figure is the per-reading highest P1–P6 value of [readings].
+ * Pure geometry of the maximum-vs-contracted demand chart (spec report-demand-page V3). Returns the shared
+ * [ActiveChartModel] so [ActiveChartPainter] draws it; values are kW exactly as the demand summary gives them. The
+ * per-reading chart is [GroupedReadingsChart] (spec report-original-fidelity).
  */
 object DemandChartModel {
     private fun cells(v: PeriodValues) = listOf(v.p1, v.p2, v.p3, v.p4, v.p5, v.p6)
@@ -50,52 +47,6 @@ object DemandChartModel {
             horizontal = true, axisMax = axisMax, unit = PremiumDemandTexts.UNIT,
             valueTicks = ActiveChartModel.ticks(axisMax, plotWidth) { "${ActiveChartModel.tickNumber(it)} ${PremiumDemandTexts.UNIT}" },
             categoryTicks = emptyList(), bars = bars, totalRows = powerPeriods.size, shownRows = powerPeriods.size, markers = markers
-        )
-    }
-
-    /**
-     * One vertical bar per series row (date order; the page passes the full history, feedback 2026-11-03) on a true
-     * date axis (V4): height = highest non-null P1–P6 value of that row in kW (not per day), width = days.
-     * Zero ⇒ zero marker, overlapping rows outlined. Every row is shown. Null when empty.
-     */
-    fun readings(series: List<DemandSeriesPoint>): ActiveChartModel? {
-        val dated = series.filter { it.days > 0 }
-            .sortedWith(compareBy<DemandSeriesPoint>({ it.start }, { it.endExclusive }, { it.index }))
-        if (dated.isEmpty()) return null
-        val shown = dated
-        val start = shown.minOf { it.start }
-        val end = shown.maxOf { it.endExclusive }
-        val span = ChronoUnit.DAYS.between(start, end).toDouble()
-
-        val plotLeft = 46.0
-        val plotBottom = 30.0
-        val plotWidth = ActiveChartModel.WIDTH - plotLeft - 10.0
-        val plotHeight = 150.0
-        val maxima = shown.map { p -> cells(p.values).filterNotNull().maxOrNull() }
-        val axisMax = ActiveChartModel.niceCeiling(maxima.filterNotNull().maxOrNull() ?: 0.0)
-        fun x(d: LocalDate) = plotLeft + ChronoUnit.DAYS.between(start, d) / span * plotWidth
-
-        val bars = shown.mapIndexed { i, p ->
-            val v = maxima[i]
-            val style = when {
-                v == null -> ChartBarStyle.NO_DATA
-                v == 0.0 -> ChartBarStyle.ZERO_MARKER
-                p.inOverlap -> ChartBarStyle.OUTLINED
-                else -> ChartBarStyle.FILLED
-            }
-            val label = "${PremiumReportFormat.inclusiveRange(p.start, p.endExclusive)}: " +
-                (v?.let { "${PremiumReportFormat.number(it)} ${PremiumDemandTexts.UNIT}" } ?: PremiumDemandTexts.MISSING)
-            ChartBar(p.index, null, v, label, x(p.start), plotBottom, p.days / span * plotWidth,
-                if (v == null) plotHeight else v / axisMax * plotHeight, style)
-        }
-        return ActiveChartModel(
-            width = ActiveChartModel.WIDTH, height = plotBottom + plotHeight + 16.0,
-            plotLeft = plotLeft, plotBottom = plotBottom, plotWidth = plotWidth, plotHeight = plotHeight,
-            horizontal = false, axisMax = axisMax, unit = PremiumDemandTexts.UNIT,
-            valueTicks = ActiveChartModel.ticks(axisMax, plotHeight) { ActiveChartModel.tickNumber(it) },
-            categoryTicks = ActiveChartModel.monthTicks(start, end)
-                .map { ChartTick(x(it) - plotLeft, ActiveChartModel.monthLabel(it)) },
-            bars = bars, totalRows = dated.size, shownRows = shown.size
         )
     }
 }

@@ -64,36 +64,4 @@ class DemandChartModelTest {
         assertTrue(StackedReadingsChart.model(r.series.map { ReadingSlot(it.start, it.endExclusive, it.values, false) }, (1..6).toList(), "kVArh").markers.isEmpty())
         assertTrue(ReactiveChartModel.distribution(r.window!!)!!.markers.isEmpty())
     }
-
-    @Test
-    fun `readings chart has one bar per series row with height equal to the row maximum`() {
-        val s = summary(PremiumReportFixtures.demandOverlapZeroActiveRows())
-        val m = DemandChartModel.readings(s.series)!!
-        assertEquals("kW", m.unit)
-        assertEquals(s.series.size, m.bars.size)
-        assertTrue(m.markers.isEmpty())
-        val span = ChronoUnit.DAYS.between(s.series.minOf { it.start }, s.series.maxOf { it.endExclusive }).toDouble()
-        s.series.forEachIndexed { i, p ->
-            val b = m.bars[i]
-            val max = listOf(p.values.p1, p.values.p2, p.values.p3, p.values.p4, p.values.p5, p.values.p6).filterNotNull().max()
-            assertEquals(p.index, b.sourceIndex)
-            close(max, b.value)
-            close(max / m.axisMax * m.plotHeight, b.height)
-            close(p.days / span * m.plotWidth, b.width)
-            assertEquals(if (p.inOverlap) ChartBarStyle.OUTLINED else ChartBarStyle.FILLED, b.style)
-        }
-        assertEquals(40.0, m.bars.maxOf { it.value!! })
-        assertTrue(m.bars.any { it.label == "31/05/2026 – 29/06/2026: 40 kW" })
-    }
-
-    @Test
-    fun `readings chart zero rows are markers, empty series has no chart and the full history is never capped`() {
-        assertTrue(DemandChartModel.readings(summary(PremiumReportFixtures.demandZeroRows()).series)!!.bars.all { it.style == ChartBarStyle.ZERO_MARKER })
-        assertNull(DemandChartModel.readings(emptyList()))
-        val s = summary(PremiumReportFixtures.demandLongRows())
-        val long = DemandChartModel.readings(s.historySeries)!!
-        assertEquals(s.historySeries.size, long.bars.size)
-        assertEquals(long.totalRows, long.shownRows)
-        assertEquals(73, long.bars.size)
-    }
 }
