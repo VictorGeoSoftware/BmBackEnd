@@ -1,6 +1,8 @@
 package com.bm.backend.services.premiumreport
 
 import com.bm.backend.models.PeriodValues
+import com.bm.backend.models.ReactivePenaltySummary
+import com.bm.backend.models.ReactivePenaltyWindowKind
 import com.bm.backend.models.ReactiveRatio
 import com.bm.backend.models.ReactiveSummary
 import com.bm.backend.models.ReactiveWindowStatus
@@ -9,6 +11,8 @@ import com.bm.backend.models.ReportDataset
 import com.bm.backend.models.StudyHistory
 import com.bm.backend.models.StudyHistoryStatus
 import com.bm.backend.utils.HistoryCoverageCalculator
+import com.bm.backend.utils.ReactivePenaltyCalculator
+import com.bm.backend.utils.ReactivePenaltyPrices
 import com.bm.backend.utils.ReactiveSummaryCalculator
 import com.bm.backend.utils.TariffPeriodResolver
 import com.lowagie.text.Document
@@ -32,8 +36,10 @@ class PremiumReactiveSection : PremiumReportSection {
 
     override fun write(document: Document, writer: PdfWriter, dataset: ReportDataset) {
         val history = dataset.history
-        val periods = TariffPeriodResolver.resolve(dataset).energyPeriods
-        val summary = ReactiveSummaryCalculator.calculate(history, HistoryCoverageCalculator.calculate(history), periods)
+        val profile = TariffPeriodResolver.resolve(dataset)
+        val periods = profile.energyPeriods
+        val coverage = HistoryCoverageCalculator.calculate(history)
+        val summary = ReactiveSummaryCalculator.calculate(history, coverage, periods)
         val w = summary.window
 
         document.setPageSize(PremiumReportTheme.PAGE_PORTRAIT)
@@ -63,7 +69,55 @@ class PremiumReactiveSection : PremiumReportSection {
             heading(document, writer, PremiumReactiveTexts.READINGS_CHART_TITLE, model.height.toFloat() + 40f)
             chart(document, writer, model)
         }
-        readingsTable(document, writer, summary, periods)
+        val penalty = ReactivePenaltyCalculator.calculate(history, summary.historySeries, coverage.anchorDate, profile)
+        readingsTable(document, writer, summary, periods, penalty)
+        penaltyBlock(document, writer, penalty)
+    }
+
+    // ---------- penalty estimate (spec report-reactive-penalty) ----------
+
+    private fun penaltyBlock(document: Document, writer: PdfWriter, penalty: ReactivePenaltySummary) {
+        if (!penalty.applicable) {
+            note(document, PremiumReactiveTexts.PENALTY_NOT_APPLICABLE)
+            return
+        }
+        heading(document, writer, PremiumReactiveTexts.PENALTY_TITLE)
+        val t = table(floatArrayOf(1.6f, 1.2f, 1.4f, 0.8f)).apply { keepTogether = true }
+        t.addCell(header(PremiumReactiveTexts.COL_WINDOW, Element.ALIGN_LEFT))
+        t.addCell(header("${PremiumReactiveTexts.COL_PENALTY} (€)"))
+        t.addCell(header(PremiumReactiveTexts.COL_REACTIVE_P1_P5))
+        t.addCell(header(PremiumReactiveTexts.COL_COS_PHI))
+        penalty.totals.forEach { total ->
+            val label = when (total.kind) {
+                ReactivePenaltyWindowKind.LAST_12M -> PremiumReactiveTexts.LAST_12M
+                ReactivePenaltyWindowKind.PREVIOUS_12M -> PremiumReactiveTexts.PREVIOUS_12M
+                ReactivePenaltyWindowKind.LAST_24M -> PremiumReactiveTexts.LAST_24M
+            }
+            t.addCell(cell("$label\n${PremiumReportFormat.inclusiveRange(total.start, total.endExclusive)}", align = Element.ALIGN_LEFT))
+            val eur = total.penaltyEur
+            if (eur == null) {
+                t.addCell(cell(penaltyReason(total.reason), colspan = 3))
+            } else {
+                t.addCell(cell(PremiumReportFormat.euros(eur), tableBold))
+                t.addCell(cell(kvarh(total.reactiveKvarh)))
+                t.addCell(cell(total.cosPhi?.let { PremiumReportFormat.decimal2(it) } ?: PremiumReactiveTexts.MISSING))
+            }
+        }
+        document.add(t)
+
+        val slots = penalty.readings.map { r -> ReadingSlot(r.start, r.endExclusive, PeriodValues(r.penaltyEur, null, null, null, null, null), r.inUnresolvedOverlap) }
+        if (slots.isNotEmpty()) {
+            val model = StackedReadingsChart.model(slots, listOf(1), PremiumReactiveTexts.PENALTY_UNIT).copy(legend = emptyList())
+            heading(document, writer, PremiumReactiveTexts.PENALTY_CHART_TITLE, model.height.toFloat() + 40f)
+            chart(document, writer, model)
+        }
+        note(document, PremiumReactiveTexts.penaltyNote(ReactivePenaltyPrices.BOE_REFERENCE))
+    }
+
+    private fun penaltyReason(reason: String?) = when (reason) {
+        ReactivePenaltyCalculator.OVERLAP -> PremiumReactiveTexts.PENALTY_NO_FIGURE_OVERLAP
+        ReactivePenaltyCalculator.NOT_CALCULABLE -> PremiumReactiveTexts.PENALTY_NO_FIGURE_MISSING
+        else -> PremiumReactiveTexts.PENALTY_NO_READINGS
     }
 
     companion object {
@@ -242,12 +296,15 @@ class PremiumReactiveSection : PremiumReportSection {
 
     // ---------- T0–T2 readings table ----------
 
-    private fun readingsTable(document: Document, writer: PdfWriter, s: ReactiveSummary, periods: List<Int>) {
+    private fun readingsTable(document: Document, writer: PdfWriter, s: ReactiveSummary, periods: List<Int>, penalty: ReactivePenaltySummary) {
         heading(document, writer, PremiumReactiveTexts.READINGS_TABLE_TITLE)
-        val t = table(widths(1.35f, 1.25f, 0.6f, periods = periods, trail = 1.1f))
+        val byIndex = penalty.readings.associateBy { it.index }
+        val lead = if (penalty.applicable) floatArrayOf(1.25f, 1.15f, 0.6f, 1.45f) else floatArrayOf(1.35f, 1.25f, 0.6f)
+        val t = table(widths(*lead, periods = periods, trail = 1.0f))
         t.addCell(header(PremiumReactiveTexts.COL_FROM, Element.ALIGN_LEFT))
         t.addCell(header(PremiumReactiveTexts.COL_TO, Element.ALIGN_LEFT))
         t.addCell(header(PremiumReactiveTexts.COL_DAYS))
+        if (penalty.applicable) t.addCell(header(PremiumReactiveTexts.COL_PENALTY, background = PremiumReportTheme.PERIOD_COLORS[0], color = PremiumReportTheme.COLOR_WHITE))
         periodHeaders(t, periods, PremiumReactiveTexts.UNIT_SUFFIX)
         t.addCell(header(PremiumReactiveTexts.COL_TOTAL_KVARH))
         s.historySeries.forEach { p ->
@@ -255,11 +312,16 @@ class PremiumReactiveSection : PremiumReportSection {
             t.addCell(cell(PremiumReportFormat.date(p.start) + mark, align = Element.ALIGN_LEFT))
             t.addCell(cell(PremiumReportFormat.date(p.endExclusive.minusDays(1)), align = Element.ALIGN_LEFT))
             t.addCell(cell(p.days.toString()))
+            if (penalty.applicable) {
+                val eur = byIndex[p.index]?.penaltyEur
+                t.addCell(cell(eur?.let { PremiumReportFormat.euros(it) } ?: "${PremiumReactiveTexts.MISSING}${PremiumReactiveTexts.PENALTY_MISSING_MARK}", tableBold))
+            }
             val values = cells(p.values)
             periods.forEach { n -> t.addCell(cell(kvarh(values[n - 1]))) }
             t.addCell(cell(kvarh(p.total), tableBold))
         }
         document.add(t)
+        if (penalty.readings.any { it.penaltyEur == null }) note(document, PremiumReactiveTexts.PENALTY_MISSING_FOOTNOTE)
         if (s.historySeries.any { it.inUnresolvedOverlap }) note(document, PremiumReactiveTexts.OVERLAP_FOOTNOTE)
         note(document, PremiumReactiveTexts.DATES_NOTE)
     }

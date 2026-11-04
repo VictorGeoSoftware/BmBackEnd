@@ -155,6 +155,12 @@ object PremiumReportFixtures {
     fun reactiveCompleteRows() = reactiveMonths() +
         reactiveRow(LocalDate.parse("2026-05-31"), LocalDate.parse("2026-06-30"), NULLS, ZEROS)
 
+    /** Penalty: high reactive in P1–P2 (cos φ < 0,80 in P1, 0,80–0,95 in P2), so the estimate is not 0. */
+    fun reactivePenaltyRows() = reactiveMonths(
+        active = { pv(1000.0, 1000.0, 500.0, 500.0, 500.0, 2000.0) },
+        reactive = { pv(1000.0, 620.0, 100.0, 0.0, 0.0, 3000.0) }
+    )
+
     /** B: every reactive cell recorded as 0.0, active > 0. */
     fun reactiveZeroRows() = reactiveMonths(reactive = { ZEROS })
 
