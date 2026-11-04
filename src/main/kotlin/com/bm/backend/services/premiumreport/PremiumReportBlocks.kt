@@ -29,6 +29,16 @@ object PremiumReportBlocks {
         setLeading(0f, 1.3f)
     }
 
+    /**
+     * Vertical space a heading must have below it so a readings table of [rows] rows (plus header/total rows) starts
+     * on the same page as its heading and, when it fits on one page, is not split (layout pass, 2026-11-04).
+     */
+    fun tableNeed(rows: Int): Float = (rows * ROW_HEIGHT + TABLE_EXTRA).coerceAtMost(MAX_NEED)
+
+    private const val ROW_HEIGHT = 12.5f
+    private const val TABLE_EXTRA = 70f
+    private const val MAX_NEED = 680f
+
     /** Full-width yellow bar with dark bold text. */
     fun sectionBar(title: String): PdfPTable = PdfPTable(1).apply {
         widthPercentage = 100f

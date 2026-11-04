@@ -81,7 +81,7 @@ class PremiumReactiveSection : PremiumReportSection {
             note(document, PremiumReactiveTexts.PENALTY_NOT_APPLICABLE)
             return
         }
-        heading(document, writer, PremiumReactiveTexts.PENALTY_TITLE)
+        heading(document, writer, PremiumReactiveTexts.PENALTY_TITLE, PENALTY_BLOCK_NEED)
         val t = table(floatArrayOf(1.6f, 1.2f, 1.4f, 0.8f)).apply { keepTogether = true }
         t.addCell(header(PremiumReactiveTexts.COL_WINDOW, Element.ALIGN_LEFT))
         t.addCell(header("${PremiumReactiveTexts.COL_PENALTY} (€)"))
@@ -108,7 +108,7 @@ class PremiumReactiveSection : PremiumReportSection {
         val slots = penalty.readings.map { r -> ReadingSlot(r.start, r.endExclusive, PeriodValues(r.penaltyEur, null, null, null, null, null), r.inUnresolvedOverlap) }
         if (slots.isNotEmpty()) {
             val model = StackedReadingsChart.model(slots, listOf(1), PremiumReactiveTexts.PENALTY_UNIT).copy(legend = emptyList())
-            heading(document, writer, PremiumReactiveTexts.PENALTY_CHART_TITLE, model.height.toFloat() + 40f)
+            heading(document, writer, PremiumReactiveTexts.PENALTY_CHART_TITLE, model.height.toFloat() + 70f)
             chart(document, writer, model)
         }
         note(document, PremiumReactiveTexts.penaltyNote(ReactivePenaltyPrices.BOE_REFERENCE))
@@ -121,6 +121,9 @@ class PremiumReactiveSection : PremiumReportSection {
     }
 
     companion object {
+        /** Totals table, penalty chart and note stay on one page (layout pass, 2026-11-04). */
+        private const val PENALTY_BLOCK_NEED = 420f
+
         /** N1 for a history without reactive rows, N2 for any other unavailable reason. */
         fun unavailableSentence(summary: ReactiveSummary): String =
             if (summary.reason == ReactiveSummaryCalculator.NO_REACTIVE_ROWS) PremiumReactiveTexts.NO_REACTIVE_ROWS
@@ -297,7 +300,7 @@ class PremiumReactiveSection : PremiumReportSection {
     // ---------- T0–T2 readings table ----------
 
     private fun readingsTable(document: Document, writer: PdfWriter, s: ReactiveSummary, periods: List<Int>, penalty: ReactivePenaltySummary) {
-        heading(document, writer, PremiumReactiveTexts.READINGS_TABLE_TITLE)
+        heading(document, writer, PremiumReactiveTexts.READINGS_TABLE_TITLE, PremiumReportBlocks.tableNeed(s.historySeries.size))
         val byIndex = penalty.readings.associateBy { it.index }
         val lead = if (penalty.applicable) floatArrayOf(1.25f, 1.15f, 0.6f, 1.45f) else floatArrayOf(1.35f, 1.25f, 0.6f)
         val t = table(widths(*lead, periods = periods, trail = 1.0f))

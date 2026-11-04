@@ -32,7 +32,7 @@ class PremiumComparisonSection : PremiumReportSection {
     private fun table(page: ComparisonPage): PdfPTable = PdfPTable(page.columnCount).apply {
         keepTogether = true
         isSplitLate = false
-        horizontalAlignment = Element.ALIGN_LEFT
+        horizontalAlignment = Element.ALIGN_CENTER
         val widths = FloatArray(page.columnCount) { WIDTH_OFFER }
         widths[0] = WIDTH_SIDE
         widths[1] = WIDTH_CONSUMPTION

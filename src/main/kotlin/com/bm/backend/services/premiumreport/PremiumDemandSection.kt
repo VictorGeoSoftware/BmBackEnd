@@ -78,7 +78,7 @@ class PremiumDemandSection : PremiumReportSection {
 
         if (contracted != null) {
             val split = ContractedAverageChart.model(contracted, averages.means, periods)
-            heading(document, writer, PremiumDemandTexts.CONTRACTED_AVERAGE_TITLE, split.height.toFloat() + 60f)
+            heading(document, writer, PremiumDemandTexts.CONTRACTED_AVERAGE_TITLE, split.height.toFloat() + 50f)
             chart(document, split, writer)
             document.add(legend())
         }
@@ -250,7 +250,7 @@ class PremiumDemandSection : PremiumReportSection {
         document: Document, writer: PdfWriter, s: DemandSummary, periods: List<Int>,
         contracted: PeriodValues?, averages: DemandRangeAverages
     ) {
-        heading(document, writer, PremiumDemandTexts.READINGS_TABLE_TITLE)
+        heading(document, writer, PremiumDemandTexts.READINGS_TABLE_TITLE, PremiumReportBlocks.tableNeed(s.historySeries.size + 2))
         val t = table((listOf(1.45f, 1.25f, 0.6f) + List(periods.size) { 1f }).toFloatArray())
         t.addCell(header(PremiumDemandTexts.COL_FROM, Element.ALIGN_LEFT))
         t.addCell(header(PremiumDemandTexts.COL_TO, Element.ALIGN_LEFT))
