@@ -80,4 +80,26 @@ object PremiumReactiveTexts {
     const val DATES_NOTE = "Fechas inclusivas; valores en kVArh tal como los publica la fuente."
     const val OVERLAP_MARK = "†"
     const val OVERLAP_FOOTNOTE = "† Lectura solapada sin resolver."
+
+    // Penalty estimate (scope change approved 2026-11-04, spec report-reactive-penalty).
+    const val COL_PENALTY = "Penalización"
+    const val PENALTY_TITLE = "Penalización por energía reactiva"
+    const val PENALTY_CHART_TITLE = "Penalización estimada por lectura"
+    const val PENALTY_UNIT = "€"
+    const val COL_WINDOW = "Periodo"
+    const val COL_REACTIVE_P1_P5 = "Reactiva P1–P5 (kVArh)"
+    const val COL_COS_PHI = "cos φ"
+    const val LAST_12M = "Último año"
+    const val PREVIOUS_12M = "Año anterior"
+    const val LAST_24M = "Últimos 24 meses"
+    const val PENALTY_NOT_APPLICABLE = "Penalización por energía reactiva: no aplica a esta tarifa."
+    const val PENALTY_NO_FIGURE_OVERLAP = "Sin cifra firme: lecturas solapadas"
+    const val PENALTY_NO_FIGURE_MISSING = "Sin cifra firme: lecturas sin valores"
+    const val PENALTY_NO_READINGS = "Sin lecturas"
+    const val PENALTY_MISSING_MARK = "‡"
+    const val PENALTY_MISSING_FOOTNOTE = "‡ No calculable: falta la energía activa o reactiva de algún periodo P1–P5."
+    fun penaltyNote(boe: String) =
+        "Importe estimado a partir de las lecturas con los precios regulados vigentes desde 01/01/2026 ($boe): " +
+            "exceso de energía reactiva sobre el 33 % de la activa en P1–P5, a 0,041554 €/kVArh con cos φ entre 0,80 y 0,95 " +
+            "y a 0,062332 €/kVArh con cos φ inferior a 0,80. El importe vinculante es el que figura en la factura."
 }

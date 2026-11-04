@@ -64,6 +64,9 @@ object PremiumReportFormat {
         return format.format(value).let { if (it == "-0,0") "0,0" else it }
     }
 
+    /** Euros with two decimals (`1.234,56 €`), display rounding only. */
+    fun euros(value: Double): String = "${decimal2(value)} €"
+
     /** Exactly two decimals with Spanish grouping, HALF_UP (`0.125` → `0,13`, `-0.001` → `0,00`); used for kVArh/kWh. */
     fun decimal2(value: Double): String {
         val symbols = DecimalFormatSymbols(LOCALE).apply { minusSign = '-' }

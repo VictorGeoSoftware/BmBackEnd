@@ -72,7 +72,8 @@ class PremiumReactiveSectionTest {
         "T2" to T.OVERLAP_FOOTNOTE
     )
 
-    private val forbidden = listOf("Cada barra es una lectura", "penaliz", "factor de potencia", "cos", "φ", "exceso", "cumple", "umbral", "33 %", "€",
+    // Penalty estimate approved 2026-11-04: "penaliz", "€", "cos φ", "exceso" and "33 %" belong to its block now.
+    private val forbidden = listOf("Cada barra es una lectura", "factor de potencia", "cumple", "umbral",
         "optimi", "recomend", "Información descriptiva", PremiumReportFixtures.CUPS)
 
     private fun ds(rows: List<StudyHistoryInterval>) = activeDataset(history(rows))
@@ -154,7 +155,7 @@ class PremiumReactiveSectionTest {
         assertSentences(text, "H0 W1 H1 C1 C4 N4 D0 D2 Q0 B1 U0 U2 G0–G2 T0 T1",
             listOf(w1, b1, T.partialWindow(w.coveredDays, w.windowDays), "${T.RATIO_UNAVAILABLE} ${T.RATIO_REACTIVE_INCOMPLETE}",
                 "${T.PARTIAL_PREFIX} ${PremiumReportFormat.kwh(w.partialTotal!!)}", "243 / 365"))
-        assertFalse("%" in text, "no shares when partial")
+        assertFalse(Regex("\\d,\\d %").containsMatchIn(text), "no shares when partial")
     }
 
     @Test
@@ -201,7 +202,7 @@ class PremiumReactiveSectionTest {
         val fmt = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")
         val all = summary(ds).historySeries
         all.forEach { assertTrue(it.start.format(fmt) in text, "missing ${it.start}") }
-        assertTrue(Regex("Desde Hasta Días").findAll(text).count() >= 2, "header not repeated")
+        assertTrue(Regex("DesdeHastaDías").findAll(squash(text)).count() >= 2, "header not repeated")
         assertTrue("26/07/2026" in text && "31/07/2025" in text)
     }
 
