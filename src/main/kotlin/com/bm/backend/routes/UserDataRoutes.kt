@@ -3,7 +3,6 @@ package com.bm.backend.routes
 import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.UserDataRequest
 import com.bm.backend.services.AccessControlService
-import com.bm.backend.services.DeviceMismatchException
 import com.bm.backend.services.UserDataService
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -40,32 +39,15 @@ fun Route.userDataRoutes(
                 return@post
             }
 
-            try {
-                userDataService.upsertUserData(
-                    uid = uid,
-                    email = authenticatedUser.email,
-                    displayName = request.displayName ?: authenticatedUser.name,
-                    photoURL = request.photoURL,
-                    providerIds = request.providerIds,
-                    tokenIssuedAt = authenticatedUser.tokenIssuedAt,
-                    tokenExpiresAt = authenticatedUser.tokenExpiresAt,
-                    phoneUuid = request.phoneUuid
-                )
-            } catch (e: DeviceMismatchException) {
-                call.application.log.warn(
-                    "AUDIT: Rejected login from unrecognized device uid={} email={}",
-                    uid,
-                    authenticatedUser.email
-                )
-                call.respond(
-                    HttpStatusCode.Forbidden,
-                    ErrorResponse(
-                        message = "Esta cuenta ya está vinculada a otro dispositivo. " +
-                            "Contacta con el equipo de administración."
-                    )
-                )
-                return@post
-            }
+            userDataService.upsertUserData(
+                uid = uid,
+                email = authenticatedUser.email,
+                displayName = request.displayName ?: authenticatedUser.name,
+                photoURL = request.photoURL,
+                providerIds = request.providerIds,
+                tokenIssuedAt = authenticatedUser.tokenIssuedAt,
+                tokenExpiresAt = authenticatedUser.tokenExpiresAt
+            )
 
             call.respond(HttpStatusCode.OK)
         } catch (e: IllegalArgumentException) {

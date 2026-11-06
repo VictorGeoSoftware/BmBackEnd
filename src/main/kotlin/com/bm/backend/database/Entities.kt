@@ -80,7 +80,7 @@ object UserDataDb : IntIdTable("user_data") {
     val displayName = varchar("display_name", 255).nullable()
     val photoURL = text("photo_url").nullable()
     val providerIds = text("provider_ids")
-    // Opaque per-install device identifier used to enforce one-phone-per-account.
+    // Legacy: device binding (one-phone-per-account) was removed; column kept, no longer written.
     val phoneUuid = varchar("phone_uuid", 64).nullable()
     val tokenIssuedAt = timestamp("token_issued_at")
     val tokenExpiresAt = timestamp("token_expires_at")
