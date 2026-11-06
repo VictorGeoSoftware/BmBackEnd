@@ -17,14 +17,13 @@ class PremiumReactivePenaltySectionTest {
     private fun has(text: String, part: String) = squash(part) in squash(text)
 
     @Test
-    fun `3_0TD shows the penalty column, totals, chart and the BOE note`() {
+    fun `3_0TD shows the penalty column, chart and the BOE note but no totals table`() {
         val t = text(activeDataset(history(PremiumReportFixtures.reactivePenaltyRows())))
-        listOf("${T.COL_PENALTY} (€)", T.PENALTY_TITLE, T.PENALTY_CHART_TITLE, T.LAST_12M, T.PREVIOUS_12M, T.LAST_24M,
-            T.penaltyNote(ReactivePenaltyPrices.BOE_REFERENCE)).forEach { assertTrue(has(t, it), "missing '$it' in $t") }
+        listOf(T.COL_PENALTY, T.PENALTY_CHART_TITLE, T.penaltyNote(ReactivePenaltyPrices.BOE_REFERENCE)).forEach { assertTrue(has(t, it), "missing '$it' in $t") }
         // Per reading: P1 0,062332 × 670 + P2 0,041554 × 290 = 41,76 + 12,05 = 53,81 €; P3–P5 and P6 add nothing.
         assertTrue(has(t, "53,81 €"), t)
-        // 12 readings in the last year: 12 × 53,8131 = 645,76 € (rounded once, on the total).
-        assertTrue(has(t, "645,76 €"), t)
+        // Totals table removed (feedback 2026-11-06).
+        listOf(T.PENALTY_TITLE, T.LAST_12M, T.PREVIOUS_12M, T.LAST_24M, "645,76 €").forEach { assertFalse(has(t, it), "unexpected '$it'") }
         assertFalse(has(t, T.PENALTY_NOT_APPLICABLE))
     }
 
@@ -64,8 +63,9 @@ class PremiumReactivePenaltySectionTest {
     }
 
     @Test
-    fun `overlapping readings withhold the totals`() {
+    fun `overlapping readings are marked in the readings table`() {
         val t = text(activeDataset(history(PremiumReportFixtures.reactiveOverlapRows())))
-        assertTrue(has(t, T.PENALTY_NO_FIGURE_OVERLAP), t)
+        assertTrue(has(t, T.OVERLAP_FOOTNOTE), t)
+        assertFalse(has(t, T.PENALTY_NO_FIGURE_OVERLAP), t)
     }
 }

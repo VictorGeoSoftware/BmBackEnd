@@ -62,6 +62,5 @@ class DemandChartModelTest {
         val rows = PremiumReportFixtures.reactiveCompleteRows()
         val r = com.bm.backend.utils.ReactiveSummaryCalculator.calculate(history(rows), HistoryCoverageCalculator.calculate(history(rows)))
         assertTrue(StackedReadingsChart.model(r.series.map { ReadingSlot(it.start, it.endExclusive, it.values, false) }, (1..6).toList(), "kVArh").markers.isEmpty())
-        assertTrue(ReactiveChartModel.distribution(r.window!!)!!.markers.isEmpty())
     }
 }

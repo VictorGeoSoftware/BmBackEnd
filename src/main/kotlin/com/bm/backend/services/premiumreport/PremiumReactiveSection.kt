@@ -53,22 +53,10 @@ class PremiumReactiveSection : PremiumReportSection {
         }
         windowLine(document, PremiumReactiveTexts.windowValue(range(w)))
 
-        heading(document, writer, PremiumReactiveTexts.WINDOW_TITLE)
-        document.add(windowTable(w, periods))
         notes(document, w, history)
-
-        val distribution = ReactiveChartModel.distribution(w, periods)
-        heading(document, writer, PremiumReactiveTexts.DISTRIBUTION_TITLE, distribution?.let { it.height.toFloat() + 40f } ?: 60f)
-        if (distribution != null) chart(document, writer, distribution) else note(document, distributionReason(w))
 
         quotient(document, writer, summary, w)
 
-        val slots = summary.historySeries.map { ReadingSlot(it.start, it.endExclusive, it.values, it.inUnresolvedOverlap) }
-        if (slots.isNotEmpty()) {
-            val model = StackedReadingsChart.model(slots, periods, PremiumReactiveTexts.UNIT)
-            heading(document, writer, PremiumReactiveTexts.READINGS_CHART_TITLE, model.height.toFloat() + 40f)
-            chart(document, writer, model)
-        }
         val penalty = ReactivePenaltyCalculator.calculate(history, summary.historySeries, coverage.anchorDate, profile)
         readingsTable(document, writer, summary, periods, penalty)
         penaltyBlock(document, writer, penalty)
@@ -81,30 +69,6 @@ class PremiumReactiveSection : PremiumReportSection {
             note(document, PremiumReactiveTexts.PENALTY_NOT_APPLICABLE)
             return
         }
-        heading(document, writer, PremiumReactiveTexts.PENALTY_TITLE, PENALTY_BLOCK_NEED)
-        val t = table(floatArrayOf(1.6f, 1.2f, 1.4f, 0.8f)).apply { keepTogether = true }
-        t.addCell(header(PremiumReactiveTexts.COL_WINDOW, Element.ALIGN_LEFT))
-        t.addCell(header("${PremiumReactiveTexts.COL_PENALTY} (€)"))
-        t.addCell(header(PremiumReactiveTexts.COL_REACTIVE_P1_P5))
-        t.addCell(header(PremiumReactiveTexts.COL_COS_PHI))
-        penalty.totals.forEach { total ->
-            val label = when (total.kind) {
-                ReactivePenaltyWindowKind.LAST_12M -> PremiumReactiveTexts.LAST_12M
-                ReactivePenaltyWindowKind.PREVIOUS_12M -> PremiumReactiveTexts.PREVIOUS_12M
-                ReactivePenaltyWindowKind.LAST_24M -> PremiumReactiveTexts.LAST_24M
-            }
-            t.addCell(cell("$label\n${PremiumReportFormat.inclusiveRange(total.start, total.endExclusive)}", align = Element.ALIGN_LEFT))
-            val eur = total.penaltyEur
-            if (eur == null) {
-                t.addCell(cell(penaltyReason(total.reason), colspan = 3))
-            } else {
-                t.addCell(cell(PremiumReportFormat.euros(eur), tableBold))
-                t.addCell(cell(kvarh(total.reactiveKvarh)))
-                t.addCell(cell(total.cosPhi?.let { PremiumReportFormat.decimal2(it) } ?: PremiumReactiveTexts.MISSING))
-            }
-        }
-        document.add(t)
-
         val slots = penalty.readings.map { r -> ReadingSlot(r.start, r.endExclusive, PeriodValues(r.penaltyEur, null, null, null, null, null), r.inUnresolvedOverlap) }
         if (slots.isNotEmpty()) {
             val model = StackedReadingsChart.model(slots, listOf(1), PremiumReactiveTexts.PENALTY_UNIT).copy(legend = emptyList())
@@ -114,15 +78,7 @@ class PremiumReactiveSection : PremiumReportSection {
         note(document, PremiumReactiveTexts.penaltyNote(ReactivePenaltyPrices.BOE_REFERENCE))
     }
 
-    private fun penaltyReason(reason: String?) = when (reason) {
-        ReactivePenaltyCalculator.OVERLAP -> PremiumReactiveTexts.PENALTY_NO_FIGURE_OVERLAP
-        ReactivePenaltyCalculator.NOT_CALCULABLE -> PremiumReactiveTexts.PENALTY_NO_FIGURE_MISSING
-        else -> PremiumReactiveTexts.PENALTY_NO_READINGS
-    }
-
     companion object {
-        /** Totals table, penalty chart and note stay on one page (layout pass, 2026-11-04). */
-        private const val PENALTY_BLOCK_NEED = 420f
 
         /** N1 for a history without reactive rows, N2 for any other unavailable reason. */
         fun unavailableSentence(summary: ReactiveSummary): String =
@@ -187,46 +143,6 @@ class PremiumReactiveSection : PremiumReportSection {
         })
     }
 
-    // ---------- H1 / C1–C7 window table ----------
-
-    private fun windowTable(w: ReactiveWindowSummary, periods: List<Int>): PdfPTable {
-        val t = table(widths(2.3f, 1.3f, 1.1f, periods = periods, trail = 1.35f))
-        t.addCell(header(PremiumReactiveTexts.COL_PERIOD, Element.ALIGN_LEFT))
-        t.addCell(header(PremiumReactiveTexts.COL_STATUS, Element.ALIGN_LEFT))
-        t.addCell(header(PremiumReactiveTexts.COL_COVERED_DAYS))
-        periodHeaders(t, periods, PremiumReactiveTexts.UNIT_SUFFIX)
-        t.addCell(header(PremiumReactiveTexts.COL_TOTAL_KVARH))
-        t.addCell(cell("${PremiumReactiveTexts.LATEST_WINDOW}\n${range(w)}", align = Element.ALIGN_LEFT))
-        t.addCell(cell(statusText(w.status), align = Element.ALIGN_LEFT))
-        when (w.status) {
-            ReactiveWindowStatus.COMPLETE, ReactiveWindowStatus.INCOMPLETE -> {
-                t.addCell(cell("${w.coveredDays} / ${w.windowDays}"))
-                val shares = w.shares?.let { cells(it) }
-                val totals = cells(w.periodTotals)
-                periods.forEach { p ->
-                    val v = totals[p - 1]
-                    val share = shares?.get(p - 1)?.let { "\n${PremiumReportFormat.percent(it)}" } ?: ""
-                    t.addCell(cell(kvarh(v) + share))
-                }
-                val total = if (w.status == ReactiveWindowStatus.COMPLETE) kvarh(w.total)
-                else "${PremiumReactiveTexts.PARTIAL_PREFIX} ${kvarh(w.partialTotal)}"
-                t.addCell(cell(total, font = tableBold))
-            }
-            ReactiveWindowStatus.OVERLAP_UNRESOLVED ->
-                t.addCell(cell(PremiumReactiveTexts.OVERLAP_NO_FIGURE, align = Element.ALIGN_LEFT, colspan = periods.size + 2))
-            ReactiveWindowStatus.UNAVAILABLE ->
-                t.addCell(cell(PremiumReactiveTexts.NO_DATA, align = Element.ALIGN_LEFT, colspan = periods.size + 2))
-        }
-        return t
-    }
-
-    private fun statusText(s: ReactiveWindowStatus) = when (s) {
-        ReactiveWindowStatus.COMPLETE -> PremiumReactiveTexts.STATUS_COMPLETE
-        ReactiveWindowStatus.INCOMPLETE -> PremiumReactiveTexts.STATUS_INCOMPLETE
-        ReactiveWindowStatus.OVERLAP_UNRESOLVED -> PremiumReactiveTexts.STATUS_OVERLAP
-        ReactiveWindowStatus.UNAVAILABLE -> PremiumReactiveTexts.STATUS_UNAVAILABLE
-    }
-
     // ---------- N3–N9 status notes ----------
 
     private fun notes(document: Document, w: ReactiveWindowSummary, history: StudyHistory) {
@@ -242,14 +158,6 @@ class PremiumReactiveSection : PremiumReportSection {
             }
             note(document, PremiumReactiveTexts.overlapNote(PremiumReportFormat.inclusiveRange(o.start, o.endExclusive, "–"), zero))
         }
-    }
-
-    // ---------- D2–D4 ----------
-
-    private fun distributionReason(w: ReactiveWindowSummary) = when (w.status) {
-        ReactiveWindowStatus.OVERLAP_UNRESOLVED -> PremiumReactiveTexts.DISTRIBUTION_OVERLAP
-        ReactiveWindowStatus.COMPLETE -> PremiumReactiveTexts.DISTRIBUTION_ZERO
-        else -> PremiumReactiveTexts.DISTRIBUTION_NOT_COMPLETE
     }
 
     // ---------- Q0 / B1 / B2 / R / U quotient ----------

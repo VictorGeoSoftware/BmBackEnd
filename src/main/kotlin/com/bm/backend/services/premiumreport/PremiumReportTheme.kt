@@ -15,7 +15,9 @@ object PremiumReportTheme {
     val PAGE_LANDSCAPE: Rectangle = PageSize.A4.rotate()
 
     const val MARGIN_HORIZONTAL = 42f
-    const val MARGIN_VERTICAL = 36f
+    /** About 2 cm (feedback 2026-11-06): content starts below the header logo instead of touching it. */
+    const val MARGIN_TOP = 57f
+    const val MARGIN_BOTTOM = 36f
 
     val COLOR_HIGHLIGHT = Color(249, 196, 17)
     val COLOR_TEXT = Color(0x1F, 0x29, 0x37)

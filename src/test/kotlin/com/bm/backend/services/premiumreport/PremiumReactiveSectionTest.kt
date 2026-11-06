@@ -82,7 +82,7 @@ class PremiumReactiveSectionTest {
 
     private fun ids(spec: String): Set<String> = spec.split(' ').filter { it.isNotBlank() }.flatMap { id ->
         when (id) {
-            "G0–G2" -> listOf("G0")
+            "G0–G2" -> emptyList()
             else -> listOf(id)
         }
     }.toSet()
@@ -108,15 +108,13 @@ class PremiumReactiveSectionTest {
     private val b1 = T.basis(range)
 
     @Test
-    fun `A complete window shows totals, shares, ratios, both charts and a neutral zero overlap`() {
+    fun `A complete window shows ratios, readings and a neutral zero overlap without the removed window table and charts`() {
         val ds = ds(PremiumReportFixtures.reactiveCompleteRows())
         val pdf = render(ds)
         assertTrue(pdf.portraitPages.all { it })
         val text = pdf.text
-        assertSentences(text, "H0 W1 H1 C1 C3 N8 D0 D1 Q0 B1 B2 G0–G2 T0 T1",
-            listOf(w1, b1, T.overlapNote("31/05/2026–29/06/2026", true), "365 / 365",
-                "P1 1.200 kVArh (11,0 %)", "P2 1.440 kVArh (13,2 %)", "P3 1.080 kVArh (9,9 %)",
-                "P4 1.800 kVArh (16,5 %)", "P5 600 kVArh (5,5 %)", "P6 4.800 kVArh (44,0 %)", "10.920"))
+        assertSentences(text, "H0 W1 N8 Q0 B1 B2 T0 T1",
+            listOf(w1, b1, T.overlapNote("31/05/2026–29/06/2026", true)))
         // Quotient table: hand-computed kVArh / kWh with 2 decimals.
         listOf("P1 1.200 4.800 0,25", "P2 1.440 6.000 0,24", "P3 1.080 5.400 0,20", "P4 1.800 7.200 0,25",
             "P5 600 3.000 0,20", "P6 4.800 30.000 0,16", "Total 10.920 56.400 0,19").forEach {
@@ -127,7 +125,7 @@ class PremiumReactiveSectionTest {
     @Test
     fun `B recorded zero is a figure, not missing data, and the quotient is 0,00`() {
         val text = render(ds(PremiumReportFixtures.reactiveZeroRows())).text
-        assertSentences(text, "H0 W1 H1 C1 C3 N6 D0 D4 Q0 B1 B2 G0–G2 T0 T1", listOf(w1, b1, "P1 0 4.800 0,00", "Total 0 56.400 0,00"))
+        assertSentences(text, "H0 W1 N6 Q0 B1 B2 T0 T1", listOf(w1, b1, "P1 0 4.800 0,00", "Total 0 56.400 0,00"))
     }
 
     @Test
@@ -143,25 +141,24 @@ class PremiumReactiveSectionTest {
         assertEquals(com.bm.backend.models.StudyHistoryStatus.AVAILABLE, s.status)
         assertEquals(com.bm.backend.models.ReactiveWindowStatus.UNAVAILABLE, s.window!!.status)
         val text = render(ds).text
-        assertSentences(text, "H0 W1 H1 C1 C6 N3 N5a D0 D2 Q0 B1 U0 U2 G0–G2 T0 T1",
+        assertSentences(text, "H0 W1 N3 N5a Q0 B1 U0 U2 T0 T1",
             listOf(w1, b1, "${T.RATIO_UNAVAILABLE} ${T.RATIO_REACTIVE_INCOMPLETE}"))
     }
 
     @Test
-    fun `D incomplete window shows partial figures without shares or quotient`() {
+    fun `D incomplete window shows the partial note without shares or quotient`() {
         val ds = ds(PremiumReportFixtures.reactiveIncompleteRows())
         val w = summary(ds).window!!
         val text = render(ds).text
-        assertSentences(text, "H0 W1 H1 C1 C4 N4 D0 D2 Q0 B1 U0 U2 G0–G2 T0 T1",
-            listOf(w1, b1, T.partialWindow(w.coveredDays, w.windowDays), "${T.RATIO_UNAVAILABLE} ${T.RATIO_REACTIVE_INCOMPLETE}",
-                "${T.PARTIAL_PREFIX} ${PremiumReportFormat.kwh(w.partialTotal!!)}", "243 / 365"))
+        assertSentences(text, "H0 W1 N4 Q0 B1 U0 U2 T0 T1",
+            listOf(w1, b1, T.partialWindow(w.coveredDays, w.windowDays), "${T.RATIO_UNAVAILABLE} ${T.RATIO_REACTIVE_INCOMPLETE}"))
         assertFalse(Regex("\\d,\\d %").containsMatchIn(text), "no shares when partial")
     }
 
     @Test
     fun `E overlap-blocked window has no firm figure and marks overlapping readings`() {
         val text = render(ds(PremiumReportFixtures.reactiveOverlapRows())).text
-        assertSentences(text, "H0 W1 H1 C1 C5 N9 D0 D3 Q0 B1 U0 U1 G0–G2 T0 T1 T2",
+        assertSentences(text, "H0 W1 N9 Q0 B1 U0 U1 T0 T1 T2",
             listOf(w1, b1, T.overlapNote("15/01/2026–30/01/2026", false), T.overlapNote("31/01/2026–09/02/2026", false), "${T.RATIO_UNAVAILABLE} ${T.RATIO_REACTIVE_OVERLAP}"))
         assertFalse("10.920" in text)
         assertTrue(Regex("\\d{2}/\\d{2}/\\d{4}${T.OVERLAP_MARK}").containsMatchIn(text), text)
@@ -176,7 +173,7 @@ class PremiumReactiveSectionTest {
         )
         cases.forEach { (rows, reason) ->
             val text = render(ds(rows)).text
-            assertSentences(text, "H0 W1 H1 C1 C3 D0 D1 Q0 B1 U0 ${reason.first} G0–G2 T0 T1",
+            assertSentences(text, "H0 W1 Q0 B1 U0 ${reason.first} T0 T1",
                 listOf(w1, "${T.RATIO_UNAVAILABLE} ${reason.second}"))
         }
     }
@@ -184,7 +181,7 @@ class PremiumReactiveSectionTest {
     @Test
     fun `G null cells show a dash, are never 0 and block the affected quotients`() {
         val text = render(ds(PremiumReportFixtures.reactiveNullRows())).text
-        assertSentences(text, "H0 W1 H1 C1 C3 N7 D0 D1 Q0 B1 B2 R2 G0–G2 T0 T1", listOf(w1, b1))
+        assertSentences(text, "H0 W1 N7 Q0 B1 B2 R2 T0 T1", listOf(w1, b1))
         val sq = squash(text)
         val nullCells = Regex.escape(squash(T.RATIO_NULL_CELLS))
         (4..6).forEach { p -> assertTrue(Regex("P$p[\\d.]+$nullCells").containsMatchIn(sq), "P$p: $text") }
@@ -195,10 +192,10 @@ class PremiumReactiveSectionTest {
     }
 
     @Test
-    fun `L the full history is listed and charted without a cap`() {
+    fun `L the full history is listed without a cap`() {
         val ds = ds(PremiumReportFixtures.reactiveLongRows())
         val text = render(ds).text
-        assertSentences(text, "H0 W1 H1 C1 C3 D0 D1 Q0 B1 B2 G0–G2 T0 T1", listOf(w1, b1))
+        assertSentences(text, "H0 W1 Q0 B1 B2 T0 T1", listOf(w1, b1))
         val fmt = java.time.format.DateTimeFormatter.ofPattern("dd/MM/yyyy")
         val all = summary(ds).historySeries
         all.forEach { assertTrue(it.start.format(fmt) in text, "missing ${it.start}") }
@@ -223,7 +220,6 @@ class PremiumReactiveSectionTest {
         val a = render(ds); val b = render(ds)
         assertEquals(a.text, b.text)
         val s = summary(ds)
-        assertEquals(ReactiveChartModel.distribution(s.window!!), ReactiveChartModel.distribution(s.window!!))
         assertTrue(a.fonts.isNotEmpty())
         a.fonts.forEach { (name, embedded) ->
             assertTrue(embedded, "font $name not embedded")
