@@ -13,7 +13,7 @@ object PremiumReportPdf {
         val document = Document(
             PremiumReportTheme.PAGE_PORTRAIT,
             PremiumReportTheme.MARGIN_HORIZONTAL, PremiumReportTheme.MARGIN_HORIZONTAL,
-            PremiumReportTheme.MARGIN_VERTICAL, PremiumReportTheme.MARGIN_VERTICAL
+            PremiumReportTheme.MARGIN_TOP, PremiumReportTheme.MARGIN_BOTTOM
         )
         val writer = PdfWriter.getInstance(document, output)
         pageEvent?.let { writer.pageEvent = it }

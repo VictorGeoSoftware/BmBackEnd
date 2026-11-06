@@ -49,8 +49,8 @@ class PremiumPageDecorator(
     companion object {
         const val WATERMARK_RESOURCE = "/images/powerapp_watermark.png"
         private const val WATERMARK_FRACTION = 0.6f
-        /** Fits inside the 36 pt top margin, above any section content. */
+        /** Centred vertically inside the top margin, above any section content. */
         private const val HEADER_LOGO_HEIGHT = 18f
-        private const val HEADER_LOGO_TOP = 10f
+        private const val HEADER_LOGO_TOP = 20f
     }
 }

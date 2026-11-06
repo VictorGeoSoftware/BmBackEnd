@@ -61,8 +61,8 @@ class PremiumDemandSection : PremiumReportSection {
         // Block 3: comparison with contracted power.
         comparison(document, writer, summary, w, periods)
 
-        // Blocks 4–6 (original study, feedback 2026-11-04): readings table with contracted/average rows, grouped
-        // readings chart and contracted-vs-average chart, over the last 24 months.
+        // Blocks 4–6 (original study, feedback 2026-11-04): readings table with contracted/average rows
+        // and grouped readings chart (contracted-vs-average chart removed 2026-11-06), over the last 24 months.
         if (summary.historySeries.isEmpty()) {
             note(document, PremiumDemandTexts.READINGS_CHART_UNAVAILABLE)
             return
@@ -76,22 +76,6 @@ class PremiumDemandSection : PremiumReportSection {
         heading(document, writer, PremiumDemandTexts.READINGS_CHART_TITLE, grouped.height.toFloat() + 40f)
         chart(document, grouped, writer)
 
-        if (contracted != null) {
-            val split = ContractedAverageChart.model(contracted, averages.means, periods)
-            heading(document, writer, PremiumDemandTexts.CONTRACTED_AVERAGE_TITLE, split.height.toFloat() + 50f)
-            chart(document, split, writer)
-            document.add(legend())
-        }
-    }
-
-    private fun legend(): PdfPTable = PdfPTable(floatArrayOf(0.25f, 3f, 0.25f, 3f)).apply {
-        widthPercentage = 70f
-        horizontalAlignment = Element.ALIGN_LEFT
-        setSpacingBefore(4f)
-        addCell(cell("", background = ContractedAverageChart.CONTRACTED_COLOR))
-        addCell(cell(PremiumDemandTexts.LEGEND_CONTRACTED, align = Element.ALIGN_LEFT))
-        addCell(cell("", background = ContractedAverageChart.AVERAGE_COLOR))
-        addCell(cell(PremiumDemandTexts.LEGEND_AVERAGE, align = Element.ALIGN_LEFT))
     }
 
     companion object {

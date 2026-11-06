@@ -73,7 +73,7 @@ class PremiumDemandSectionTest {
         "K8" to lit(T.NO_READINGS_CELL),
         "G0" to lit(T.READINGS_CHART_TITLE),
         "G2" to lit(T.AVERAGE_NOTE),
-        "G5" to lit(T.CONTRACTED_AVERAGE_TITLE),
+        "G5" to lit("Potencia contratada y potencia media demandada"),
         "G4" to lit(T.READINGS_CHART_UNAVAILABLE),
         "T0" to lit(T.READINGS_TABLE_TITLE),
         "T1" to lit(T.DATES_NOTE),
@@ -97,7 +97,7 @@ class PremiumDemandSectionTest {
         m.unit == T.UNIT && m.bars.all { Regex("^$date – $date$").matches(it.label) }
     } ?: false
 
-    private val baseA = "H0 W1 H1 C1 C2 S1 K0 K1 K2 K4 K5 G0 G1 G2 G5 T0 T1"
+    private val baseA = "H0 W1 H1 C1 C2 S1 K0 K1 K2 K4 K5 G0 G1 G2 T0 T1"
 
     private fun assertScenario(ds: ReportDataset, expected: String, exact: List<String> = emptyList()): String {
         val want = expected.split(' ').filter { it.isNotBlank() }.toSet()
@@ -137,7 +137,7 @@ class PremiumDemandSectionTest {
         val ds = ds(PremiumReportFixtures.demandIncompleteRows())
         val w = summary(ds).window!!
         assertEquals(DemandWindowStatus.INCOMPLETE, w.status)
-        val text = assertScenario(ds, "H0 W1 H1 C1 C2 M1 S1 N4 N5 K0 K1 K2 K3 K4 K5 G0 G1 G2 G5 T0 T1",
+        val text = assertScenario(ds, "H0 W1 H1 C1 C2 M1 S1 N4 N5 K0 K1 K2 K3 K4 K5 G0 G1 G2 T0 T1",
             listOf(w1, T.partialWindow(w.coveredDays, w.windowDays), T.crossing(1)))
         assertFalse("17" in squash(text).substringAfter(squash(T.STATS_TITLE)).substringBefore(squash(T.STATS_CAPTION)),
             "crossing value is not a peak")
@@ -146,7 +146,7 @@ class PremiumDemandSectionTest {
     @Test
     fun `C overlap with a zero-active reading keeps its demand, discloses it and it can be the peak`() {
         val ds = ds(PremiumReportFixtures.demandOverlapZeroActiveRows())
-        val text = assertScenario(ds, "H0 W1 H1 C1 C2 M2 S1 N9 N10 K0 K1 K2 K4 K5 G0 G1 G2 G5 T0 T1 T2 T3",
+        val text = assertScenario(ds, "H0 W1 H1 C1 C2 M2 S1 N9 N10 K0 K1 K2 K4 K5 G0 G1 G2 T0 T1 T2 T3",
             listOf(w1, T.overlapNote("31/05/2026–29/06/2026"), "P6 13 40 31/05/2026 – 29/06/2026",
                 "31/05/2026†° 29/06/2026 30", "P6 40 34,5 +5,5 115,9 %"))
         assertTrue(squash("31/05/2026† 29/06/2026 30") in squash(text), text)
@@ -158,7 +158,7 @@ class PremiumDemandSectionTest {
         val s = summary(ds)
         assertEquals(StudyHistoryStatus.AVAILABLE, s.status)
         assertEquals(DemandWindowStatus.UNAVAILABLE, s.window!!.status)
-        assertScenario(ds, "H0 W1 H1 N3 N5 K0 KU2 G0 G1 G2 G5 T0 T1", listOf(w1, T.crossing(1)))
+        assertScenario(ds, "H0 W1 H1 N3 N5 K0 KU2 G0 G1 G2 T0 T1", listOf(w1, T.crossing(1)))
     }
 
     @Test
