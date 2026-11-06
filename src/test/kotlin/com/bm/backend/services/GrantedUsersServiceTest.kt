@@ -149,8 +149,7 @@ class GrantedUsersServiceTest {
             photoURL = null,
             providerIds = listOf("google.com"),
             tokenIssuedAt = Instant.now(),
-            tokenExpiresAt = Instant.now(),
-            phoneUuid = "phone-1"
+            tokenExpiresAt = Instant.now()
         )
         userActivityRepository.setOnline(name = "Tester", email = "tester@example.com")
         webPushTokensRepository.upsert("tok-1", "uid-123", "tester@example.com", "android")

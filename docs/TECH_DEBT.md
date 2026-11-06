@@ -462,6 +462,12 @@ Behaviour unchanged.
 ⚠️ Revisit if device-binding resets become frequent: the current alternative is
 hand-editing the database, which is riskier than the API it replaces.
 
+**Superseded:** the one-phone-per-account rule was removed entirely, together
+with `POST /admin/reset-device-binding`, `AdminAuthService` and
+`BM_DEVICE_BINDING_EXEMPT_EMAILS`. `phoneUuid` is still accepted on
+`POST /user-data` but ignored; the `user_data.phone_uuid` column is kept
+(no longer written) and can be dropped in a future migration.
+
 ### 13. ~~An orphan `docling-api` container has run for 6 months~~ ✅ FIXED
 
 **Evidence:** `docker ps -a` shows `docling-api  Up 6 months  docling-api`, with
