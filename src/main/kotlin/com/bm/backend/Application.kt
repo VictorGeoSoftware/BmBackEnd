@@ -17,7 +17,6 @@ import com.bm.backend.repositories.UserActivityRepository
 import com.bm.backend.repositories.WebPushTokensRepository
 import com.bm.backend.routes.priceTableRoutes
 import com.bm.backend.routes.adminAccessRoutes
-import com.bm.backend.routes.adminRoutes
 import com.bm.backend.routes.authRoutes
 import com.bm.backend.routes.collectedPricesRoutes
 import com.bm.backend.routes.grantedUsersRoutes
@@ -33,7 +32,6 @@ import com.bm.backend.security.DataMigration
 import com.bm.backend.security.EncryptionUtils
 import com.bm.backend.services.AccessControlService
 import com.bm.backend.services.AdminAccessControlService
-import com.bm.backend.services.AdminAuthService
 import com.bm.backend.services.CollectedPricesService
 import com.bm.backend.services.ExternalApiService
 import com.bm.backend.services.FirebaseForceLogoutNotifier
@@ -229,16 +227,12 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
         externalApiService,
         priceTableService
     )
-    val userDataService = UserDataService(
-        userDataRepository,
-        deviceBindingExemptEmails = UserDataService.parseExemptEmails()
-    )
+    val userDataService = UserDataService(userDataRepository)
     val userActivityService = UserActivityService(userActivityRepository)
     val grantedUsersRepository = GrantedUsersRepository()
     val accessControlService = AccessControlService(grantedUsersRepository)
     val adminUsersRepository = AdminUsersRepository()
     val adminAccessControlService = AdminAccessControlService(adminUsersRepository)
-    val adminAuthService = AdminAuthService.fromEnv()
     val webPushTokensService = WebPushTokensService(webPushTokensRepository)
     val grantedUsersService = GrantedUsersService(
         grantedUsersRepository = grantedUsersRepository,
@@ -289,7 +283,6 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
                     adminAccessControlService
                 )
                 authRoutes(userActivityService, accessControlService)
-                adminRoutes(userDataService, adminAuthService)
                 adminAccessRoutes(adminAccessControlService)
                 grantedUsersRoutes(grantedUsersService, adminAccessControlService)
                 collectedPricesRoutes(

@@ -2,23 +2,16 @@ package com.bm.backend.services
 
 import com.bm.backend.testing.InMemoryUserDataRepository
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import java.time.Instant
 import kotlin.test.assertEquals
 
 /**
- * Service-level unit tests for the one-phone-per-account rule and the
- * administrative device-binding reset, exercised through an in-memory fake of
- * [com.bm.backend.repositories.ports.UserDataRepositoryPort] (no database).
+ * Service-level unit tests for [UserDataService], exercised through an
+ * in-memory fake of [com.bm.backend.repositories.ports.UserDataRepositoryPort].
  */
 class UserDataServiceTest {
 
-    private fun sync(
-        service: UserDataService,
-        uid: String,
-        email: String? = "user@example.com",
-        phoneUuid: String?
-    ) {
+    private fun sync(service: UserDataService, uid: String, email: String? = "user@example.com") {
         service.upsertUserData(
             uid = uid,
             email = email,
@@ -26,98 +19,18 @@ class UserDataServiceTest {
             photoURL = null,
             providerIds = listOf("google.com"),
             tokenIssuedAt = Instant.ofEpochSecond(1L),
-            tokenExpiresAt = Instant.ofEpochSecond(2L),
-            phoneUuid = phoneUuid
+            tokenExpiresAt = Instant.ofEpochSecond(2L)
         )
     }
 
     @Test
-    fun `binds the first device and accepts subsequent logins from the same device`() {
-        val service = UserDataService(InMemoryUserDataRepository())
-
-        sync(service, uid = "uid-1", phoneUuid = "device-a")
-        // Same device logs in again -> allowed, no exception.
-        sync(service, uid = "uid-1", phoneUuid = "device-a")
-    }
-
-    @Test
-    fun `rejects a login from a different device with DeviceMismatchException`() {
-        val service = UserDataService(InMemoryUserDataRepository())
-
-        sync(service, uid = "uid-1", phoneUuid = "device-a")
-
-        assertThrows<DeviceMismatchException> {
-            sync(service, uid = "uid-1", phoneUuid = "device-b")
-        }
-    }
-
-    @Test
-    fun `treats a blank or missing incoming device as no assertion (backward compatible)`() {
+    fun `repeated logins for the same account are accepted and update the stored data`() {
         val fake = InMemoryUserDataRepository()
         val service = UserDataService(fake)
 
-        sync(service, uid = "uid-1", phoneUuid = "device-a")
-        // Older client without a device id -> allowed, binding is retained.
-        sync(service, uid = "uid-1", phoneUuid = null)
-        sync(service, uid = "uid-1", phoneUuid = "   ")
+        sync(service, uid = "uid-1", email = "first@example.com")
+        sync(service, uid = "uid-1", email = "second@example.com")
 
-        assertEquals("device-a", fake.findPhoneUuid("uid-1"))
-    }
-
-    @Test
-    fun `allows a replacement device to bind after an admin reset`() {
-        val service = UserDataService(InMemoryUserDataRepository())
-
-        sync(service, uid = "uid-1", email = "user@example.com", phoneUuid = "device-a")
-
-        val reset = service.resetDeviceBinding("USER@example.com ")
-        assertEquals(1, reset)
-
-        // New device now binds successfully instead of being rejected.
-        sync(service, uid = "uid-1", email = "user@example.com", phoneUuid = "device-b")
-    }
-
-    @Test
-    fun `resetDeviceBinding returns zero when no account matches`() {
-        val service = UserDataService(InMemoryUserDataRepository())
-        sync(service, uid = "uid-1", email = "user@example.com", phoneUuid = "device-a")
-
-        assertEquals(0, service.resetDeviceBinding("nobody@example.com"))
-    }
-
-    @Test
-    fun `resetDeviceBinding rejects a blank email`() {
-        val service = UserDataService(InMemoryUserDataRepository())
-        assertThrows<IllegalArgumentException> {
-            service.resetDeviceBinding("   ")
-        }
-    }
-
-    @Test
-    fun `exempt email can sign in from several devices without changing the binding`() {
-        val fake = InMemoryUserDataRepository()
-        val service = UserDataService(fake, deviceBindingExemptEmails = setOf(" Tester@Example.com "))
-
-        sync(service, uid = "uid-1", email = "tester@example.com", phoneUuid = "device-a")
-        sync(service, uid = "uid-1", email = "tester@example.com", phoneUuid = "device-b")
-
-        assertEquals("device-a", fake.findPhoneUuid("uid-1"))
-    }
-
-    @Test
-    fun `non-exempt email is still rejected when an exemption list is configured`() {
-        val service = UserDataService(InMemoryUserDataRepository(), deviceBindingExemptEmails = setOf("tester@example.com"))
-
-        sync(service, uid = "uid-2", email = "other@example.com", phoneUuid = "device-a")
-
-        assertThrows<DeviceMismatchException> {
-            sync(service, uid = "uid-2", email = "other@example.com", phoneUuid = "device-b")
-        }
-    }
-
-    @Test
-    fun `parseExemptEmails splits, trims and lowercases`() {
-        assertEquals(setOf("a@x.com", "b@x.com"), UserDataService.parseExemptEmails(" A@x.com, ,b@x.com "))
-        assertEquals(emptySet(), UserDataService.parseExemptEmails(null))
+        assertEquals("second@example.com", fake.findEmail("uid-1"))
     }
 }
