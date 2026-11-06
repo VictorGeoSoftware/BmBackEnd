@@ -1,9 +1,12 @@
 package com.bm.backend.services
 
 import com.bm.backend.models.ConsumptionReportResponse
+import com.bm.backend.models.ConsumptionStudyResult
 import com.bm.backend.models.DoclingExtractedData
 import com.bm.backend.models.UserConsumption
 import com.bm.backend.repositories.ports.UserConsumptionRepositoryPort
+import com.bm.backend.utils.StudyHistoryMapper
+import com.bm.backend.utils.StudySnapshotMapper
 import com.bm.backend.utils.calculateProposals
 import com.bm.backend.utils.toCleanedData
 import java.io.File
@@ -20,7 +23,7 @@ class UserConsumptionService(
         userConsumptionRepository.storeConsumptionData(consumptionReport)
     }
     
-    suspend fun processConsumptionReportFromPdf(pdfFile: File): ConsumptionReportResponse {
+    suspend fun processConsumptionReportFromPdf(pdfFile: File): ConsumptionStudyResult {
         // Step 1: Extract data from PDF via Docling API
         val extractedData = runCatching {
             externalApiService.extractDataFromPdf(pdfFile)
@@ -33,7 +36,7 @@ class UserConsumptionService(
     }
 
     /** Wraps a JPEG/PNG bill photo into a one-page PDF and runs the PDF flow. */
-    suspend fun processConsumptionReportFromImage(imageFile: File): ConsumptionReportResponse {
+    suspend fun processConsumptionReportFromImage(imageFile: File): ConsumptionStudyResult {
         val pdfFile = imageToPdfConverter.convert(imageFile)
         try {
             return processConsumptionReportFromPdf(pdfFile)
@@ -42,7 +45,7 @@ class UserConsumptionService(
         }
     }
 
-    suspend fun processConsumptionReportFromCups(cupsCode: String): ConsumptionReportResponse {
+    suspend fun processConsumptionReportFromCups(cupsCode: String): ConsumptionStudyResult {
         val normalizedCupsCode = cupsCode.trim().uppercase()
         val extractedData = DoclingExtractedData(cups_code = normalizedCupsCode)
         return runConsumptionPipeline(extractedData)
@@ -58,7 +61,7 @@ class UserConsumptionService(
      */
     private suspend fun runConsumptionPipeline(
         extractedData: DoclingExtractedData
-    ): ConsumptionReportResponse {
+    ): ConsumptionStudyResult {
         val n8nResponse = runCatching {
             externalApiService.processWithN8nWebhook(extractedData)
         }.getOrElse { e ->
@@ -69,7 +72,7 @@ class UserConsumptionService(
         val filteredPrices = resolveFilteredPrices(cleanedConsumptionData)
         val proposals = calculateProposals(cleanedConsumptionData, filteredPrices)
 
-        return ConsumptionReportResponse(
+        val report = ConsumptionReportResponse(
             success = true,
             userData = extractedData,
             consumptionData = cleanedConsumptionData,
@@ -77,6 +80,11 @@ class UserConsumptionService(
             iva = filteredPrices.iva,
             impuestoElectrico = filteredPrices.impuestoElectrico,
         )
+        // Total mapper: a history defect yields UNAVAILABLE and never fails the annual result.
+        val history = StudyHistoryMapper.map(n8nResponse.data.history, cleanedConsumptionData.cups)
+        // Total mapper, run after history: only a snapshot for the same CUPS is retained.
+        val snapshot = StudySnapshotMapper.map(n8nResponse.data.snapshot, cleanedConsumptionData.cups)
+        return ConsumptionStudyResult(report = report, history = history, snapshot = snapshot)
     }
 
     fun refreshProposals(consumptionData: com.bm.backend.models.CleanedConsumptionData): List<com.bm.backend.models.ProposalPriceModel> {
