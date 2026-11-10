@@ -1,6 +1,7 @@
 package com.bm.backend.services.premiumreport
 
 import com.bm.backend.models.ActiveWindowKind
+import com.bm.backend.models.ActiveWindowStatus
 import com.bm.backend.models.StudyHistory
 import com.bm.backend.testing.PremiumReportFixtures
 import com.bm.backend.utils.ActiveSummaryCalculator
@@ -35,9 +36,15 @@ class ActiveChartModelTest {
     }
 
     @Test
-    fun `distribution is omitted unless the window is complete with shares`() {
+    fun `partial distribution uses available shares but unavailable and overlap windows remain blocked`() {
         val s = summary(PremiumReportFixtures.history(PremiumReportFixtures.partialRows()))
-        assertNull(ActiveChartModel.distribution(s.windows.first()))
+        val latest = s.windows.first()
+        val model = ActiveChartModel.distribution(latest)!!
+        assertEquals(latest.shares!!.p1, model.bars.first().value)
+        assertEquals("P1 4.000 kWh (10,2 %)", model.bars.first().label)
+        assertNull(ActiveChartModel.distribution(latest.copy(status = ActiveWindowStatus.UNAVAILABLE)))
+        assertNull(ActiveChartModel.distribution(latest.copy(status = ActiveWindowStatus.OVERLAP_UNRESOLVED)))
+        assertNull(ActiveChartModel.distribution(latest.copy(shares = null)))
     }
 
     @Test
