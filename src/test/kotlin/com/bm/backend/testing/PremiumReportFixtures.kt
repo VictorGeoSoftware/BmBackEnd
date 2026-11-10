@@ -104,6 +104,22 @@ object PremiumReportFixtures {
     fun partialRows(): List<StudyHistoryInterval> =
         monthly(LocalDate.parse("2025-11-30"), 0, 8) { pv(500.0, 600.0, 700.0, 800.0, 300.0, 2000.0) }
 
+    /** Broker feedback: August-anchored 2.0TD windows, 363/365 and 331/365 days, 5,037 vs 4,265 kWh. */
+    fun partialComparisonRows(): List<StudyHistoryInterval> {
+        val start = LocalDate.parse("2024-08-19")
+        val previousBounds = listOf(start.plusDays(34)) + (2..12).map { start.plusMonths(it.toLong()) }
+        val latestStart = start.plusYears(1)
+        val latestBounds = listOf(latestStart.plusDays(2)) + (1..12).map { latestStart.plusMonths(it.toLong()) }
+        fun rows(bounds: List<LocalDate>, targets: List<Int>): List<StudyHistoryInterval> {
+            val values = byDays(targets + listOf(0, 0, 0), bounds)
+            return values.indices.map { i ->
+                row(bounds[i], bounds[i + 1], values[i].copy(p4 = null, p5 = null, p6 = null))
+                    .copy(reactive = NULLS, maxDemand = NULLS)
+            }
+        }
+        return rows(previousBounds, listOf(944, 1026, 2295)) + rows(latestBounds, listOf(1136, 1242, 2659))
+    }
+
     /** Sample plus a non-zero row overlapping the latest window (blocks a firm latest figure). */
     fun overlapRows(): List<StudyHistoryInterval> =
         sampleRows() + row(LocalDate.parse("2026-01-15"), LocalDate.parse("2026-02-10"), pv(50.0, 50.0, 50.0, 50.0, 50.0, 50.0))

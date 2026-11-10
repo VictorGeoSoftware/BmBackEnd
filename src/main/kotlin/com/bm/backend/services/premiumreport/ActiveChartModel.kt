@@ -1,6 +1,5 @@
 package com.bm.backend.services.premiumreport
 
-import com.bm.backend.models.ActiveWindowStatus
 import com.bm.backend.models.ActiveWindowSummary
 import com.bm.backend.models.HistoryCoverage
 import com.bm.backend.models.MeasurementFamily
@@ -61,10 +60,10 @@ data class ActiveChartModel(
         internal fun tickNumber(v: Double): String =
             if (v == floor(v)) PremiumReportFormat.kwh(v) else PremiumReportFormat.number(v)
 
-        /** Horizontal share bars of the tariff's [periods] (default P1–P6) of a COMPLETE window with shares; null otherwise (D5). */
+        /** Share bars of available consumption in a COMPLETE or INCOMPLETE window; never projected (D5). */
         fun distribution(window: ActiveWindowSummary, periods: List<Int> = TariffPeriodProfile.ALL_PERIODS): ActiveChartModel? {
             val shares = window.shares ?: return null
-            if (window.status != ActiveWindowStatus.COMPLETE) return null
+            if (window.recordedTotal?.let { it > 0 } != true) return null
             val allTotals = window.periodTotals.let { listOf(it.p1, it.p2, it.p3, it.p4, it.p5, it.p6) }
             val allShares = shares.let { listOf(it.p1, it.p2, it.p3, it.p4, it.p5, it.p6) }
             val totals = periods.map { allTotals[it - 1] }

@@ -31,19 +31,24 @@ object PremiumActiveTexts {
     const val MISSING = "—"
     const val YOY = "Variación interanual:"
     const val YOY_UNAVAILABLE = "Variación interanual no disponible"
-    const val YOY_LATEST_INCOMPLETE = "los últimos 12 meses no están completos"
-    const val YOY_PREVIOUS_INCOMPLETE = "los 12 meses anteriores no están completos"
+    const val YOY_LATEST_UNAVAILABLE = "sin consumo disponible en los últimos 12 meses"
+    const val YOY_PREVIOUS_UNAVAILABLE = "sin consumo disponible en los 12 meses anteriores"
     const val YOY_PREVIOUS_ZERO = "el consumo de los 12 meses anteriores es 0"
     const val YOY_NO_DATA = "sin datos"
     const val YOY_LATEST_OVERLAP = "los últimos 12 meses tienen lecturas solapadas sin resolver"
     const val YOY_PREVIOUS_OVERLAP = "los 12 meses anteriores tienen lecturas solapadas sin resolver"
+    const val PARTIAL_COMPARISON_SUFFIX = "(datos parciales)"
+    const val PARTIAL_COMPARISON_NOTE = "Comparación de los consumos disponibles en ambas ventanas; sin extrapolar ni ajustar por días cubiertos."
     const val OVERLAP_ZERO_NOTE = "una de ellas sin consumo; no altera el total."
     const val OVERLAP_BLOCKING_NOTE = "sin resolver; no se muestra cifra firme."
     const val OVERLAPPED_READINGS = "Lecturas solapadas"
 
     // D5 distribution.
     const val DISTRIBUTION_UNAVAILABLE = "Distribución por periodo no disponible:"
+    const val DISTRIBUTION_NO_DATA = "sin consumo disponible en los últimos 12 meses."
+    // Retained for the reactive section's existing complete-only copy; not used by active energy.
     const val DISTRIBUTION_NOT_COMPLETE = "no hay 12 meses completos."
+    const val PARTIAL_DISTRIBUTION_NOTE = "Distribución calculada sobre el consumo disponible de los últimos 12 meses (cobertura parcial)."
     const val DISTRIBUTION_OVERLAP = "lecturas solapadas sin resolver."
     const val DISTRIBUTION_ZERO = "el consumo total es 0."
 
