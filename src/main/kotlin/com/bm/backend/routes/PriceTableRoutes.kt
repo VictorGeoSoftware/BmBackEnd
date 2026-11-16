@@ -3,6 +3,7 @@ package com.bm.backend.routes
 import com.bm.backend.models.*
 import com.bm.backend.services.AccessControlService
 import com.bm.backend.services.ExternalApiService
+import com.bm.backend.services.InternalApiAuthService
 import com.bm.backend.services.AdminAccessControlService
 import com.bm.backend.services.PriceTableService
 import com.bm.backend.services.PriceUpdatesNotifier
@@ -26,15 +27,16 @@ fun Route.priceTableRoutes(
     externalApiService: ExternalApiService,
     priceUpdatesNotifier: PriceUpdatesNotifier,
     accessControlService: AccessControlService,
-    adminAccessControlService: AdminAccessControlService
+    adminAccessControlService: AdminAccessControlService,
+    internalApiAuthService: InternalApiAuthService = InternalApiAuthService.fromEnv()
 ) {
     // NOTE: deliberately NOT Firebase-authenticated. This is a
     // machine-to-machine endpoint: the n8n workflow posts here as
     // http://backend-prod:8081/api/v1/batch-process-price-tables over the
-    // internal Docker network and holds no Firebase token. External access is
-    // blocked at the proxy instead (`deny all` in BmInfra/nginx/nginx.conf),
-    // which the internal call bypasses entirely.
+    // internal Docker network and holds no Firebase token. It must send the
+    // shared X-Internal-Token instead; nginx also denies it publicly.
     post("/batch-process-price-tables") {
+        if (!call.requireInternalToken(internalApiAuthService)) return@post
 
         try {
             val rawBody = call.receiveText()
