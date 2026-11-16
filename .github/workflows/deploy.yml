@@ -108,7 +108,9 @@ jobs:
         run: |
           sleep 15
           echo "Checking PROD backend..."
-          curl -f http://217.154.181.175:8081/health || exit 1
+          # Through nginx + TLS, the path real clients use. Port 8081 is bound
+          # to 127.0.0.1 on the VPS and is not reachable from GitHub runners.
+          curl -f https://api.poweredbyadvisors.com/health || exit 1
           echo "✅ PROD deployment successful!"
 
       - name: Health check (QA)
