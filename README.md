@@ -39,7 +39,7 @@ curl http://localhost:8081/health
 
 ### Deploy to Server
 
-See [QUICK_DEPLOY.md](QUICK_DEPLOY.md) for fast deployment to **217.154.181.175**.
+Deploys are automatic: pushing to `qa` / `main` runs `.github/workflows/deploy.yml`, which rebuilds the backend image in the `BmInfra` Docker Compose project on the VPS. Public API: `https://api.poweredbyadvisors.com` (QA: `https://api.qa.poweredbyadvisors.com`). `QUICK_DEPLOY.md` / `DEPLOYMENT.md` describe the old systemd setup and are kept for reference only.
 
 ```bash
 chmod +x deploy-remote.sh

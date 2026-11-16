@@ -32,8 +32,12 @@ Safety properties: refuses to run if tracked files were hand-edited on the VPS;
 validates with `docker compose config` before applying; `--no-build` so
 application images stay owned by their own repos; `up -d` is idempotent.
 Bind-mounted configs (Loki, Promtail, Grafana dashboards, `nginx.conf`) are
-reloaded explicitly, since changing a file's *contents* does not change the
-container spec and `up -d` alone would leave them running stale.
+restarted explicitly, since changing a file's *contents* does not change the
+container spec and `up -d` alone would leave them running stale. For
+`nginx.conf` a `nginx -s reload` is **not** enough: `git reset --hard` replaces
+the file (new inode) and the single-file bind mount keeps the old one, so the
+workflow validates the new file in a throwaway container and then restarts
+nginx (fixed 2026-11-16, BmInfra #6).
 
 **It proved its worth on the first run.** `docling-price-tables`, `n8n-prod` and
 `n8n-qa` were recreated: nothing depends on them, so the manual
