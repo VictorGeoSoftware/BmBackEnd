@@ -52,9 +52,12 @@ class PremiumActiveSection : PremiumReportSection {
         notes(document, summary, history)
 
         val distribution = latest?.let { ActiveChartModel.distribution(it, periods) }
-        heading(document, writer, PremiumActiveTexts.DISTRIBUTION_TITLE, distribution?.let { it.height.toFloat() + 40f } ?: 60f)
-        if (distribution != null) chart(document, writer, distribution)
-        else note(document, "${PremiumActiveTexts.DISTRIBUTION_UNAVAILABLE} ${distributionReason(latest)}")
+        val distributionNoteHeight = if (latest?.status == ActiveWindowStatus.INCOMPLETE) 30f else 0f
+        heading(document, writer, PremiumActiveTexts.DISTRIBUTION_TITLE, distribution?.let { it.height.toFloat() + 40f + distributionNoteHeight } ?: 60f)
+        if (distribution != null) {
+            if (latest?.status == ActiveWindowStatus.INCOMPLETE) note(document, PremiumActiveTexts.PARTIAL_DISTRIBUTION_NOTE)
+            chart(document, writer, distribution)
+        } else note(document, "${PremiumActiveTexts.DISTRIBUTION_UNAVAILABLE} ${distributionReason(latest)}")
 
         val recent = ReportHistoryRange.indices(history, coverage.anchorDate)
         val range = ActiveRangeCalculator.calculate(history, coverage, periods)
@@ -184,7 +187,8 @@ class PremiumActiveSection : PremiumReportSection {
     private fun notes(document: Document, s: ActiveSummary, history: StudyHistory) {
         val change = s.changePct
         if (change != null) {
-            document.add(Paragraph("${PremiumActiveTexts.YOY} ${PremiumReportFormat.signedPercent(change)}", PremiumReportTheme.bold()).apply { spacingBefore = 6f })
+            document.add(Paragraph("${PremiumActiveTexts.YOY} ${changeText(s)}", PremiumReportTheme.bold()).apply { spacingBefore = 6f })
+            if (partialComparison(s)) note(document, PremiumActiveTexts.PARTIAL_COMPARISON_NOTE)
         } else {
             note(document, "${PremiumActiveTexts.YOY_UNAVAILABLE} (${yoyReason(s)}).")
         }
@@ -203,8 +207,8 @@ class PremiumActiveSection : PremiumReportSection {
 
     private fun distributionReason(latest: ActiveWindowSummary?) = when {
         latest?.status == ActiveWindowStatus.OVERLAP_UNRESOLVED -> PremiumActiveTexts.DISTRIBUTION_OVERLAP
-        latest?.status == ActiveWindowStatus.COMPLETE -> PremiumActiveTexts.DISTRIBUTION_ZERO
-        else -> PremiumActiveTexts.DISTRIBUTION_NOT_COMPLETE
+        latest?.recordedTotal == 0.0 -> PremiumActiveTexts.DISTRIBUTION_ZERO
+        else -> PremiumActiveTexts.DISTRIBUTION_NO_DATA
     }
 
     private fun chart(document: Document, writer: PdfWriter, model: ActiveChartModel) {
@@ -239,12 +243,19 @@ class PremiumActiveSection : PremiumReportSection {
             latest?.status == ActiveWindowStatus.OVERLAP_UNRESOLVED -> PremiumActiveTexts.YOY_LATEST_OVERLAP
             previous?.status == ActiveWindowStatus.OVERLAP_UNRESOLVED -> PremiumActiveTexts.YOY_PREVIOUS_OVERLAP
             else -> when (s.changeReason) {
-                ActiveSummaryCalculator.LATEST_INCOMPLETE -> PremiumActiveTexts.YOY_LATEST_INCOMPLETE
-                ActiveSummaryCalculator.PREVIOUS_INCOMPLETE -> PremiumActiveTexts.YOY_PREVIOUS_INCOMPLETE
+                ActiveSummaryCalculator.LATEST_UNAVAILABLE -> PremiumActiveTexts.YOY_LATEST_UNAVAILABLE
+                ActiveSummaryCalculator.PREVIOUS_UNAVAILABLE -> PremiumActiveTexts.YOY_PREVIOUS_UNAVAILABLE
                 ActiveSummaryCalculator.PREVIOUS_ZERO -> PremiumActiveTexts.YOY_PREVIOUS_ZERO
                 else -> PremiumActiveTexts.YOY_NO_DATA
             }
         }
+    }
+
+    private fun partialComparison(s: ActiveSummary) = s.windows.any { it.status == ActiveWindowStatus.INCOMPLETE }
+
+    /** Both comparison blocks use the calculator's same recorded totals and disclose partial coverage. */
+    private fun changeText(s: ActiveSummary): String? = s.changePct?.let {
+        PremiumReportFormat.signedPercent(it) + if (partialComparison(s)) " ${PremiumActiveTexts.PARTIAL_COMPARISON_SUFFIX}" else ""
     }
 
     // ---------- original study's summary blocks (spec report-original-fidelity) ----------
@@ -259,7 +270,7 @@ class PremiumActiveSection : PremiumReportSection {
         }
         val last24 = range.total?.let { (if (range.partial) "${PremiumActiveTexts.PARTIAL_PREFIX} " else "") + "${PremiumReportFormat.kwh(it)} kWh" }
             ?: rangeReason(range)
-        val diff = s.changePct?.let { PremiumReportFormat.signedPercent(it) } ?: "${PremiumActiveTexts.YOY_UNAVAILABLE_SHORT} (${yoyReason(s)})"
+        val diff = changeText(s) ?: "${PremiumActiveTexts.YOY_UNAVAILABLE_SHORT} (${yoyReason(s)})"
         heading(document, writer, PremiumActiveTexts.SUMMARY_TITLE, 100f)
         val t = table(floatArrayOf(2.2f, 2f)).apply { keepTogether = true }
         listOf(PremiumActiveTexts.LAST_12M to last12, PremiumActiveTexts.LAST_24M to last24, PremiumActiveTexts.DIFF_TWO_YEARS to diff).forEach { (k, v) ->

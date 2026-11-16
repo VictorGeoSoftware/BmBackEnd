@@ -16,6 +16,7 @@ class PremiumActivePreviewTest {
         val cases = mapOf(
             "active-a-complete" to activeDataset(history(PremiumReportFixtures.sampleRows())),
             "active-b-partial" to activeDataset(history(PremiumReportFixtures.partialRows())),
+            "active-b2-partial-comparison" to PremiumReportFixtures.tariffDataset(rows = PremiumReportFixtures.partialComparisonRows()),
             "active-c-overlap" to activeDataset(history(PremiumReportFixtures.overlapRows())),
             "active-d-unavailable" to activeDataset(StudyHistory.unavailable(PremiumReportFixtures.CUPS, "not_captured")),
             "active-f-long" to activeDataset(history(PremiumReportFixtures.longRows()))

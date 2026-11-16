@@ -14,6 +14,7 @@ import com.bm.backend.models.StudyHistoryStatus
 import com.bm.backend.models.StudySnapshot
 import com.bm.backend.models.StudySnapshotFields
 import com.bm.backend.models.StudySnapshotStatus
+import com.bm.backend.testing.PremiumReportFixtures
 import org.junit.jupiter.api.Test
 import java.time.LocalDate
 import java.time.temporal.ChronoUnit
@@ -157,10 +158,10 @@ class ActiveSummaryCalculatorTest {
         assertEquals(ActiveWindowStatus.INCOMPLETE, prev.status)
         assertEquals(66.0, latest.partialTotal)
         assertNull(latest.total)
-        assertNull(latest.shares)
+        assertNotNull(latest.shares)
         assertNull(prev.total)
-        assertNull(s.changePct)
-        assertEquals("latest_incomplete", s.changeReason)
+        assertEquals((latest.partialTotal!! - prev.partialTotal!!) / prev.partialTotal * 100, s.changePct!!, 1e-12)
+        assertNull(s.changeReason)
         val sips = s.comparisons.single { it.source == AnnualSource.SIPS_SNAPSHOT }
         assertEquals(ComparisonStatus.NOT_COMPARABLE, sips.status)
         assertEquals(66.0, sips.total.sourceKwh)
@@ -181,10 +182,80 @@ class ActiveSummaryCalculatorTest {
         assertEquals(ChronoUnit.DAYS.between(d("2025-11-01"), d("2026-07-01")), latest.coveredDays)
         assertEquals(ChronoUnit.DAYS.between(d("2025-07-01"), d("2026-07-01")), latest.windowDays)
         assertEquals(48.0, latest.partialTotal)
+        assertEquals(100.0 / 6, latest.shares!!.p1!!, 1e-9)
+        assertNull(s.changePct)
+        assertEquals("previous_unavailable", s.changeReason)
         assertEquals(1, latest.gaps.size)
         assertEquals(ActiveWindowStatus.UNAVAILABLE, s.window(ActiveWindowKind.PREVIOUS_12M).status)
         val fieldNames = ActiveSummary::class.java.declaredFields.map { it.name.lowercase() }
         assertTrue(fieldNames.none { "project" in it || "estimat" in it || "annualis" in it })
+    }
+
+    @Test
+    fun `partial August windows compare their recorded totals despite unequal covered days`() {
+        val h = history(PremiumReportFixtures.partialComparisonRows())
+        val s = ActiveSummaryCalculator.calculate(h, HistoryCoverageCalculator.calculate(h), null, null, listOf(1, 2, 3))
+        val latest = s.window(ActiveWindowKind.LATEST_12M)
+        val previous = s.window(ActiveWindowKind.PREVIOUS_12M)
+        assertEquals(d("2026-08-19"), s.anchorDate)
+        assertEquals(d("2025-08-19"), latest.start)
+        assertEquals(d("2024-08-19"), previous.start)
+        assertTrue(s.partial)
+        assertEquals(ActiveWindowStatus.INCOMPLETE, latest.status)
+        assertEquals(ActiveWindowStatus.INCOMPLETE, previous.status)
+        assertEquals(363L, latest.coveredDays)
+        assertEquals(331L, previous.coveredDays)
+        assertEquals(365L, latest.windowDays)
+        assertEquals(365L, previous.windowDays)
+        assertNull(latest.total)
+        assertNull(previous.total)
+        assertEquals(5037.0, latest.partialTotal)
+        assertEquals(4265.0, previous.partialTotal)
+        assertEquals(pv(1136.0, 1242.0, 2659.0, null, null, null), latest.periodTotals)
+        assertEquals((5037.0 - 4265) / 4265 * 100, s.changePct!!, 1e-12)
+        assertNull(s.changeReason)
+        assertEquals(1136.0 / 5037 * 100, latest.shares!!.p1!!, 1e-12)
+        assertEquals(1242.0 / 5037 * 100, latest.shares!!.p2!!, 1e-12)
+        assertEquals(2659.0 / 5037 * 100, latest.shares!!.p3!!, 1e-12)
+        assertNull(latest.shares!!.p4)
+    }
+
+    @Test
+    fun `complete and partial windows compare in either order without annualization`() {
+        val base = d("2024-07-01")
+        for (partialLatest in listOf(true, false)) {
+            val rows = monthly(base, 0, 24) { i -> if (i < 12) ones else pv(2.0, 2.0, 2.0, 2.0, 2.0, 2.0) }
+                .filterIndexed { i, _ -> i != if (partialLatest) 12 else 0 }
+            val s = calc(history(rows))
+            val latest = s.window(ActiveWindowKind.LATEST_12M)
+            val previous = s.window(ActiveWindowKind.PREVIOUS_12M)
+            val l = if (partialLatest) 132.0 else 144.0
+            val p = if (partialLatest) 72.0 else 66.0
+            assertEquals(l, latest.total ?: latest.partialTotal)
+            assertEquals(p, previous.total ?: previous.partialTotal)
+            assertEquals((l - p) / p * 100, s.changePct!!, 1e-12)
+            assertNull(s.changeReason)
+        }
+    }
+
+    @Test
+    fun `partial zero windows do not divide by zero or suppress a genuine minus 100 percent change`() {
+        val base = d("2024-07-01")
+        for (zeroLatest in listOf(true, false)) {
+            val rows = monthly(base, 0, 24) { i -> if ((i >= 12) == zeroLatest) zeros else ones }
+                .filterIndexed { i, _ -> i != 0 && i != 12 }
+            val s = calc(history(rows))
+            val latest = s.window(ActiveWindowKind.LATEST_12M)
+            if (zeroLatest) {
+                assertEquals(0.0, latest.partialTotal)
+                assertNull(latest.shares)
+                assertEquals(-100.0, s.changePct)
+            } else {
+                assertNull(s.changePct)
+                assertEquals("previous_zero", s.changeReason)
+                assertNotNull(latest.shares)
+            }
+        }
     }
 
     @Test

@@ -36,8 +36,8 @@ object ActiveSummaryCalculator {
     const val NO_ACTIVE_ROWS = "no_active_rows"
     const val OVERLAP_UNRESOLVED = "overlap_unresolved"
     const val ZERO_TOTAL = "zero_total"
-    const val LATEST_INCOMPLETE = "latest_incomplete"
-    const val PREVIOUS_INCOMPLETE = "previous_incomplete"
+    const val LATEST_UNAVAILABLE = "latest_unavailable"
+    const val PREVIOUS_UNAVAILABLE = "previous_unavailable"
     const val PREVIOUS_ZERO = "previous_zero"
     const val MATCH_TOLERANCE_KWH = 0.5
 
@@ -134,14 +134,13 @@ object ActiveSummaryCalculator {
             else -> ActiveWindowStatus.INCOMPLETE
         }
         val firm = status == ActiveWindowStatus.COMPLETE
-        val shares = if (firm && sum > 0) values(periodSums.map { v -> v?.let { it / sum * 100 } }) else null
+        val showTotals = firm || status == ActiveWindowStatus.INCOMPLETE
+        val shares = if (showTotals && sum > 0) values(periodSums.map { v -> v?.let { it / sum * 100 } }) else null
         val reason = when (status) {
             ActiveWindowStatus.UNAVAILABLE -> NO_ACTIVE_ROWS
             ActiveWindowStatus.OVERLAP_UNRESOLVED -> OVERLAP_UNRESOLVED
-            ActiveWindowStatus.COMPLETE -> if (sum > 0) null else ZERO_TOTAL
-            ActiveWindowStatus.INCOMPLETE -> null
+            ActiveWindowStatus.COMPLETE, ActiveWindowStatus.INCOMPLETE -> if (sum > 0) null else ZERO_TOTAL
         }
-        val showTotals = status == ActiveWindowStatus.COMPLETE || status == ActiveWindowStatus.INCOMPLETE
         return ActiveWindowSummary(
             kind = kind,
             start = start,
@@ -191,11 +190,12 @@ object ActiveSummaryCalculator {
     }
 
     private fun change(latest: ActiveWindowSummary, previous: ActiveWindowSummary): Pair<Double?, String?> {
-        val l = latest.total
-        val p = previous.total
+        val l = latest.recordedTotal
+        val p = previous.recordedTotal
         return when {
-            l == null -> null to LATEST_INCOMPLETE
-            p == null -> null to PREVIOUS_INCOMPLETE
+            latest.status == ActiveWindowStatus.OVERLAP_UNRESOLVED || previous.status == ActiveWindowStatus.OVERLAP_UNRESOLVED -> null to OVERLAP_UNRESOLVED
+            l == null -> null to LATEST_UNAVAILABLE
+            p == null -> null to PREVIOUS_UNAVAILABLE
             p <= 0.0 -> null to PREVIOUS_ZERO
             else -> (l - p) / p * 100 to null
         }

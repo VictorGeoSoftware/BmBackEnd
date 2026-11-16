@@ -280,9 +280,12 @@ key to any client JSON. Errors yield `UNAVAILABLE`/`calculation_error`; inputs a
   `overlapDisclosures` (must be disclosed in the PDF). Any other overlap ⇒ `OVERLAP_UNRESOLVED`, no
   total/shares.
 - **Crossing rows (A2):** listed, excluded from sums, never prorated; they make the window `INCOMPLETE`.
-- **Periods (A4):** period total = sum of non-null contained cells (null never 0; all-null ⇒ null);
-  window total = sum of period totals; shares only when `COMPLETE` and total > 0 (else null, reason
-  `zero_total` when 0). Values are unrounded kWh; no unit/decimal correction.
+- **Periods (A4, partial-window feedback 2026-11-10):** period total = sum of non-null contained cells
+  (null never 0; all-null ⇒ null); window total = sum of period totals. `total` remains COMPLETE-only,
+  `partialTotal` INCOMPLETE-only; `recordedTotal` selects the applicable value for those two statuses
+  and is null for unavailable/overlap-blocked windows. Shares use `recordedTotal` when positive,
+  including partial windows; zero has no shares (`zero_total`). Values are unrounded kWh; no
+  unit/decimal correction, extrapolation or adjustment for covered days.
 - **No projection (A5):** `partial = true` whenever `LATEST_12M` is not `COMPLETE`
   (incomplete, overlap-blocked or unavailable).
 - **High intervals (A6):** top `HIGH_INTERVAL_COUNT` = 3 contained non-zero-length rows of the latest
@@ -292,8 +295,14 @@ key to any client JSON. Errors yield `UNAVAILABLE`/`calculation_error`; inputs a
   `difference = history − source`, `% = difference / source × 100` (null if source 0/null),
   `matches` when |difference| < 0.5 kWh. `NOT_COMPARABLE` if `LATEST_12M` is not `COMPLETE`;
   `SOURCE_UNAVAILABLE` when the source is absent. SIPS/legacy refer to their own (undisclosed) period.
-- **Change (A8):** `(latest − previous) / previous × 100` only when both windows are `COMPLETE` and
-  previous > 0; otherwise null with `latest_incomplete`, `previous_incomplete` or `previous_zero`.
+- **Change (A8, partial-window feedback 2026-11-10):**
+  `(latest.recordedTotal − previous.recordedTotal) / previous.recordedTotal × 100` when both
+  recorded totals exist and previous > 0, even when either window is partial. This compares the
+  available window-table totals, not normalized full-year consumption. Otherwise null with
+  `overlap_unresolved`, `latest_unavailable`, `previous_unavailable` or `previous_zero`.
+  No calendar-year or equal-covered-day requirement. PDF labels disclose partial data and retain
+  dates, partial status and covered/window days. SIPS/legacy annual source comparisons above remain
+  COMPLETE-only and are not changed by this rule.
 
 ## Reactive summary (computed on demand, not exposed)
 

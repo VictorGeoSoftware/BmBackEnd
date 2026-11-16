@@ -23,4 +23,12 @@ data class ActiveWindowSummary(
     val partialTotal: Double?,
     val shares: PeriodValues?,
     val nullCells: Int
-)
+) {
+    /** Same available consumption shown in the window table; never a projected annual value. */
+    val recordedTotal: Double?
+        get() = when (status) {
+            ActiveWindowStatus.COMPLETE -> total
+            ActiveWindowStatus.INCOMPLETE -> partialTotal
+            ActiveWindowStatus.OVERLAP_UNRESOLVED, ActiveWindowStatus.UNAVAILABLE -> null
+        }
+}

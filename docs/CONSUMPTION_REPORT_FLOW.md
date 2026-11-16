@@ -278,11 +278,17 @@ calculation, projection, proration or advice. Copy lives in `PremiumActiveTexts`
 1. `Histórico disponible: dd/MM/yyyy – dd/MM/yyyy` (inclusive, `historyEnd − 1`) plus the partial sentence only when the
    latest window is INCOMPLETE and the history starts after the window start (never for overlap-blocked or
    unavailable windows, which have their own notes).
-2. Window table (latest, previous): `COMPLETE` → totals and shares; `INCOMPLETE` → period totals and
-   `Parcial: <partialTotal>` with covered/window days, no shares; `OVERLAP_UNRESOLVED` → `Sin cifra firme…`;
+2. Window table (latest, previous): `COMPLETE` → totals and shares; `INCOMPLETE` → period totals, available shares and
+   `Parcial: <partialTotal>` with covered/window days; `OVERLAP_UNRESOLVED` → `Sin cifra firme…`;
    `UNAVAILABLE` → `Sin datos`. Null values show `—`, never 0. YoY only when `changePct` exists, otherwise the
-   reason. One note per disclosed overlap (zero-row overlaps: "no altera el total"; blocking: "sin resolver").
-3. P1–P6 share chart only for a COMPLETE latest window with shares; otherwise a sentence says why.
+   reason. As of the broker feedback 2026-11-10, YoY uses the same recorded totals as the table for COMPLETE or
+   INCOMPLETE windows. Partial comparisons show `(datos parciales)` and explain that no extrapolation or
+   covered-day adjustment is applied. The later consumption-summary comparison uses the same result and
+   partial label. One note per disclosed overlap (zero-row overlaps: "no altera el total"; blocking: "sin resolver").
+3. Share chart for a COMPLETE or INCOMPLETE latest window with positive recorded consumption and shares;
+   partial charts carry `Distribución calculada sobre el consumo disponible de los últimos 12 meses
+   (cobertura parcial).` Missing history, unresolved overlaps and zero totals still suppress it with a reason.
+   No complete calendar year is required. Periods follow the tariff (2.0TD: P1–P3; six-period tariffs: P1–P6).
 4. Readings chart: one bar per dated source row (not per month) on a true date axis; height = reported kWh / days,
    width = days. Null-only rows are hatched gaps, zero rows a marker on the axis, rows in an ACTIVE coverage overlap
    are outlined. At most the 36 most recent rows; the cut is disclosed. Rows with zero or negative span (start ≥ end) are

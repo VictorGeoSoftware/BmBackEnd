@@ -36,13 +36,33 @@ class PremiumActiveSectionTest {
     }
 
     @Test
-    fun `B partial history shows partial totals without shares, distribution or annualised figure`() {
+    fun `B partial history shows available distribution without annualization or invented previous consumption`() {
         val text = render(activeDataset(history(PremiumReportFixtures.partialRows()))).text
         assertHas(text, "Parcial: 39.200", "Histórico inferior a 12 meses completos: las cifras se muestran como parciales.",
-            "Distribución por periodo no disponible: no hay 12 meses completos.",
-            "Variación interanual no disponible")
-        assertHasNot(text, " %)", "Variación interanual: ", "58.800", "Total: ", "El histórico cubre")
+            "P1 4.000 kWh (10,2 %)",
+            "Distribución calculada sobre el consumo disponible de los últimos 12 meses (cobertura parcial).",
+            "Variación interanual no disponible (sin consumo disponible en los 12 meses anteriores).")
+        assertHasNot(text, "Distribución por periodo no disponible", "Variación interanual: ", "58.800", "Total: ", "El histórico cubre")
         // 39.200 kWh over 8 months must never be annualised (×1,5 = 58.800).
+    }
+
+    @Test
+    fun `partial August windows show comparison and distribution from the same table totals`() {
+        val ds = PremiumReportFixtures.tariffDataset(rows = PremiumReportFixtures.partialComparisonRows())
+        val pdf = render(ds)
+        val text = pdf.text
+        assertHas(text, "19/08/2025 – 18/08/2026", "19/08/2024 – 18/08/2025",
+            "363 / 365", "331 / 365", "Parcial: 5.037", "Parcial: 4.265",
+            "Variación interanual: +18,1 % (datos parciales)",
+            "Comparación de los consumos disponibles en ambas ventanas; sin extrapolar ni ajustar por días cubiertos.",
+            "Distribución calculada sobre el consumo disponible de los últimos 12 meses (cobertura parcial).",
+            "P1 1.136 kWh (22,6 %)", "P2 1.242 kWh (24,7 %)", "P3 2.659 kWh (52,8 %)",
+            "Diferencia consumo últimos dos años")
+        assertTrue(text.substringAfter("Diferencia consumo últimos dos años").trimStart()
+            .startsWith("+18,1 % (datos parciales)"), text)
+        assertHasNot(text, "Variación interanual no disponible", "Distribución por periodo no disponible",
+            "P4 (kWh)", "P4 —", "no están completos", "no hay 12 meses completos")
+        assertTrue(pdf.portraitPages.all { it })
     }
 
     @Test
@@ -78,8 +98,8 @@ class PremiumActiveSectionTest {
         val rows = listOf(PremiumReportFixtures.row(d, java.time.LocalDate.parse("2026-07-31"), PremiumReportFixtures.pv(1000.0, 1000.0, 1000.0, 1000.0, 1000.0, 1000.0)))
         val text = render(activeDataset(history(rows))).text
         assertHas(text, "Sin datos",
-            "Variación interanual no disponible (los últimos 12 meses no están completos).",
-            "Distribución por periodo no disponible: no hay 12 meses completos.")
+            "Variación interanual no disponible (sin consumo disponible en los últimos 12 meses).",
+            "Distribución por periodo no disponible: sin consumo disponible en los últimos 12 meses.")
         assertHasNot(text, "no hay histórico de energía activa", "El histórico cubre", "Histórico inferior a 12 meses completos")
     }
 
