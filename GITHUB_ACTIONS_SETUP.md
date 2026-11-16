@@ -1,5 +1,8 @@
 # GitHub Actions Setup Guide
 
+> **⚠️ Outdated (2026-11-16).** This describes the pre-Docker deployment. Current setup: Docker Compose in `BmInfra` (`/opt/bm/BmInfra` on the VPS), deployed by GitHub Actions. Public endpoints are HTTPS only: API `https://api.poweredbyadvisors.com` (QA `https://api.qa.poweredbyadvisors.com`), n8n `https://n8n.poweredbyadvisors.com` (QA `https://n8n.qa.poweredbyadvisors.com`). Raw-IP ports (8081, 9081, 5000, 5678, …) are bound to 127.0.0.1; use `ssh -L <port>:127.0.0.1:<port> root@217.154.181.175`. See `BmInfra/TODO.md` → "VPS security plan".
+
+
 This guide explains how to set up automated deployment using GitHub Actions.
 
 ## 🔑 Prerequisites
