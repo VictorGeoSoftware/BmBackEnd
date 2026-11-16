@@ -4,6 +4,7 @@ import com.bm.backend.models.*
 import com.bm.backend.plugins.requestId
 import com.bm.backend.services.ComparatorReportPdfService
 import com.bm.backend.services.ImageToPdfConverter
+import com.bm.backend.services.InternalApiAuthService
 import com.bm.backend.services.JobService
 import com.bm.backend.services.AccessControlService
 import com.bm.backend.services.UserConsumptionService
@@ -27,7 +28,8 @@ fun Route.userConsumptionRoutes(
     jobService: JobService,
     comparatorReportPdfService: ComparatorReportPdfService,
     accessControlService: AccessControlService,
-    verifyToken: suspend (String) -> AuthenticatedFirebaseUser = ::verifyFirebaseIdToken
+    verifyToken: suspend (String) -> AuthenticatedFirebaseUser = ::verifyFirebaseIdToken,
+    internalApiAuthService: InternalApiAuthService = InternalApiAuthService.fromEnv()
 ) {
     post("/reports/comparator-pdf") {
         try {
@@ -56,8 +58,9 @@ fun Route.userConsumptionRoutes(
     }
 
     // NOTE: Server-to-server callback invoked by the n8n workflow (not by the app).
-    // Firebase auth is not applied here; lock down via webhook secret / network policy.
+    // It holds no Firebase token, so it must send the shared X-Internal-Token.
     post("/consumption-report") {
+        if (!call.requireInternalToken(internalApiAuthService)) return@post
         try {
             val consumptionRequest = call.receive<UserConsumptionRequest>()
             val consumptionReport = consumptionRequest.toDomainModel()

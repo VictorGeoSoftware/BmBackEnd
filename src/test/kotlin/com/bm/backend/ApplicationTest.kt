@@ -1,6 +1,7 @@
 package com.bm.backend
 
 import com.bm.backend.models.PriceTableResponse
+import com.bm.backend.services.InternalApiAuthService
 import com.bm.backend.testing.DockerAvailable
 import com.bm.backend.testing.PostgresTestSetup
 import io.ktor.client.request.*
@@ -20,6 +21,8 @@ import kotlin.test.assertTrue
 class ApplicationTest {
 
     companion object {
+        private const val INTERNAL_TOKEN = "test-internal-token"
+
         @BeforeAll
         @JvmStatic
         fun setup() {
@@ -31,7 +34,7 @@ class ApplicationTest {
     private fun Application.testApplicationModule() {
         // Skip DatabaseFactory.init() — Testcontainer DB is already connected
         val registry = configurePlugins()
-        configureRouting(registry)
+        configureRouting(registry, InternalApiAuthService(token = INTERNAL_TOKEN))
     }
 
     @Test
@@ -232,12 +235,56 @@ class ApplicationTest {
         }
         
         client.post("/api/v1/batch-process-price-tables") {
+            header(InternalApiAuthService.HEADER, INTERNAL_TOKEN)
             contentType(ContentType.Application.Json)
             setBody("[]")
         }.apply {
             assertEquals(HttpStatusCode.BadRequest, status)
             val responseText = bodyAsText()
             assert(responseText.contains("Request cannot be empty"))
+        }
+    }
+
+    @Test
+    fun `internal n8n endpoints reject calls without the internal token`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
+        application {
+            testApplicationModule()
+        }
+        listOf("/api/v1/batch-process-price-tables", "/api/v1/consumption-report").forEach { path ->
+            client.post(path) {
+                contentType(ContentType.Application.Json)
+                setBody("[]")
+            }.apply {
+                assertEquals(HttpStatusCode.Unauthorized, status, "$path without token")
+            }
+            client.post(path) {
+                header(InternalApiAuthService.HEADER, "wrong-token")
+                contentType(ContentType.Application.Json)
+                setBody("[]")
+            }.apply {
+                assertEquals(HttpStatusCode.Unauthorized, status, "$path with wrong token")
+            }
+        }
+    }
+
+    @Test
+    fun `consumption-report passes the token check with the internal token`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
+        application {
+            testApplicationModule()
+        }
+        // Invalid body on purpose: anything but 401 proves the token gate opened.
+        client.post("/api/v1/consumption-report") {
+            header(InternalApiAuthService.HEADER, INTERNAL_TOKEN)
+            contentType(ContentType.Application.Json)
+            setBody("{}")
+        }.apply {
+            assertTrue(status != HttpStatusCode.Unauthorized, "got $status")
         }
     }
 }

@@ -45,6 +45,7 @@ import com.bm.backend.services.WebPushTokensService
 import com.bm.backend.services.ComparatorReportPdfService
 import com.bm.backend.services.GrantedUsersService
 import com.bm.backend.services.HealthService
+import com.bm.backend.services.InternalApiAuthService
 import com.bm.backend.services.MetricsAuthService
 import com.bm.backend.services.PremiumReportService
 import com.bm.backend.services.premiumreport.PdfPremiumReportRenderer
@@ -199,7 +200,10 @@ fun Application.configurePlugins(): PrometheusMeterRegistry {
     return prometheusMeterRegistry
 }
 
-fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistry? = null) {
+fun Application.configureRouting(
+    prometheusMeterRegistry: PrometheusMeterRegistry? = null,
+    internalApiAuthService: InternalApiAuthService = InternalApiAuthService.fromEnv()
+) {
     // Initialize services
     val priceTableService = PriceTableService()
     val externalApiService = ExternalApiService()
@@ -265,13 +269,15 @@ fun Application.configureRouting(prometheusMeterRegistry: PrometheusMeterRegistr
                     externalApiService,
                     priceUpdatesNotifier,
                     accessControlService,
-                    adminAccessControlService
+                    adminAccessControlService,
+                    internalApiAuthService
                 )
                 userConsumptionRoutes(
                     userConsumptionService,
                     jobService,
                     comparatorReportPdfService,
-                    accessControlService
+                    accessControlService,
+                    internalApiAuthService = internalApiAuthService
                 )
                 premiumReportRoutes(premiumReportService, accessControlService)
                 userDataRoutes(userDataService, accessControlService)

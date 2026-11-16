@@ -109,7 +109,7 @@ parsed and logged before failing on content.
 |---|---|
 | `clear-all-data`, `delete price-table-results`, `upload-price-proposal`, `fetch-total-prices` (x2), `price-table-tax-settings` (x2) | admin (`requireAdminFirebaseUser`) |
 | `GET /price-table-results` | authenticated — BmApp users are regular granted accounts, not admins |
-| `POST /batch-process-price-tables` | unchanged in code; `deny all` at the proxy |
+| `POST /batch-process-price-tables` | shared secret `X-Internal-Token` (2026-11-16, see below); `deny all` at the proxy |
 
 `batch-process-price-tables` deliberately keeps no Firebase auth: the n8n
 workflow posts to `http://backend-prod:8081/...` over the internal Docker
@@ -125,10 +125,12 @@ the one call in `PriceTableApi` that did not.
 `ApplicationTest` asserted the old anonymous-read contract and failed on the
 change — the regression net working — and now asserts 401.
 
-**Residual risk:** ports 8081/9081 remain published to the host, so direct
-access bypasses the proxy. Every endpoint now requires a token regardless, so
-only `batch-process-price-tables` is reachable that way. Closing those ports is
-**#4**, which needs sequencing because both CI health checks use 8081.
+**Residual risk — closed 2026-11-16:** ports 8081/9081 are bound to
+127.0.0.1 (BmInfra #7), and `batch-process-price-tables` plus
+`consumption-report` (the other n8n-only route) now require
+`X-Internal-Token: $INTERNAL_API_TOKEN` (`InternalApiAuthService`, constant-time,
+fails closed when unset). n8n sends it from `{{ $env.INTERNAL_API_TOKEN }}`.
+nginx denies both publicly as a second layer.
 
 **Known consequence:** BmApp installs older than the token release fail on the
 price table screen until updated. Accepted deliberately — a feature flag was
@@ -274,7 +276,7 @@ which currently performs a full user-data wipe and token revocation.
 
 ## 🟠 Medium
 
-### 4. `/metrics` is unauthenticated and host-exposed — 🟡 PARTIALLY FIXED
+### 4. ~~`/metrics` is unauthenticated and host-exposed~~ ✅ FIXED
 
 **Was:** `Application.kt:186` served `prometheusMeterRegistry.scrape()` with no
 token or auth check, while `BmInfra/docker-compose.yml` publishes `8081:8081`
@@ -290,14 +292,10 @@ wired into both backend services in `BmInfra/docker-compose.yml` and documented
 in `env.example`. Covered by `MetricsAuthServiceTest` plus a route test
 asserting an unauthenticated `GET /metrics` is rejected.
 
-**Still open (firewall):** ports 8081/9081 remain published to the host. The
-endpoint no longer leaks without a token, so this is now defence-in-depth
-rather than an open door.
-
-⚠️ **Coupling to watch:** both deploy workflows health-check
-`http://217.154.181.175:8081/health` over the public interface. Closing 8081 at
-the firewall will break CI unless the check is moved to an SSH-tunnelled
-`curl` or to `docker compose exec` first. Sequence that change carefully.
+**Fixed (exposure, 2026-11-16):** 8081/9081 are published on 127.0.0.1 only
+(BmInfra #7). Docker bypasses ufw, so the old "blocked by ufw" note never held.
+Both deploy workflows now health-check `https://api.poweredbyadvisors.com/health`
+(BmBackEnd #82) instead of the raw IP.
 
 ### 5. ~~`/health` conflates liveness and readiness~~ ✅ FIXED
 

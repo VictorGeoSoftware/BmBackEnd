@@ -60,6 +60,9 @@ chmod +x deploy-remote.sh
 - `GET /metrics` - Prometheus metrics. Requires `Authorization: Bearer $METRICS_TOKEN`; returns 401 when `METRICS_TOKEN` is unset
 - `GET /` - Service info
 
+### Internal (n8n only)
+- `POST /api/v1/batch-process-price-tables`, `POST /api/v1/consumption-report` - Require `X-Internal-Token: $INTERNAL_API_TOKEN`; return 401 when it is missing, wrong or unset. Also denied by nginx.
+
 ### Price Tables
 - `GET /api/v1/price-tables` - List all price tables
 - `GET /api/v1/price-tables/{id}` - Get specific price table
