@@ -5,6 +5,7 @@ import com.bm.backend.models.ErrorResponse
 import com.bm.backend.observability.DeploymentInfo
 import com.bm.backend.plugins.REQUEST_ID_MDC_KEY
 import com.bm.backend.plugins.RequestIdPlugin
+import com.bm.backend.plugins.RateLimitKeys
 import com.bm.backend.plugins.requestId
 import com.bm.backend.repositories.AdminUsersRepository
 import com.bm.backend.repositories.CollectedPricesRepository
@@ -76,8 +77,17 @@ fun main(args: Array<String>) {
     io.ktor.server.netty.EngineMain.main(args)
 }
 
-/** Name of the rate limiter applied to the `/api/v1` route group. */
+/** Per-caller limiter for the `/api/v1` route group (key: [RateLimitKeys.callerKey]). */
 val API_RATE_LIMIT = RateLimitName("api")
+
+/** Whole-backend backstop around [API_RATE_LIMIT]; bounds callers that rotate keys. */
+val API_GLOBAL_RATE_LIMIT = RateLimitName("api-global")
+
+/** Requests per minute per caller. PROD peak for the whole backend was 33/min (Nov 2026). */
+const val API_RATE_LIMIT_PER_CALLER = 120
+
+/** Requests per minute for the whole backend (~18x the observed PROD peak). */
+const val API_RATE_LIMIT_GLOBAL = 600
 
 fun Application.configurePlugins(): PrometheusMeterRegistry {
     val prometheusMeterRegistry = PrometheusMeterRegistry(PrometheusConfig.DEFAULT)
@@ -168,32 +178,26 @@ fun Application.configurePlugins(): PrometheusMeterRegistry {
         // The limit and window are unchanged; only the set of routes it
         // applies to has narrowed.
         //
-        // ⚠️ KNOWN LIMITATION — this bucket is SHARED BY ALL CALLERS.
+        // Per caller (TECH_DEBT #19, fixed 2026-11-18). Previously no
+        // `requestKey` was set, so Ktor's default `Unit` key made this ONE
+        // 100 req/min bucket for the whole backend: at 20 concurrent users each
+        // got ~5 req/min, and one client could block everyone.
         //
-        // No `requestKey` is set, and Ktor's default key is `Unit`:
+        // Key = hash of the bearer token (one Firebase session), else the
+        // client IP; see RateLimitKeys. Not the IP for authenticated users:
+        // web traffic arrives from Vercel's servers, so IPs say little about
+        // who the user is.
         //
-        //     "By default, the key is a [Unit], so all requests share the same
-        //      Rate-Limit."  — RateLimitProviderConfig.kt:105 (Ktor 2.3.12)
-        //
-        // So this is 100 requests per minute for the WHOLE BACKEND, not per
-        // client. With N users active at once each effectively gets 100/N per
-        // minute: at 20 users that is 5 requests/min each, which one screen
-        // opening several endpoints can exhaust on its own.
-        //
-        // It is also the only rate limiting anywhere in the stack — there is
-        // no `limit_req` in BmInfra/nginx/nginx.conf.
-        //
-        // Deliberately left as-is (Aug 2026): the user base is ~20 in the short
-        // term. If 429s start appearing in Loki
-        //     {service="bm-backend", env="prod"} |= "429"
-        // or users report the app failing under light load, THIS IS WHY.
-        //
-        // Fix: set `requestKey`. Prefer the Firebase UID over the client IP —
-        // mobile clients sit behind carrier-grade NAT (many users share one IP)
-        // and change IP when switching Wi-Fi/cellular (one user, many IPs), so
-        // an IP key is both too coarse and too fine. See TECH_DEBT.md #19.
+        // Sizing: polling alone is up to ~35 req/min for a user with PowerAppWeb
+        // (study status every 3s) and BmWeb's users page (every 4s) open; PROD
+        // peaked at 33 req/min for ALL callers combined. The global backstop
+        // only exists to bound floods of invented tokens.
         register(API_RATE_LIMIT) {
-            rateLimiter(limit = 100, refillPeriod = 60.seconds)
+            rateLimiter(limit = API_RATE_LIMIT_PER_CALLER, refillPeriod = 60.seconds)
+            requestKey { call -> RateLimitKeys.callerKey(call) }
+        }
+        register(API_GLOBAL_RATE_LIMIT) {
+            rateLimiter(limit = API_RATE_LIMIT_GLOBAL, refillPeriod = 60.seconds)
         }
     }
 
@@ -262,40 +266,42 @@ fun Application.configureRouting(
 
         healthRoutes(healthService)
 
-        rateLimit(API_RATE_LIMIT) {
-            route("/api/v1") {
-                priceTableRoutes(
-                    priceTableService,
-                    externalApiService,
-                    priceUpdatesNotifier,
-                    accessControlService,
-                    adminAccessControlService,
-                    internalApiAuthService
-                )
-                userConsumptionRoutes(
-                    userConsumptionService,
-                    jobService,
-                    comparatorReportPdfService,
-                    accessControlService,
-                    internalApiAuthService = internalApiAuthService
-                )
-                premiumReportRoutes(premiumReportService, accessControlService)
-                userDataRoutes(userDataService, accessControlService)
-                userAccessRoutes(accessControlService)
-                webPushRoutes(webPushTokensService, accessControlService)
-                userActivityRoutes(
-                    userActivityService,
-                    accessControlService,
-                    adminAccessControlService
-                )
-                authRoutes(userActivityService, accessControlService)
-                adminAccessRoutes(adminAccessControlService)
-                grantedUsersRoutes(grantedUsersService, adminAccessControlService)
-                collectedPricesRoutes(
-                    collectedPricesService,
-                    accessControlService,
-                    adminAccessControlService
-                )
+        rateLimit(API_GLOBAL_RATE_LIMIT) {
+            rateLimit(API_RATE_LIMIT) {
+                route("/api/v1") {
+                    priceTableRoutes(
+                        priceTableService,
+                        externalApiService,
+                        priceUpdatesNotifier,
+                        accessControlService,
+                        adminAccessControlService,
+                        internalApiAuthService
+                    )
+                    userConsumptionRoutes(
+                        userConsumptionService,
+                        jobService,
+                        comparatorReportPdfService,
+                        accessControlService,
+                        internalApiAuthService = internalApiAuthService
+                    )
+                    premiumReportRoutes(premiumReportService, accessControlService)
+                    userDataRoutes(userDataService, accessControlService)
+                    userAccessRoutes(accessControlService)
+                    webPushRoutes(webPushTokensService, accessControlService)
+                    userActivityRoutes(
+                        userActivityService,
+                        accessControlService,
+                        adminAccessControlService
+                    )
+                    authRoutes(userActivityService, accessControlService)
+                    adminAccessRoutes(adminAccessControlService)
+                    grantedUsersRoutes(grantedUsersService, adminAccessControlService)
+                    collectedPricesRoutes(
+                        collectedPricesService,
+                        accessControlService,
+                        adminAccessControlService
+                    )
+                }
             }
         }
     }

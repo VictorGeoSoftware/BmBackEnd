@@ -118,97 +118,33 @@ price table screen until updated. Accepted deliberately — a feature flag was
 built to stage this and then removed, on the grounds that a flag which never
 gets flipped is permanent debt in the auth path.
 
-### 19. 🔴 The rate limiter is one shared 100 req/min bucket for the entire backend — ⏸️ DEFERRED, accepted risk
+### 19. ~~🔴 The rate limiter is one shared 100 req/min bucket for the entire backend~~ ✅ FIXED (2026-11-18)
 
-**Evidence:** `Application.kt` installed
-`global { rateLimiter(limit = 100, refillPeriod = 60.seconds) }`. Ktor 2.3.12's
-`RateLimitProviderConfig.kt:105` documents the default key:
+**Was:** `register(API_RATE_LIMIT) { rateLimiter(limit = 100, refillPeriod = 60.seconds) }`
+with no `requestKey`. Ktor 2.3.12 defaults the key to `Unit`, so every caller
+shared one 100 req/min bucket: at 20 concurrent users ~5 req/min each, and one
+client could block everyone. It was deferred in Aug 2026 with a tripwire; the
+tripwire never fired (0 × 429 in PROD/QA over 30 days, checked 2026-11-18).
 
-> *"By default, the key is a `Unit`, so all requests share the same
-> Rate-Limit."*
+**Fixed:** two nested limiters on `/api/v1`:
+- `API_RATE_LIMIT`: **120 req/min per caller**. Key (`plugins/RateLimitKeys.kt`):
+  `user:<sha256(bearer token)>` (one Firebase session per bucket, no extra
+  Firebase call), else `ip:<X-Real-IP>` (set by nginx), else the socket peer
+  (internal callers such as n8n). Not the IP for users: web traffic arrives
+  from Vercel's servers.
+- `API_GLOBAL_RATE_LIMIT`: **600 req/min for the whole backend**, a backstop for
+  callers that rotate invented tokens to get fresh buckets.
 
-No `requestKey` was configured, so the limit is **not** per client. All callers
-draw from a single 100-requests-per-minute bucket.
+**Sizing evidence (Loki, 30 days):** whole-backend peak 33 req/min in PROD and 21
+in QA. Polling alone can reach ~35 req/min for one user (PowerAppWeb study status
+every 3s, BmWeb users page every 4s). `/`, `/health*` and `/metrics` stay
+outside both limiters.
 
-**Confirmed to be the only rate limiting in the stack:** there is no
-`limit_req` / `limit_conn` in `BmInfra/nginx/nginx.conf`,
-`nginx-bm-backend.conf` or `deploy-remote.sh`, and no Flask limiter in
-DoclingBillReader. Nothing backstops it.
+**Tests:** `RateLimitKeysTest`; `ApplicationTest` checks that /api/v1 is still
+limited, that one caller exhausting its budget does not throttle another, and that
+the global backstop stops token rotation.
 
-**Impact:** two dimensions, both bad.
-- *Availability:* a handful of concurrent users can exhaust the budget for
-  everyone. Each BmApp screen that issues several calls consumes a
-  disproportionate share.
-- *Security:* as abuse protection it is close to useless — a single attacker
-  trivially denies service to all legitimate users, which is a cheaper attack
-  than the one the limit was meant to prevent.
-
-**Partially mitigated:** the limiter was moved off `global` onto a named
-provider scoped to `/api/v1`, so `/`, `/health*` and `/metrics` no longer spend
-the budget — previously a Docker healthcheck or a Prometheus scrape competed
-with real traffic, and a 429 on a healthcheck would have restarted a healthy
-container. Limit and window are unchanged. Two tests pin this: probes are not
-limited, and `/api/v1` still is.
-
-**Fix (needs a decision, not just code):** set `requestKey` to the caller
-identity and raise the limit to something defensible per client.
-
-**⏸️ DEFERRED (Aug 2026) — accepted risk, with a tripwire.** The short-term user
-base is ~20, and the proper fix is a policy decision rather than a code change.
-The reasoning and the symptom are recorded in a comment directly above the
-`register(API_RATE_LIMIT)` block in `Application.kt`, so whoever hits this does
-not have to rediscover it.
-
-**Know the arithmetic before assuming ~20 users is safe.** The bucket is shared,
-so each concurrent user effectively gets `100 / N` requests per minute:
-
-| Concurrent users | Requests/min each |
-|---|---|
-| 5 | 20 |
-| 10 | 10 |
-| **20** | **5** |
-
-At 20 active users that is **5 requests/min each**. A single BmApp screen that
-calls 4–5 endpoints on open consumes a user's whole minute, and 20 users opening
-the app simultaneously spend the entire budget at once. This may already be
-happening rather than being a future risk.
-
-**Tripwire — check before assuming it is fine:**
-
-```
-{service="bm-backend", env="prod"} |= "429"
-```
-
-Empty ⇒ the deferral is safe. Non-empty ⇒ users are already being throttled and
-are experiencing it as "the app is broken".
-
-**Cheap interim mitigation if that query is not empty:** raise `limit = 100` to
-~2000. One line, no design decision needed. It keeps the shared-bucket shape —
-still wrong in principle, still weak as abuse protection — but removes the
-availability risk while the real fix waits.
-
-**When fixing properly, prefer the Firebase UID over the client IP.** An IP key
-is the obvious choice and the wrong one here, because BmApp is mobile:
-
-- **Many users, one IP.** Mobile carriers use carrier-grade NAT (CGNAT), so
-  thousands of subscribers share a small pool of public IPv4 addresses. Two
-  users on the same carrier can appear as the same IP — which recreates exactly
-  the shared-bucket problem this item is about, just smaller. Office Wi-Fi has
-  the same effect.
-- **One user, many IPs.** Switching Wi-Fi ↔ cellular changes the IP instantly;
-  so do tower handoffs and DHCP renewals. A user's bucket silently resets as
-  they move, defeating the limit.
-- IPv6 usually gives a device its own address, but carriers rotate prefixes, so
-  it is not a guarantee either.
-
-The Firebase UID is stable, gives exactly one bucket per user, and is immune to
-both CGNAT and network switching. Unauthenticated endpoints are a small set and
-can fall back to an IP key.
-
-If an IP key is used anywhere, note that the backend sits behind Nginx, so
-`remoteHost` is the proxy for every request. It must read the forwarded client
-IP — and trust `X-Forwarded-For` **only** from Nginx, or a caller can spoof the
-header and mint an unlimited bucket per request.
+**Tripwire (still useful):** `{service="bm-backend", env="prod"} |= "-> 429"`.
 
 ### 20. ~~🔴 App grants were checked only during user-data sync~~ ✅ FIXED
 
