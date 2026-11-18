@@ -16,6 +16,7 @@ import org.junit.jupiter.api.Assumptions
 import org.junit.jupiter.api.BeforeAll
 import org.junit.jupiter.api.Test
 import kotlin.test.assertEquals
+import kotlin.test.assertNotEquals
 import kotlin.test.assertTrue
 
 class ApplicationTest {
@@ -162,7 +163,8 @@ class ApplicationTest {
             testApplicationModule()
         }
 
-        // The limiter allows 100 requests per minute and is shared across all
+        // The API limiter is per caller (TECH_DEBT #19) and wrapped by a global
+        // backstop. Before the split it was global, so infrastructure polling
         // callers. Before the split it was global, so infrastructure polling
         // competed with real traffic for that budget and a 429 on a Docker
         // healthcheck would have restarted a healthy container.
@@ -186,12 +188,61 @@ class ApplicationTest {
         // limiter off `global` and forgetting to apply it to /api/v1, which
         // would silently remove rate limiting from every real endpoint.
         var sawTooManyRequests = false
-        repeat(150) {
+        repeat(API_RATE_LIMIT_PER_CALLER + 10) {
             if (client.get("/api/v1/price-table-results").status == HttpStatusCode.TooManyRequests) {
                 sawTooManyRequests = true
             }
         }
         assertTrue(sawTooManyRequests, "Expected /api/v1 traffic to hit the rate limit")
+    }
+
+    @Test
+    fun `one caller exhausting its budget does not block another caller`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
+        application {
+            testApplicationModule()
+        }
+
+        // TECH_DEBT #19: the bucket used to be shared by every caller.
+        val statusesA = (1..API_RATE_LIMIT_PER_CALLER + 5).map {
+            client.get("/api/v1/price-table-results") { header("Authorization", "Bearer token-a") }.status
+        }
+        assertTrue(statusesA.take(API_RATE_LIMIT_PER_CALLER).none { it == HttpStatusCode.TooManyRequests },
+            "caller A must get its full budget")
+        assertEquals(HttpStatusCode.TooManyRequests, statusesA.last())
+
+        // Same IP (test client), different session: own bucket, not throttled.
+        // (Firebase is not configured under test, so the invented token fails
+        // verification with a non-429 status; only "not throttled" matters here.)
+        client.get("/api/v1/price-table-results") { header("Authorization", "Bearer token-b") }.apply {
+            assertNotEquals(HttpStatusCode.TooManyRequests, status)
+        }
+        // Anonymous callers are keyed by IP and also unaffected by A.
+        client.get("/api/v1/price-table-results").apply {
+            assertEquals(HttpStatusCode.Unauthorized, status)
+        }
+    }
+
+    @Test
+    fun `global backstop limits callers that rotate invented tokens`() = testApplication {
+        environment {
+            config = io.ktor.server.config.MapApplicationConfig()
+        }
+        application {
+            testApplicationModule()
+        }
+
+        // Each invented token gets its own per-caller bucket, so only the
+        // global limiter can stop this pattern.
+        val statuses = (1..API_RATE_LIMIT_GLOBAL + 5).map { i ->
+            client.get("/api/v1/price-table-results") { header("Authorization", "Bearer fake-$i") }.status
+        }
+        assertTrue(statuses.take(API_RATE_LIMIT_GLOBAL).none { it == HttpStatusCode.TooManyRequests })
+        assertEquals(HttpStatusCode.TooManyRequests, statuses.last())
+        // Probes stay outside every limiter.
+        assertEquals(HttpStatusCode.OK, client.get("/health/live").status)
     }
 
     @Test
