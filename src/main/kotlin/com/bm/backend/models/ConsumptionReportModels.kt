@@ -37,7 +37,10 @@ data class CustomerId(
 data class N8nWebhookResponse(
     val success: Boolean,
     val data: N8nConsumptionData,
-    val processedAt: String
+    val processedAt: String,
+    // Set by the workflow's Respond node ({{ $execution.id }} / {{ $workflow.id }}); absent in older workflows.
+    val n8nExecutionId: String? = null,
+    val n8nWorkflowId: String? = null
 )
 
 @Serializable
