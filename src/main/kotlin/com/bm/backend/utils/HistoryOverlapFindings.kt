@@ -4,9 +4,7 @@ import com.bm.backend.models.HistoryCoverage
 import com.bm.backend.models.HistoryOverlapEffect
 import com.bm.backend.models.HistoryOverlapFinding
 import com.bm.backend.models.MeasurementFamily
-import com.bm.backend.models.PeriodValues
 import com.bm.backend.models.StudyHistory
-import com.bm.backend.models.StudyHistoryInterval
 
 /**
  * Pure: turns the overlaps disclosed by [HistoryCoverageCalculator] into findings with the effect the
@@ -22,8 +20,8 @@ object HistoryOverlapFindings {
                     val first = history.intervals[overlap.firstIndex]
                     val second = history.intervals[overlap.secondIndex]
                     val zeroRow = when {
-                        allZero(values(first, family)) -> overlap.firstIndex + 1
-                        allZero(values(second, family)) -> overlap.secondIndex + 1
+                        FamilyWindowAggregator.isZeroRow(FamilyWindowAggregator.familyValues(first, family)) -> overlap.firstIndex + 1
+                        FamilyWindowAggregator.isZeroRow(FamilyWindowAggregator.familyValues(second, family)) -> overlap.secondIndex + 1
                         else -> null
                     }
                     HistoryOverlapFinding(
@@ -49,16 +47,6 @@ object HistoryOverlapFindings {
         zeroRow != null -> HistoryOverlapEffect.NEUTRAL_ZERO_ROW
         else -> HistoryOverlapEffect.BLOCKS_TOTAL
     }
-
-    private fun values(interval: StudyHistoryInterval, family: MeasurementFamily): PeriodValues = when (family) {
-        MeasurementFamily.ACTIVE -> interval.active
-        MeasurementFamily.REACTIVE -> interval.reactive
-        MeasurementFamily.MAX_DEMAND -> interval.maxDemand
-    }
-
-    /** Same rule as A1/R2: all six cells exactly 0.0; blanks never qualify. */
-    private fun allZero(v: PeriodValues): Boolean =
-        listOf(v.p1, v.p2, v.p3, v.p4, v.p5, v.p6).all { it == 0.0 }
 
     /** One line per finding, e.g. `ACTIVE rows 3 [2025-01-01..2025-03-01) x 4 [..): 31d, zero row none -> blocks_total`. */
     fun describe(f: HistoryOverlapFinding): String =

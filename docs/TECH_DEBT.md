@@ -459,9 +459,15 @@ it). Accepted risk: if an overlapping row is a superseded correction its value m
 the peak row's dates are always reported. The mean of per-reading maxima is withheld (`overlap`) when
 any contained demand rows overlap. Revisit if upstream semantics are documented.
 
-**Pending migration:** `utils/FamilyWindowAggregator` duplicates the private window/overlap/union logic
-of `ActiveSummaryCalculator`, which was intentionally not refactored in `report-reactive-summary`.
-Migrate the active calculator onto the helper in a dedicated change with its existing tests unchanged.
+**Migration done (2026-11-18):** `ActiveSummaryCalculator` now uses `utils/FamilyWindowAggregator`
+for its windows (contained/crossing rows, gaps, overlaps, union days, sums, null cells) and its
+zero-row/day helpers; its tests were not changed and all pass.
+
+**Measuring it (2026-11-18):** every completed study with overlapping rows logs one line,
+`History overlaps found`, with jobId, CUPS, counts, each pair's 1-based rows/dates/overlap days, the
+effect under the rules above (`blocks_total`, `neutral_zero_row`, `hides_demand_mean`) and a link to
+the n8n execution (which holds the portal Excel). No consumption values. Grafana dashboard
+"History overlaps" (BmInfra). Use it to decide whether the semantics need settling.
 
 ---
 
