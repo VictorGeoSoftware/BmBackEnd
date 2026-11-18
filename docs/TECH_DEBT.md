@@ -529,14 +529,22 @@ Migrate the active calculator onto the helper in a dedicated change with its exi
 
 ---
 
-### 22. Premium report route: no per-route body-size limit; StatusPages logs exception text
+### 22. ~~Premium report route: no per-route body-size limit~~ ✅ FIXED; StatusPages logging — ACCEPTED
 
-Recorded by `report-document` (user answer Q5 a, 2026-10-29; low notes from `report-api-access`).
-`POST /api/v1/reports/premium-pdf` has no route-specific request-body size limit (only the server defaults apply),
-and failures raised outside the renderer (e.g. during body deserialisation) reach the global `StatusPages` handler,
-which logs the exception message/stack. Renderer failures themselves are mapped to `500 report_generation_failed`
-and log only `errorType`/requestId/uid. If needed, add a per-route limit (e.g. 1 MiB ⇒ 413) and a scrubbed
-StatusPages log in a separate, tested change.
+**Body size (fixed 2026-11-18):** `POST /api/v1/reports/premium-pdf` now checks
+`Content-Length` after auth/grant/Premium and before reading the body:
+over `PREMIUM_REPORT_MAX_BODY_BYTES` (1 MiB) ⇒ `413 payload_too_large`; no
+`Content-Length` ⇒ `411 invalid_request` (nginx always sends it, so this only
+refuses unbounded streams). A real request is a few KB; nginx's global cap is
+50 MB. Covered by the `J` tests in `PremiumReportRoutesTest`.
+
+**Logging (accepted, corrected):** the original note said body deserialisation
+errors reach `StatusPages`; they don't — the route catches them and answers
+`400 invalid_request` without logging content, and renderer failures log only
+`errorType`/requestId/uid. Only truly unexpected exceptions (e.g. a DB error)
+reach the last-resort handler, which logs the stack trace on purpose for
+debugging and returns a generic body. Logs live in Loki, reachable only via SSH
+tunnel (127.0.0.1-bound, no public URL), 30-day retention. Kept as is.
 
 ## Fixed during this work — do not regress
 

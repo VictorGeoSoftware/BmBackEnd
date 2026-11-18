@@ -31,6 +31,9 @@ import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.http.contentType
+import io.ktor.http.content.OutgoingContent
+import io.ktor.utils.io.ByteWriteChannel
+import io.ktor.utils.io.writeStringUtf8
 import io.ktor.serialization.kotlinx.json.json
 import io.ktor.server.application.install
 import io.ktor.server.config.MapApplicationConfig
@@ -277,6 +280,48 @@ class PremiumReportRoutesTest {
             assertEquals("invalid_request", it.code())
             it.assertNoLeak(sensitive(jobId, comparison))
         }
+        assertEquals(0, countOf(c.renderer))
+    }
+
+    @Test
+    fun `J bodies over the size limit are 413 before parsing, real requests are far below it`() = testApplication {
+        val c = ctx(); setup(c)
+        val (jobId, comparison) = completedJob(c.jobs)
+        val real = body(jobId, comparison)
+        // Headroom check: a realistic request must be orders of magnitude under the cap.
+        assertTrue(real.toByteArray().size * 50 < PREMIUM_REPORT_MAX_BODY_BYTES, "real body is ${real.length} bytes")
+
+        val tooBig = " ".repeat(PREMIUM_REPORT_MAX_BODY_BYTES.toInt()) + real
+        val r = premium("token-a", tooBig)
+        assertEquals(HttpStatusCode.PayloadTooLarge, r.status)
+        assertEquals("payload_too_large", r.code())
+        r.assertNoLeak(sensitive(jobId, comparison))
+        // Exactly at the limit is still accepted (whitespace-padded valid JSON).
+        val atLimit = " ".repeat((PREMIUM_REPORT_MAX_BODY_BYTES - real.toByteArray().size).toInt()) + real
+        assertEquals(HttpStatusCode.OK, premium("token-a", atLimit).status)
+        assertEquals(1, countOf(c.renderer))
+    }
+
+    @Test
+    fun `J size check runs after auth and premium, and bodies without Content-Length are 411`() = testApplication {
+        val c = ctx(tierA = UserTier.BASIC); setup(c)
+        val tooBig = " ".repeat(PREMIUM_REPORT_MAX_BODY_BYTES.toInt() + 1)
+        assertEquals(HttpStatusCode.Unauthorized, premium(null, tooBig).status)
+        val basic = premium("token-a", tooBig)
+        assertEquals(HttpStatusCode.Forbidden, basic.status)
+        assertEquals("premium_required", basic.code())
+
+        c.grants.updateTier("a@example.com", UserTier.PREMIUM)
+        val (jobId, comparison) = completedJob(c.jobs)
+        val streamed = client.post("/reports/premium-pdf") {
+            header(HttpHeaders.Authorization, "Bearer token-a")
+            setBody(object : OutgoingContent.WriteChannelContent() {
+                override val contentType = ContentType.Application.Json
+                override suspend fun writeTo(channel: ByteWriteChannel) = channel.writeStringUtf8(body(jobId, comparison))
+            })
+        }
+        assertEquals(HttpStatusCode.LengthRequired, streamed.status)
+        assertEquals("invalid_request", streamed.code())
         assertEquals(0, countOf(c.renderer))
     }
 
