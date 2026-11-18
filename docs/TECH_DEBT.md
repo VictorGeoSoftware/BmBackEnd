@@ -8,6 +8,9 @@ Scope note: items already scheduled as future phases live in
 file is for things that are *unplanned, surprising, or a trap for the next
 person* — including several that are only visible from the VPS.
 
+Since 2026-11-16 infrastructure/VPS items (Compose, nginx, n8n hosting, deploy
+pipelines) are tracked in `BmInfra/TODO.md`; this file keeps backend code debt.
+
 Every item below was verified, not assumed; the evidence is recorded so it can
 be re-checked when it is fixed.
 
@@ -46,36 +49,10 @@ and they had been running for four days **without log rotation** — the largest
 disk risk in `MONITORING_PLAN.md` §4. Nothing had reported it.
 
 
-### 2. The VPS has an untracked `docker-compose.override.yml`
+### 2. ~~The VPS has an untracked `docker-compose.override.yml`~~ ➡️ MOVED
 
-**Evidence:** `git status` in `/opt/bm/BmInfra` lists it as untracked. Compose
-loads any file with that name **automatically** — no `-f` required.
-
-```yaml
-services:
-  nginx:
-    ports: ["80:80", "81:81", "443:443"]
-  backend-prod:
-    environment: [BM_AUTH_EMAIL_ALLOWLIST=${BM_AUTH_EMAIL_ALLOWLIST}]
-  backend-qa:
-    environment: [BM_AUTH_EMAIL_ALLOWLIST=${BM_AUTH_EMAIL_ALLOWLIST}]
-```
-
-**Impact:** the server's effective configuration is `docker-compose.yml` *plus*
-this file, and it is invisible to anyone reading the repo — so local validation
-does not necessarily reflect production. It is also load-bearing (it publishes
-ports 80/443 and wires the auth allowlist) and exists in exactly one place: if
-the VPS is rebuilt, it is gone, and public traffic silently stops being served.
-
-**Verified harmless for observability** via `docker compose config`: `ports`
-entries **append** (both `80` and `8090` are published) and `environment` merges
-by key, so `LOG_FORMAT=json` survives.
-
-**Fix:** it cannot simply be committed under that name — Compose would auto-load
-it on developer machines and try to bind privileged ports. Either rename to
-`docker-compose.vps.yml` and pass it explicitly with `-f` (requires updating
-three deploy workflows), or keep it and treat the copy in
-`BmInfra/docs/DEPLOY_OBSERVABILITY.md` as the backup of record.
+Infrastructure item, now tracked in `BmInfra/TODO.md` → Open → Reliability
+(with the current override content; `81:81` was removed on 2026-11-16).
 
 ### 3. ~~`./gradlew build` fails on `qa`~~ ✅ FIXED
 
@@ -382,20 +359,9 @@ repeated delete failure would be invisible in Loki.
 specified would have produced a cleanup cron job for two permanently empty
 directories.
 
-### 8. A missing env var breaks *all three* deploy pipelines
+### 8. ~~A missing env var breaks *all three* deploy pipelines~~ ➡️ MOVED
 
-**Evidence:** reproduced —
-`docker compose build backend-prod` fails with
-`required variable GRAFANA_ADMIN_PASSWORD is missing a value`.
-
-**Impact:** `${VAR:?}` plus the fact that Compose parses the whole file before
-acting means one absent variable breaks BmBackEnd PROD, BmBackEnd QA **and**
-DoclingBillReader deploys — none of which reference Grafana. Any future `:?`
-variable adds the same trap, and the error names a service that has nothing to
-do with the failing deploy.
-
-**Fix:** prefer defaults (`${VAR:-sensible}`) over `:?` for anything not
-security-critical; document required vars in `env.example` as they are added.
+Infrastructure item, now tracked in `BmInfra/TODO.md` → Open → Reliability.
 
 ### 9. ~~Any push to `main` redeploys PROD, including docs-only changes~~ ✅ FIXED
 
