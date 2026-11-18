@@ -3,6 +3,7 @@ package com.bm.backend.routes
 import com.bm.backend.models.*
 import com.bm.backend.plugins.requestId
 import com.bm.backend.services.ComparatorReportPdfService
+import com.bm.backend.services.HistoryOverlapLogger
 import com.bm.backend.services.ImageToPdfConverter
 import com.bm.backend.services.InternalApiAuthService
 import com.bm.backend.services.JobService
@@ -29,7 +30,8 @@ fun Route.userConsumptionRoutes(
     comparatorReportPdfService: ComparatorReportPdfService,
     accessControlService: AccessControlService,
     verifyToken: suspend (String) -> AuthenticatedFirebaseUser = ::verifyFirebaseIdToken,
-    internalApiAuthService: InternalApiAuthService = InternalApiAuthService.fromEnv()
+    internalApiAuthService: InternalApiAuthService = InternalApiAuthService.fromEnv(),
+    historyOverlapLogger: HistoryOverlapLogger = HistoryOverlapLogger.fromEnv()
 ) {
     post("/reports/comparator-pdf") {
         try {
@@ -164,6 +166,9 @@ fun Route.userConsumptionRoutes(
                     
                     // Mark job as completed
                     jobService.completeJob(jobId, response.report, response.history, response.snapshot)
+                    historyOverlapLogger.report(
+                        jobId, originRequestId, response.report.consumptionData.cups, response.history, response.n8nRun
+                    )
                     call.application.log.info(
                         "Consumption report job completed {} {} {}",
                         kv("jobId", jobId), kv("userId", ownerUid), kv("requestId", originRequestId)
@@ -232,6 +237,9 @@ fun Route.userConsumptionRoutes(
                     val response = userConsumptionService.processConsumptionReportFromCups(normalizedCupsCode)
 
                     jobService.completeJob(jobId, response.report, response.history, response.snapshot)
+                    historyOverlapLogger.report(
+                        jobId, originRequestId, response.report.consumptionData.cups, response.history, response.n8nRun
+                    )
                     call.application.log.info(
                         "CUPS consumption job completed {} {} {}",
                         kv("jobId", jobId), kv("userId", ownerUid), kv("requestId", originRequestId)

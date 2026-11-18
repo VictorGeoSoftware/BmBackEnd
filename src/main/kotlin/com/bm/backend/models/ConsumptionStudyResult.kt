@@ -4,5 +4,7 @@ package com.bm.backend.models
 data class ConsumptionStudyResult(
     val report: ConsumptionReportResponse,
     val history: StudyHistory,
-    val snapshot: StudySnapshot
+    val snapshot: StudySnapshot,
+    /** The n8n execution that fetched the data; null when the workflow does not report it. */
+    val n8nRun: N8nRunReference? = null
 )
