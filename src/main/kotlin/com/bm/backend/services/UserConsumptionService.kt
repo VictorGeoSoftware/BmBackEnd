@@ -3,6 +3,7 @@ package com.bm.backend.services
 import com.bm.backend.models.ConsumptionReportResponse
 import com.bm.backend.models.ConsumptionStudyResult
 import com.bm.backend.models.DoclingExtractedData
+import com.bm.backend.models.N8nRunReference
 import com.bm.backend.models.UserConsumption
 import com.bm.backend.repositories.ports.UserConsumptionRepositoryPort
 import com.bm.backend.utils.StudyHistoryMapper
@@ -84,7 +85,9 @@ class UserConsumptionService(
         val history = StudyHistoryMapper.map(n8nResponse.data.history, cleanedConsumptionData.cups)
         // Total mapper, run after history: only a snapshot for the same CUPS is retained.
         val snapshot = StudySnapshotMapper.map(n8nResponse.data.snapshot, cleanedConsumptionData.cups)
-        return ConsumptionStudyResult(report = report, history = history, snapshot = snapshot)
+        val n8nRun = n8nResponse.n8nExecutionId?.takeIf { it.isNotBlank() }
+            ?.let { N8nRunReference(executionId = it, workflowId = n8nResponse.n8nWorkflowId) }
+        return ConsumptionStudyResult(report = report, history = history, snapshot = snapshot, n8nRun = n8nRun)
     }
 
     fun refreshProposals(consumptionData: com.bm.backend.models.CleanedConsumptionData): List<com.bm.backend.models.ProposalPriceModel> {

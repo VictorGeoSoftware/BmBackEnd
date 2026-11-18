@@ -43,6 +43,21 @@ class UserConsumptionServiceHistoryTest {
     }
 
     @Test
+    fun `n8n execution and workflow ids from the response become the study's n8n run reference`() {
+        val externalApiService = mockk<ExternalApiService>()
+        coEvery { externalApiService.processWithN8nWebhook(any()) } returns
+            N8nFixtures.response("history_v1.json").copy(n8nExecutionId = "170", n8nWorkflowId = "wf-9")
+        val priceTableService = mockk<PriceTableService>()
+        every { priceTableService.getFilteredPriceTableResults(any()) } returns
+            FilteredPriceTableResponse(success = true, results = emptyList(), iva = 0.21, impuestoElectrico = 0.0511)
+        val service = UserConsumptionService(InMemoryUserConsumptionRepository(), externalApiService, priceTableService)
+        val result = runBlocking { service.processConsumptionReportFromCups(cups) }
+        assertEquals(com.bm.backend.models.N8nRunReference("170", "wf-9"), result.n8nRun)
+        // Older workflows do not send the ids.
+        assertNull(run("history_v1.json").n8nRun)
+    }
+
+    @Test
     fun `annual-only response keeps the annual result and reports not_provided`() {
         val result = run("annual_only.json")
         val n8n = N8nFixtures.response("annual_only.json")

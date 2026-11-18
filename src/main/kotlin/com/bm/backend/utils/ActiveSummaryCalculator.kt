@@ -8,8 +8,6 @@ import com.bm.backend.models.AnnualSource
 import com.bm.backend.models.AnnualSourceComparison
 import com.bm.backend.models.CleanedConsumptionData
 import com.bm.backend.models.ComparisonStatus
-import com.bm.backend.models.CoverageGap
-import com.bm.backend.models.CoverageOverlap
 import com.bm.backend.models.HighConsumptionInterval
 import com.bm.backend.models.HistoryCoverage
 import com.bm.backend.models.MeasurementFamily
@@ -21,7 +19,10 @@ import com.bm.backend.models.StudySnapshotStatus
 import com.bm.backend.models.TariffPeriodProfile
 import com.bm.backend.models.ValueComparison
 import java.time.LocalDate
-import java.time.temporal.ChronoUnit
+import com.bm.backend.utils.FamilyWindowAggregator.cells
+import com.bm.backend.utils.FamilyWindowAggregator.days
+import com.bm.backend.utils.FamilyWindowAggregator.isZeroRow
+import com.bm.backend.utils.FamilyWindowAggregator.values
 import kotlin.math.abs
 
 /**
@@ -40,13 +41,6 @@ object ActiveSummaryCalculator {
     const val PREVIOUS_UNAVAILABLE = "previous_unavailable"
     const val PREVIOUS_ZERO = "previous_zero"
     const val MATCH_TOLERANCE_KWH = 0.5
-
-    private data class Span(val index: Int, val start: LocalDate, val endExclusive: LocalDate, val cells: List<Double?>)
-
-    private fun days(start: LocalDate, endExclusive: LocalDate): Long = ChronoUnit.DAYS.between(start, endExclusive)
-    private fun cells(v: PeriodValues) = listOf(v.p1, v.p2, v.p3, v.p4, v.p5, v.p6)
-    private fun values(c: List<Double?>) = PeriodValues(c[0], c[1], c[2], c[3], c[4], c[5])
-    private fun isZeroRow(s: Span) = s.cells.all { it == 0.0 }
 
     fun calculate(
         history: StudyHistory,
@@ -79,14 +73,9 @@ object ActiveSummaryCalculator {
         }
         val anchor = coverage.anchorDate!!
         val inverted = coverage.invertedIntervals.toSet()
-        val spans = history.intervals.indices
-            .filter { it !in inverted && history.intervals[it].startDate <= history.intervals[it].endDate }
-            .map { i -> history.intervals[i].let { Span(i, it.startDate, it.endDate, cells(it.active)) } }
-            .filter { s -> s.cells.any { it != null } }
-            .sortedWith(compareBy<Span>({ it.start }, { it.endExclusive }, { it.index }))
 
-        val latest = window(ActiveWindowKind.LATEST_12M, anchor.minusMonths(12), anchor, spans, periods)
-        val previous = window(ActiveWindowKind.PREVIOUS_12M, anchor.minusMonths(24), anchor.minusMonths(12), spans, periods)
+        val latest = window(ActiveWindowKind.LATEST_12M, anchor.minusMonths(12), anchor, history, inverted, periods)
+        val previous = window(ActiveWindowKind.PREVIOUS_12M, anchor.minusMonths(24), anchor.minusMonths(12), history, inverted, periods)
         val (changePct, changeReason) = change(latest, previous)
         val active = coverage.families[MeasurementFamily.ACTIVE]
 
@@ -100,32 +89,30 @@ object ActiveSummaryCalculator {
             windows = listOf(latest, previous),
             changePct = changePct,
             changeReason = changeReason,
-            highIntervals = highIntervals(listOf(latest, previous), spans),
+            highIntervals = highIntervals(listOf(latest, previous), history),
             highIntervalCount = ActiveSummary.HIGH_INTERVAL_COUNT,
             comparisons = compare(sources, latest, periods)
         )
     }
 
-    private fun window(kind: ActiveWindowKind, start: LocalDate, end: LocalDate, spans: List<Span>, periods: List<Int>): ActiveWindowSummary {
-        val contained = spans.filter { it.start >= start && it.endExclusive <= end }
-        val crossing = spans.filter { !(it.start >= start && it.endExclusive <= end) && it.start < end && it.endExclusive > start }
-        val windowDays = days(start, end)
-        val overlaps = overlaps(contained)
-        val byIndex = contained.associateBy { it.index }
-        val blocking = overlaps.any { o -> !isZeroRow(byIndex.getValue(o.firstIndex)) && !isZeroRow(byIndex.getValue(o.secondIndex)) }
-        val gaps = mutableListOf<CoverageGap>()
-        var runningEnd = start
-        for (s in contained) {
-            if (s.start > runningEnd) gaps += CoverageGap(runningEnd, s.start, days(runningEnd, s.start))
-            if (s.endExclusive > runningEnd) runningEnd = s.endExclusive
-        }
-        if (end > runningEnd) gaps += CoverageGap(runningEnd, end, days(runningEnd, end))
-        val coveredDays = unionDays(contained)
-        val nullCells = contained.sumOf { s -> periods.count { p -> s.cells[p - 1] == null } }
-        val periodSums = (0 until 6).map { p ->
-            val present = contained.mapNotNull { it.cells[p] }
-            if (present.isEmpty()) null else present.sum()
-        }
+    private fun window(
+        kind: ActiveWindowKind,
+        start: LocalDate,
+        end: LocalDate,
+        history: StudyHistory,
+        inverted: Set<Int>,
+        periods: List<Int>
+    ): ActiveWindowSummary {
+        val agg = FamilyWindowAggregator.aggregate(history, MeasurementFamily.ACTIVE, inverted, start, end, periods)
+        val contained = agg.contained
+        val crossing = agg.crossing
+        val windowDays = agg.windowDays
+        val overlaps = agg.overlaps
+        val blocking = agg.hasBlockingOverlap
+        val gaps = agg.gaps
+        val coveredDays = agg.coveredDays
+        val nullCells = agg.nullCells
+        val periodSums = cells(agg.periodSums)
         val sum = periodSums.filterNotNull().sum()
         val status = when {
             contained.isEmpty() -> ActiveWindowStatus.UNAVAILABLE
@@ -149,8 +136,8 @@ object ActiveSummaryCalculator {
             reason = reason,
             windowDays = windowDays,
             coveredDays = coveredDays,
-            contained = contained.map { it.index },
-            crossing = crossing.map { it.index },
+            contained = contained,
+            crossing = crossing,
             gaps = gaps,
             overlapDisclosures = overlaps,
             periodTotals = if (showTotals) values(periodSums) else values(List(6) { null }),
@@ -159,34 +146,6 @@ object ActiveSummaryCalculator {
             shares = shares,
             nullCells = nullCells
         )
-    }
-
-    private fun overlaps(sorted: List<Span>): List<CoverageOverlap> {
-        val result = mutableListOf<CoverageOverlap>()
-        for (a in sorted.indices) for (b in a + 1 until sorted.size) {
-            val x = sorted[a]; val y = sorted[b]
-            if (y.start >= x.endExclusive) break
-            val s = maxOf(x.start, y.start)
-            val e = minOf(x.endExclusive, y.endExclusive)
-            if (e > s) result += CoverageOverlap(x.index, y.index, s, e, days(s, e))
-        }
-        return result
-    }
-
-    private fun unionDays(sorted: List<Span>): Long {
-        var total = 0L
-        var curStart: LocalDate? = null
-        var curEnd: LocalDate? = null
-        for (s in sorted) {
-            val ce = curEnd
-            if (ce == null || s.start > ce) {
-                if (curStart != null && ce != null) total += days(curStart, ce)
-                curStart = s.start; curEnd = s.endExclusive
-            } else if (s.endExclusive > ce) curEnd = s.endExclusive
-        }
-        val ce = curEnd
-        if (curStart != null && ce != null) total += days(curStart, ce)
-        return total
     }
 
     private fun change(latest: ActiveWindowSummary, previous: ActiveWindowSummary): Pair<Double?, String?> {
@@ -201,24 +160,25 @@ object ActiveSummaryCalculator {
         }
     }
 
-    private fun highIntervals(windows: List<ActiveWindowSummary>, spans: List<Span>): List<HighConsumptionInterval> {
+    private fun highIntervals(windows: List<ActiveWindowSummary>, history: StudyHistory): List<HighConsumptionInterval> {
         val target = windows.firstOrNull {
             it.status == ActiveWindowStatus.COMPLETE || it.status == ActiveWindowStatus.INCOMPLETE
         } ?: return emptyList()
-        val byIndex = spans.associateBy { it.index }
+        val zero = { i: Int -> isZeroRow(history.intervals[i].active) }
         val excluded = target.overlapDisclosures
-            .filter { !isZeroRow(byIndex.getValue(it.firstIndex)) && !isZeroRow(byIndex.getValue(it.secondIndex)) }
+            .filter { !zero(it.firstIndex) && !zero(it.secondIndex) }
             .flatMap { listOf(it.firstIndex, it.secondIndex) }.toSet()
         return target.contained.asSequence()
             .filter { it !in excluded }
-            .map { byIndex.getValue(it) }
-            .filter { days(it.start, it.endExclusive) > 0 }
-            .map { s ->
-                val n = days(s.start, s.endExclusive)
-                val total = s.cells.filterNotNull().sum()
-                val max = s.cells.filterNotNull().maxOrNull()
-                val dominant = if (max == null || max <= 0.0) null else s.cells.indexOfFirst { it == max } + 1
-                HighConsumptionInterval(s.index, s.start, s.endExclusive, n, total, total / n, dominant)
+            .filter { i -> history.intervals[i].let { days(it.startDate, it.endDate) } > 0 }
+            .map { i ->
+                val row = history.intervals[i]
+                val c = cells(row.active)
+                val n = days(row.startDate, row.endDate)
+                val total = c.filterNotNull().sum()
+                val max = c.filterNotNull().maxOrNull()
+                val dominant = if (max == null || max <= 0.0) null else c.indexOfFirst { it == max } + 1
+                HighConsumptionInterval(i, row.startDate, row.endDate, n, total, total / n, dominant)
             }
             .sortedWith(compareByDescending<HighConsumptionInterval> { it.kwhPerDay }.thenBy { it.start }.thenBy { it.index })
             .take(ActiveSummary.HIGH_INTERVAL_COUNT)
