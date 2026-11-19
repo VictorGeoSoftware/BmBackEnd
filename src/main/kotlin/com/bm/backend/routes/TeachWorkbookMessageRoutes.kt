@@ -1,10 +1,14 @@
 package com.bm.backend.routes
 
 import com.bm.backend.models.ErrorResponse
+import com.bm.backend.models.TeachReferenceAttachment
+import com.bm.backend.models.TeachReferenceReceipt
 import com.bm.backend.models.TeachWorkbookAttachment
 import com.bm.backend.models.TeachWorkbookAuthDecision
 import com.bm.backend.models.TeachWorkbookReceipt
 import com.bm.backend.services.InvalidWorkbook
+import com.bm.backend.services.InvalidReference
+import com.bm.backend.services.TeachReferenceValidator
 import com.bm.backend.services.TeachWorkbookAuthWorkers
 import com.bm.backend.services.TeachWorkbookValidator
 import com.bm.backend.services.WorkbookBudgetExceeded
@@ -46,11 +50,14 @@ internal const val WORKBOOK_MEDIA_TYPE = "application/vnd.openxmlformats-officed
 internal const val WORKBOOK_FILENAME_HEADER = "X-Teach-Workbook-Filename"
 internal const val WORKBOOK_BODY_LIMIT = 5 * 1024 * 1024
 private const val WORKBOOK_MESSAGE_PATH = "/teach-me/messages"
+private const val REFERENCE_PATH = "/teach-me/references"
+internal const val REFERENCE_FILENAME_HEADER = "X-Teach-Reference-Filename"
+internal const val REFERENCE_BODY_LIMIT = 2 * 1024 * 1024
 private val filenameWire = Regex("[A-Za-z0-9_-]{1,340}")
-private class InvalidWorkbookMessage : RuntimeException()
+private class InvalidTeachUpload : RuntimeException()
 
-internal fun ApplicationCall.isTeachWorkbookUpload() = request.httpMethod == HttpMethod.Post &&
-    request.path().trimEnd('/') == "/api/v1$WORKBOOK_MESSAGE_PATH"
+internal fun ApplicationCall.isTeachUpload() = request.httpMethod == HttpMethod.Post &&
+    request.path().trimEnd('/').let { it == "/api/v1$WORKBOOK_MESSAGE_PATH" || it == "/api/v1$REFERENCE_PATH" }
 
 internal fun Route.teachWorkbookMessageRoutes(
     validator: TeachWorkbookValidator = TeachWorkbookValidator(),
@@ -58,6 +65,7 @@ internal fun Route.teachWorkbookMessageRoutes(
     beforeUpload: suspend () -> Unit = {},
     authorize: (String) -> TeachWorkbookAuthDecision,
 ) {
+    // Both POST routes use this one set of workers and permits; GET is independent.
     val authWorkers = TeachWorkbookAuthWorkers(authorize)
     val owner = application
     val monitor = owner.environment.monitor
@@ -69,7 +77,8 @@ internal fun Route.teachWorkbookMessageRoutes(
         }
     })
     val uploadPermits = Semaphore(4)
-    post(WORKBOOK_MESSAGE_PATH) {
+    val referenceValidator = TeachReferenceValidator()
+    for (path in listOf(WORKBOOK_MESSAGE_PATH, REFERENCE_PATH)) post(path) {
         if (call.response.headers[HttpHeaders.CacheControl] == null) call.response.header(HttpHeaders.CacheControl, "no-store")
         // A direct HTTP/1 caller should not reuse the connection after an early rejection.
         if (call.request.local.version.startsWith("HTTP/1")) call.response.header(HttpHeaders.Connection, "close")
@@ -85,7 +94,8 @@ internal fun Route.teachWorkbookMessageRoutes(
             return@post
         }
         call.withWorkbookPeer { checkPeer ->
-            call.receiveWorkbookMessage(token, authWorkers, uploadPermits, validator, beforeUpload, timeoutMillis, checkPeer)
+            call.receiveTeachUpload(token, authWorkers, uploadPermits, validator, referenceValidator,
+                path == REFERENCE_PATH, beforeUpload, timeoutMillis, checkPeer)
         }
     }
 }
@@ -119,11 +129,13 @@ private suspend fun ApplicationCall.withWorkbookPeer(block: suspend (() -> Unit)
 
 private class WorkbookPeerClosed : CancellationException("Workbook upload peer disconnected")
 
-private suspend fun ApplicationCall.receiveWorkbookMessage(
+private suspend fun ApplicationCall.receiveTeachUpload(
     token: String,
     authWorkers: TeachWorkbookAuthWorkers,
     uploadPermits: Semaphore,
     validator: TeachWorkbookValidator,
+    referenceValidator: TeachReferenceValidator,
+    reference: Boolean,
     beforeUpload: suspend () -> Unit,
     timeoutMillis: Long,
     checkPeer: () -> Unit,
@@ -160,31 +172,56 @@ private suspend fun ApplicationCall.receiveWorkbookMessage(
             }
             val types = request.headers.getAll(HttpHeaders.ContentType)
             if ('?' in request.uri || (types != null && (types.size != 1 || ',' in types.single()))) {
-                throw InvalidWorkbookMessage()
+                throw InvalidTeachUpload()
             }
-            val filename = decodeWorkbookFilename(request.headers.getAll(WORKBOOK_FILENAME_HEADER))
-            if (!WORKBOOK_MEDIA_TYPE.equals(types?.singleOrNull(), ignoreCase = true) ||
-                request.headers.getAll(HttpHeaders.ContentEncoding) != null) throw InvalidWorkbook()
+            val type = types?.singleOrNull()
+            val encoded = request.headers.getAll(if (reference) REFERENCE_FILENAME_HEADER else WORKBOOK_FILENAME_HEADER)
+            val filename: String
+            val referenceType = if (reference) type?.lowercase() else null
+            val pdf = referenceType == "application/pdf"
+            if (reference) {
+                // Validate the singleton/name before media-type checks, as with the workbook route.
+                filename = decodeFilename(encoded)
+                if (!pdf && referenceType != "image/png") throw InvalidReference()
+                validateExtension(filename, if (pdf) ".pdf" else ".png")
+                if (request.headers.getAll(HttpHeaders.ContentEncoding) != null) throw InvalidReference()
+            } else {
+                filename = decodeFilename(encoded)
+                validateExtension(filename, ".xlsx")
+                if (!WORKBOOK_MEDIA_TYPE.equals(type, ignoreCase = true) ||
+                    request.headers.getAll(HttpHeaders.ContentEncoding) != null) throw InvalidWorkbook()
+            }
             checkpoint()
             val channel = receiveChannel()
             var size = 0
             val bytes = try {
                 // The receive pipeline can suspend; check again before reserving upload memory.
                 checkpoint()
-                val buffer = ByteArray(WORKBOOK_BODY_LIMIT)
+                val buffer = ByteArray(if (reference) REFERENCE_BODY_LIMIT else WORKBOOK_BODY_LIMIT)
                 while (size < buffer.size) {
                     checkpoint()
                     val read = channel.readAvailable(buffer, size, minOf(8192, buffer.size - size))
                     if (read < 0) break
                     size += read
                 }
-                if (size == buffer.size && channel.readAvailable(ByteArray(1), 0, 1) >= 0) throw WorkbookBudgetExceeded()
-                if (size == 0) throw InvalidWorkbookMessage()
+                checkpoint()
+                if (size == buffer.size) {
+                    val excess = channel.readAvailable(ByteArray(1), 0, 1)
+                    checkpoint()
+                    if (excess >= 0) throw TeachUploadTooLarge()
+                }
+                if (size == 0) throw InvalidTeachUpload()
                 buffer
             } finally { channel.cancel() }
-            validator.validate(bytes, size, checkpoint)
-            checkpoint()
-            TeachWorkbookReceipt(TeachWorkbookAttachment("workbook", filename, size))
+            if (reference) {
+                referenceValidator.validate(bytes, size, pdf, checkpoint)
+                checkpoint()
+                TeachReferenceReceipt(TeachReferenceAttachment(if (pdf) "reference_pdf" else "reference_png", filename, size))
+            } else {
+                validator.validate(bytes, size, checkpoint)
+                checkpoint()
+                TeachWorkbookReceipt(TeachWorkbookAttachment("workbook", filename, size))
+            }
         }
         currentCoroutineContext().ensureActive()
         checkPeer()
@@ -193,20 +230,27 @@ private suspend fun ApplicationCall.receiveWorkbookMessage(
             outcome is TeachWorkbookAuthDecision -> denyWorkbookUpload(outcome)
             outcome is HttpStatusCode -> respond(outcome)
             outcome is TeachWorkbookReceipt -> respond(HttpStatusCode.OK, outcome)
-            else -> error("Unexpected workbook upload outcome")
+            outcome is TeachReferenceReceipt -> respond(HttpStatusCode.OK, outcome)
+            else -> error("Unexpected Enséñame upload outcome")
         }
     } catch (_: WorkbookDeadline) {
         checkPeer()
         respond(HttpStatusCode.RequestTimeout)
-    } catch (_: InvalidWorkbookMessage) {
+    } catch (_: InvalidTeachUpload) {
         checkPeer()
         respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_message"))
+    } catch (_: TeachUploadTooLarge) {
+        checkPeer()
+        respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "upload_too_large"))
     } catch (_: WorkbookBudgetExceeded) {
         checkPeer()
         respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "upload_too_large"))
     } catch (_: InvalidWorkbook) {
         checkPeer()
         respond(HttpStatusCode.UnsupportedMediaType, mapOf("error" to "unsupported_workbook"))
+    } catch (_: InvalidReference) {
+        checkPeer()
+        respond(HttpStatusCode.UnsupportedMediaType, mapOf("error" to "unsupported_reference"))
     } catch (_: IOException) {
         checkPeer()
         respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_message"))
@@ -228,17 +272,21 @@ private suspend fun ApplicationCall.denyWorkbookUpload(decision: TeachWorkbookAu
 }
 
 private class WorkbookDeadline : RuntimeException()
+private class TeachUploadTooLarge : RuntimeException()
 
-private fun decodeWorkbookFilename(values: List<String>?): String {
-    fun invalid(): Nothing = throw InvalidWorkbookMessage()
+private fun decodeFilename(values: List<String>?): String {
+    fun invalid(): Nothing = throw InvalidTeachUpload()
     val wire = values?.singleOrNull()?.trim(' ', '\t') ?: invalid()
     if (!filenameWire.matches(wire)) invalid()
     val decoded = try { Base64.getUrlDecoder().decode(wire) } catch (_: IllegalArgumentException) { invalid() }
     if (decoded.size > 255 || Base64.getUrlEncoder().withoutPadding().encodeToString(decoded) != wire) invalid()
     val name = try { Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(decoded)).toString() }
     catch (_: CharacterCodingException) { invalid() }
-    val ext = name.takeLast(5).map { if (it in 'A'..'Z') it.lowercaseChar() else it }.joinToString("")
-    if (name.length <= 5 || ext != ".xlsx" || name.dropLast(5).isBlank() ||
-        name.any { it == '/' || it == '\\' || it.isISOControl() || isWorkbookBidi(it) || it == '\uFEFF' }) invalid()
+    if (name.any { it == '/' || it == '\\' || it.isISOControl() || isWorkbookBidi(it) || it == '\uFEFF' }) invalid()
     return name
+}
+
+private fun validateExtension(name: String, extension: String) {
+    val ext = name.takeLast(extension.length).map { if (it in 'A'..'Z') it.lowercaseChar() else it }.joinToString("")
+    if (ext != extension || name.dropLast(extension.length).isBlank()) throw InvalidTeachUpload()
 }

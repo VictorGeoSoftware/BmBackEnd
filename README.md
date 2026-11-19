@@ -178,14 +178,33 @@ header: unpadded canonical Base64url of the UTF-8 presentation name (at most
 containing `kind: "workbook"`, `filename`, and actual `sizeBytes`. It does not
 create a resource. Errors are non-cacheable; the view may retry explicitly.
 
-BmWeb's Node endpoint (`/api/teach-me/messages`) uses a Pages API boundary
+`POST /api/v1/teach-me/references` is also QA-only and independently authorizes
+each request. It accepts one nonempty raw PDF (`application/pdf`) or PNG
+(`image/png`), at most 2 MiB (2,097,152 actual bytes). Send exactly one
+`Content-Type` (case-insensitive, no parameters) and exactly one
+`X-Teach-Reference-Filename` (canonical unpadded Base64url, at most 340 wire
+characters and 255 strictly decoded UTF-8 bytes). Names need a nonblank base
+and a final ASCII `.pdf` or `.png` extension matching the type, with no slashes,
+controls, bidi controls or BOM. Queries and `Content-Encoding` are not accepted.
+The only success is a `200` with `{"attachment":{"kind":"reference_pdf",`
+`"filename":"apoyo.pdf","sizeBytes":123}}` (or `reference_png`). This is a
+receipt for one validated request, not a message, resource, or grant for another
+upload. Invalid metadata/empty body returns `400 invalid_message`; excess bytes
+return `413 upload_too_large`; unsupported type, encoding or structure returns
+`415 unsupported_reference`.
+
+BmWeb's Node endpoints (`/api/teach-me/messages` and `/api/teach-me/references`) use a Pages API boundary
 with body parsing disabled so it can distinguish raw duplicate header lines.
-It streams the original bytes with a count and does not forward the client
-length or other headers. Ktor 2.3.12 reads a raw `ByteReadChannel` into memory,
-never multipart, using a fixed 5 MiB buffer plus a one-byte over-limit probe.
-Both layers enforce 5 MiB of actual body bytes. The proxy has four slots and
-its own 15-second deadline. Ktor POST uses four private authorization workers
-with direct handoff (no queue) and four independent upload permits. Its single
+The proxy streams counted original bytes to the configured QA backend, without
+redirects, forwarding only the bearer, canonical media type and filename header.
+It also bounds the JSON receipt to 4096 bytes and checks the exact shape and
+match against the upload. Both layers enforce the file-specific byte limits:
+5 MiB for Excel, 2 MiB per reference. Ktor 2.3.12 reads a raw `ByteReadChannel`
+into a fixed-size buffer only after authorization and upload admission. A
+one-byte excess probe does not retain the excess in the file buffer or drain
+the remaining body. The proxy shares four slots across the two routes and
+uses a 15-second deadline per request. Both Ktor POST routes share four private
+authorization workers with direct handoff (no queue) and four independent upload permits. Its single
 15-second deadline starts when authorization is admitted and also covers upload
 and validation. Saturation returns `429` without opening the body; authorization
 expiry returns `408` if still connected. The proxy can return `502` if its own
@@ -216,15 +235,29 @@ and 256 KiB per identification XML budgets count output bytes, not ZIP claims.
 JDK StAX reads only `[Content_Types].xml` and `_rels/.rels`, with DTD and external
 resolution disabled. No workbook sheets, formulas, or values are interpreted.
 
+References use byte-only envelope checks. PDF is limited to `%PDF-1.0`–`1.7`
+with a line-terminated header, a `startxref` pointing to a classic `xref` table
+token and a final `%%EOF` (only spaces, tabs or CR/LF may follow). PDF 2.0 and
+xref streams are out of profile; no objects or pages are opened. PNG requires
+the full signature, at most 256 bounded chunks with CRC32, an initial unique
+13-byte `IHDR` with dimensions 1–4096, contiguous `IDAT` chunks with data, and
+a final empty `IEND` with no trailing bytes. Other chunks are opaque. No PNG
+pixels are decoded. These are pilot checks, not guarantees of safety, full
+document integrity, or renderability.
+
 Dependency review for this slice: Commons Compress 1.28.0 plus resolved Commons
 IO 2.20.0, Codec 1.19.0, and Lang 3.18.0 are Apache-2.0 (JAR LICENSE/NOTICE).
 Review of Apache security pages and GitHub's Maven advisories found no advisory
 matching these selected versions at implementation time; this is not a full
 backend audit. No Commons FileUpload dependency is used.
 
-Use only synthetic files in local QA. The optional comment exists only in the
-browser view and is never sent. Neither layer stores, logs, or exposes the file
-for retrieval; bytes are discarded after the request. The browser only keeps
-the comment and presentation metadata for the lifetime of the same view/account.
-See the coordination spec `docs/specs/teach-workbook-attachment.md` for the
-approved runtime, validation, and no-retention boundaries.
+Use only synthetic files in local QA. The browser requires an Excel and supports
+one optional PDF and one optional PNG. It validates PDF → PNG → Excel in separate
+requests and adds one local entry only after all matching receipts arrive. A
+retry validates the entire selection again; this is UI atomicity, not a server
+transaction. The optional comment is never sent. Neither layer stores, logs,
+or exposes the file for retrieval; bytes are discarded after the request. The
+browser retains only the confirmed comment and presentation metadata for the
+lifetime of the same view/account, not a retrievable history. See the coordination
+specs `docs/specs/teach-workbook-attachment.md` and
+`docs/specs/teach-reference-attachments.md` for the approved boundaries.
