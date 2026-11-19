@@ -82,12 +82,14 @@ class TeachWorkbookInspectionRoutesTest {
 
     @Test fun `Netty loopback invokes mounted QA authorization and returns deterministic closed JSON`() = runBlocking {
         val reads = AtomicInteger()
+        val completion = TeachCallCompletion()
         val admin = InMemoryAdminUsersRepository().apply { add(ADMIN); add("other@example.invalid") }
         val server = embeddedServer(Netty, applicationEngineEnvironment {
             config = MapApplicationConfig()
             connector { host = "127.0.0.1"; port = 0 }
             module {
                 install(ContentNegotiation) { json() }
+                completion.install(this)
                 receivePipeline.intercept(ApplicationReceivePipeline.Before) { reads.incrementAndGet() }
                 routing { route("/api/v1") {
                     teachMeAccessRoutes(AdminAccessControlService(admin), TeachMeAccessPolicy("qa", ADMIN)) { token ->
@@ -103,6 +105,7 @@ class TeachWorkbookInspectionRoutesTest {
             val port = server.resolvedConnectors().single().port
             fun raw(token: String? = "test", bytes: ByteArray = workbook, extra: String = "", chunked: Boolean = false) =
                 begin(port, token, bytes, extra, chunked).use { it.getInputStream().readBytes().decodeToString() }
+                    .also { completion.await() }
             for ((token, code) in listOf(null to 401, "invalid" to 401, "other" to 403)) assertStatus(code, raw(token))
             val duplicateName = raw(extra = "$WORKBOOK_FILENAME_HEADER: ${wire(filename)}\r\n")
             assertStatus(400, duplicateName)

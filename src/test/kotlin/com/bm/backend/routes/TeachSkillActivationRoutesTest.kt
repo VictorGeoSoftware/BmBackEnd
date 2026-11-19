@@ -59,12 +59,14 @@ class TeachSkillActivationRoutesTest {
 
     private fun <T> netty(pilot: TeachSkillActivationService?, reads: AtomicInteger = AtomicInteger(),
                           admins: InMemoryAdminUsersRepository = InMemoryAdminUsersRepository().apply { add(nominated) },
-                          environment: String = "qa", preview: Boolean = true, onVerify: (String) -> Unit = {}, run: (Int) -> T): T {
+                          environment: String = "qa", preview: Boolean = true, onVerify: (String) -> Unit = {},
+                          completion: TeachCallCompletion? = null, run: (Int) -> T): T {
         val server = embeddedServer(Netty, applicationEngineEnvironment {
             config = MapApplicationConfig()
             connector { host = "127.0.0.1"; port = 0 }
             module {
                 configurePlugins()
+                completion?.install(this)
                 receivePipeline.intercept(ApplicationReceivePipeline.Before) { reads.incrementAndGet() }
                 routing { route("/api/v1") {
                     teachMeAccessRoutes(AdminAccessControlService(admins), TeachMeAccessPolicy(environment, nominated),
@@ -118,6 +120,41 @@ class TeachSkillActivationRoutesTest {
             val response = socket.getInputStream().bufferedReader()
             assertTrue(response.readLine().startsWith("HTTP/1.1 $status "))
             assertTrue(generateSequence(response::readLine).takeWhile { it.isNotEmpty() }.any { it.equals("Cache-Control: no-store", ignoreCase = true) })
+        }
+    }
+
+    private inner class OrderedCalls(private val port: Int, private val completion: TeachCallCompletion) {
+        private var pending = false
+
+        fun drain() {
+            if (pending) completion.await()
+            pending = false
+        }
+
+        // Wait at the next request, not before the caller's post-response snapshot or assertion.
+        private fun <T> next(request: () -> T): T {
+            drain()
+            return request().also { pending = true }
+        }
+
+        fun send(bytes: ByteArray, status: Int, path: String, type: String) = next {
+            this@TeachSkillActivationRoutesTest.send(port, bytes, status, path, type)
+        }
+        fun preview(workbook: TeachActivationWorkbook) = next { this@TeachSkillActivationRoutesTest.preview(port, workbook) }
+        fun activate(body: JsonObject, status: Int, token: String = "fixture-token") = next {
+            this@TeachSkillActivationRoutesTest.activate(port, body, status, token)
+        }
+        fun noBody(path: String, type: String, status: Int, auth: String = "") = next {
+            this@TeachSkillActivationRoutesTest.noBody(port, path, type, status, auth)
+        }
+    }
+
+    private fun orderedNetty(pilot: TeachSkillActivationService, reads: AtomicInteger = AtomicInteger(),
+                             admins: InMemoryAdminUsersRepository = InMemoryAdminUsersRepository().apply { add(nominated) },
+                             onVerify: (String) -> Unit = {}, run: OrderedCalls.() -> Unit) {
+        val completion = TeachCallCompletion()
+        netty(pilot, reads, admins, onVerify = onVerify, completion = completion) { port ->
+            OrderedCalls(port, completion).apply(run).drain()
         }
     }
 
@@ -183,62 +220,62 @@ class TeachSkillActivationRoutesTest {
             val checks = AtomicInteger()
             lateinit var old: JsonObject
             val originalTime = time.get()
-            netty(first, reads, admins, onVerify = { token -> if (token == "recheck" && checks.incrementAndGet() == 2) admins.remove(nominated) }) { port ->
-                noBody(port, activationPath, "application/json", 401)
-                noBody(port, activationPath, "application/json", 401, "Authorization: Bearer invalid\r\n")
-                noBody(port, activationPath, "application/json", 401, "Authorization: Bearer fixture-token\r\nAuthorization: Bearer fixture-token\r\n")
-                noBody(port, previewPath, QA_PREVIEW_MEDIA_TYPE, 401)
+            orderedNetty(first, reads, admins, onVerify = { token -> if (token == "recheck" && checks.incrementAndGet() == 2) admins.remove(nominated) }) {
+                noBody(activationPath, "application/json", 401)
+                noBody(activationPath, "application/json", 401, "Authorization: Bearer invalid\r\n")
+                noBody(activationPath, "application/json", 401, "Authorization: Bearer fixture-token\r\nAuthorization: Bearer fixture-token\r\n")
+                noBody(previewPath, QA_PREVIEW_MEDIA_TYPE, 401)
                 assertEquals(0, reads.get())
-                send(port, a.preview(), 200, previewPath, DRAFT_PREVIEW_MEDIA_TYPE)?.let {
+                send(a.preview(), 200, previewPath, DRAFT_PREVIEW_MEDIA_TYPE)?.let {
                     assertEquals("preview", it.getValue("kind").jsonPrimitive.content)
                     assertFalse("receipt" in it)
                 }
                 val prepare = clarificationFrame("""[1,"prepare",${a.bytes.size},"$GESTERNOVA_PREVIEW_PROFILE"]""", a.bytes)
-                send(port, prepare, 400, previewPath, QA_PREVIEW_MEDIA_TYPE)
-                val proof = preview(port, b)
+                send(prepare, 400, previewPath, QA_PREVIEW_MEDIA_TYPE)
+                val proof = preview(b)
                 val body = json(proof, b.revision)
-                activate(port, JsonObject(body + ("revisionId" to JsonPrimitive(c.revision))), 409)
-                activate(port, JsonObject(body + ("expectedGeneration" to JsonPrimitive("2"))), 409)
+                activate(JsonObject(body + ("revisionId" to JsonPrimitive(c.revision))), 409)
+                activate(JsonObject(body + ("expectedGeneration" to JsonPrimitive("2"))), 409)
                 val receipt = body.getValue("receipt").jsonPrimitive.content
                 val codec = TeachActivationReceipts(firstKey, db.storeId, registry.manifest)
                 val decoded = codec.verify(receipt)
                 for (other in listOf(decoded.copy(profileKey = "other-profile"), decoded.copy(workbookSha256 = c.digest),
                     decoded.copy(supplierKey = "different-supplier"), decoded.copy(issuedAt = decoded.issuedAt + 1, expiresAt = decoded.expiresAt + 1))) {
-                    activate(port, JsonObject(body + ("receipt" to JsonPrimitive(codec.issue(other)))), 409)
+                    activate(JsonObject(body + ("receipt" to JsonPrimitive(codec.issue(other)))), 409)
                 }
                 val alteration = receipt.substringBefore('.') + "." + receipt.substringAfter('.').let { (if (it[0] == 'A') 'B' else 'A') + it.drop(1) }
-                activate(port, JsonObject(body + ("receipt" to JsonPrimitive(alteration))), 409)
-                activate(port, body, 409, "other")
+                activate(JsonObject(body + ("receipt" to JsonPrimitive(alteration))), 409)
+                activate(body, 409, "other")
                 val duplicate = body.toString().dropLast(1) + ",\"receip\\u0074\":\"different\"}"
-                send(port, duplicate.encodeToByteArray(), 400, activationPath, "application/json")
-                send(port, ByteArray(2049), 413, activationPath, "application/json")
-                send(port, byteArrayOf(0xc3.toByte(), 0x28), 400, activationPath, "application/json")
-                send(port, body.toString().encodeToByteArray(), 415, activationPath, "application/json; charset=utf-8")
-                activate(port, body, 403, "recheck")
-                noBody(port, activationPath, "application/json", 403, "Authorization: Bearer fixture-token\r\n")
+                send(duplicate.encodeToByteArray(), 400, activationPath, "application/json")
+                send(ByteArray(2049), 413, activationPath, "application/json")
+                send(byteArrayOf(0xc3.toByte(), 0x28), 400, activationPath, "application/json")
+                send(body.toString().encodeToByteArray(), 415, activationPath, "application/json; charset=utf-8")
+                activate(body, 403, "recheck")
+                noBody(activationPath, "application/json", 403, "Authorization: Bearer fixture-token\r\n")
                 admins.add(nominated)
                 assertEquals(baseline, db.qaOwner(db::snapshot))
 
                 db.qaOwner { it.exec("UPDATE pilot.identity SET manifest = '${"0".repeat(64)}'") }
-                activate(port, body, 503)
-                send(port, b.preview(), 503, previewPath, QA_PREVIEW_MEDIA_TYPE)
+                activate(body, 503)
+                send(b.preview(), 503, previewPath, QA_PREVIEW_MEDIA_TYPE)
                 assertEquals(baseline, db.qaOwner(db::snapshot))
                 db.qaOwner { it.exec("UPDATE pilot.identity SET manifest = '${registry.manifest}'") }
 
                 db.qaOwner { it.exec("ALTER TABLE pilot.audit ADD CONSTRAINT fixture_append_fail CHECK (false) NOT VALID") }
-                activate(port, body, 503)
+                activate(body, 503)
                 assertEquals(baseline, db.qaOwner(db::snapshot))
                 db.qaOwner { it.exec("ALTER TABLE pilot.audit DROP CONSTRAINT fixture_append_fail") }
                 db.qaOwner { it.exec("ALTER TABLE pilot.active ADD CONSTRAINT fixture_update_fail CHECK (generation < 2) NOT VALID") }
-                activate(port, body, 503)
+                activate(body, 503)
                 assertEquals(baseline, db.qaOwner(db::snapshot))
                 db.qaOwner { it.exec("ALTER TABLE pilot.active DROP CONSTRAINT fixture_update_fail") }
                 time.set(originalTime + 300)
-                activate(port, body, 409)
+                activate(body, 409)
                 time.set(originalTime + 299)
-                assertEquals("activated", activate(port, body, 200)?.getValue("kind")?.jsonPrimitive?.content)
-                activate(port, body, 409)
-                old = json(preview(port, c), c.revision)
+                assertEquals("activated", activate(body, 200)?.getValue("kind")?.jsonPrimitive?.content)
+                activate(body, 409)
+                old = json(preview(c), c.revision)
             }
             val committed = db.qaOwner(db::snapshot)
             assertEquals(listOf("gesternova", b.revision, "2"), committed[0].single())
@@ -248,12 +285,12 @@ class TeachSkillActivationRoutesTest {
             assertNull(TeachSkillActivationService.mount(db.store(), TeachActivationRegistry(setOf(a.digest, b.digest)), clock, key()))
             val equivalent = TeachActivationRegistry(setOf(c.digest, b.digest, a.digest))
             val next = checkNotNull(TeachSkillActivationService.mount(db.store(), equivalent, clock, key()))
-            netty(next) { port ->
-                activate(port, old, 409)
-                val now = preview(port, b)
+            orderedNetty(next) {
+                activate(old, 409)
+                val now = preview(b)
                 assertEquals(b.revision, now.getValue("active").jsonObject.getValue("revisionId").jsonPrimitive.content)
                 val retry = json(now, b.revision)
-                repeat(2) { assertEquals("alreadyActive", activate(port, retry, 200)?.getValue("kind")?.jsonPrimitive?.content) }
+                repeat(2) { assertEquals("alreadyActive", activate(retry, 200)?.getValue("kind")?.jsonPrimitive?.content) }
             }
             assertEquals(committed, db.qaOwner(db::snapshot))
             assertEquals(sentinel, db.sentinel(db::snapshot))

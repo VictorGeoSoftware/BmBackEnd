@@ -559,3 +559,52 @@ separate QA writer / simulated PROD sentinel roles. It never uses the QA stack,
 Firebase, a live catalog, an external extraction service or a model. See
 [architecture](ARCHITECTURE.md) and [constraints](CONSTRAINTS.md). Hosted QA release
 criteria remain open; the pilot does not enable import, validation or publication.
+
+### Enséñame: synthetic supplier selection harness
+
+Only the test Netty composition can inject the verified read-only capability for
+`POST /api/v1/teach-me/select-supplier-skill`. Neither standard startup nor the
+earlier opt-ins mount it. Non-QA and unmounted requests return `404` with
+`Cache-Control: no-store`; granted QA requests use the same pre-body authorization,
+four upload permits and 15-second deadline as the other workbook routes.
+
+Use the raw workbook media type and `X-Teach-Workbook-Filename` wire described
+above (1 byte through 5 MiB). No query, encoding, content disposition, reference
+attachment or caller-supplied environment, identity, manifest, hash or revision.
+Filename stems `bm-pilot-gesternova` and `bm-pilot-gesternova-20td` identify
+`gesternova`; `bm-pilot-luz-fixture` identifies the fictitious `luz-fixture`. Only
+the whole stem after ASCII case and space normalization is recognized. Content is
+always checked: in the exact `BM Identity` sheet, independently inspect visible,
+unmerged literal pairs `A1/B1` and `A2/B2` (`BM SYNTHETIC SUPPLIER` / `gesternova`
+or `luz-fixture`). No free-text, formula cache, or other worksheet supplies identity.
+
+| Verified signals | Result |
+| --- | --- |
+| Recognized filename, with no marker or a concordant one | Select by `filename` |
+| Unknown filename, one distinct marker supplier | Select by `content` |
+| No signal / two suppliers in marker pairs / disagreement with filename / invalid evidence | `409` with `unknown_supplier` / `ambiguous_supplier` / `conflicting_supplier` / `invalid_supplier_evidence` (no pointer lookup) |
+| Unique supplier with no active pointer | `409 no_active_skill` |
+| Catalog identity, exact registry entry or pointer invalid or unavailable after mount | `503 catalog_unavailable`, no fallback |
+
+On success the response is exactly `{kind:"selected",environment:"qa",supplierKey,revisionId,generation,source}`.
+The positive decimal generation is a string and the revision is the exact committed
+64-character lowercase hex ID. No pin, actor, profile, filename or cell comes back.
+The selection is not evidence that the submitted workbook can be extracted.
+
+The name-only case uses the unchanged `gesternova-20td-sanitized.xlsx` with an
+explicit pilot filename; its bytes with `carga.xlsx` are unknown. Separate in-memory
+marker books are not any of the activation pins. The mandatory Netty/PostgreSQL 16
+test activates A and B through the existing preview and confirmation, checks A
+while B's pointer and audit writes are uncommitted, then B after commit and restart.
+The QA reader has no writer, audit, or sentinel access; the sentinel is simulated
+and checked only by its own role. No operational configuration or hosted QA/PROD
+claims are covered.
+
+With JDK 17 (and Node 20 on `PATH` for the separate joint):
+
+```sh
+./gradlew test --rerun --tests '*TeachSupplierSkillSelection*Test' --tests '*TeachSkillActivation*Test' --tests '*TeachDraftPreview*Test' --tests '*TeachMeAccessRoutesTest' --tests '*FirebaseRouteAuthTest' --tests '*PriceTableServiceTest' --info
+BM_TEACH_CLARIFY_TEST_WEB="$(cd ../BmWeb && pwd)" ./gradlew test --rerun \
+  --tests '*TeachSkillActivationRoutesTest.candidate Pages proxy and Ktor activate exact QA revision over loopback' --info
+./gradlew build
+```

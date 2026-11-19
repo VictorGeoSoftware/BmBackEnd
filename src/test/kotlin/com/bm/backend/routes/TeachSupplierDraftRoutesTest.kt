@@ -110,9 +110,11 @@ class TeachSupplierDraftRoutesTest {
 
     @Test fun `Netty rejects incorrect authorization or raw metadata before receiving any draft frame`() = runBlocking {
         val reads = AtomicInteger()
+        val completion = TeachCallCompletion()
         val admins = InMemoryAdminUsersRepository().apply { add(admin); add("other@example.invalid") }
         val server = server {
             configurePlugins()
+            completion.install(this)
             receivePipeline.intercept(ApplicationReceivePipeline.Before) { reads.incrementAndGet() }
             mount(admins, adapter = TeachSupplierDraftAdapter { _, _ -> error("unexpected adapter call") })
         }
@@ -135,6 +137,7 @@ class TeachSupplierDraftRoutesTest {
                 }
                 assertTrue(response.startsWith("HTTP/1.1 $code "), "Expected $code: ${response.substringBefore("\r\n")}")
                 assertContains(response.substringBefore("\r\n\r\n").lowercase(), "cache-control: no-store")
+                completion.await()
             }
             checkStatus(401, token = null)
             checkStatus(401, token = "invalid")

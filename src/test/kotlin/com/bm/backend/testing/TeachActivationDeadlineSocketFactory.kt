@@ -16,18 +16,26 @@ internal class TeachActivationDeadlineSocketFactory : SocketFactory() {
     companion object {
         private val provision = ThreadLocal<(() -> Socket)>()
 
-        fun <T> connect(scheduler: ScheduledExecutorService, remainingMillis: () -> Long, run: () -> T): T {
+        fun <T> connect(scheduler: ScheduledExecutorService, remainingMillis: () -> Long,
+                        checkpoint: (() -> Unit)? = null, run: () -> T): T {
             check(provision.get() == null)
             provision.set {
                 val expiry = AtomicReference<ScheduledFuture<*>>()
+                val cancellation = AtomicReference<ScheduledFuture<*>>()
                 val socket = object : Socket(Proxy.NO_PROXY) {
                     override fun close() {
-                        try { super.close() } finally { expiry.get()?.cancel(false) }
+                        try { super.close() } finally {
+                            expiry.get()?.cancel(false)
+                            cancellation.get()?.cancel(false)
+                        }
                     }
                 }
                 try {
                     expiry.set(scheduler.schedule({ runCatching { socket.close() } }, remainingMillis(), TimeUnit.MILLISECONDS))
-                    if (socket.isClosed) expiry.get().cancel(false)
+                    if (checkpoint != null) cancellation.set(scheduler.scheduleWithFixedDelay({
+                        if (runCatching(checkpoint).isFailure) runCatching { socket.close() }
+                    }, 25, 25, TimeUnit.MILLISECONDS))
+                    if (socket.isClosed) socket.close()
                     socket
                 } catch (failure: Throwable) {
                     socket.close()

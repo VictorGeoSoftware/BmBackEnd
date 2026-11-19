@@ -20,6 +20,7 @@ internal class TeachActivationJdbcStore(
     private val connect: (() -> Long) -> Connection,
     private val beforeLock: (String) -> Unit,
     private val afterRead: (TeachActiveSkill) -> Unit,
+    private val beforeCommit: (TeachActiveSkill) -> Unit,
 ) : TeachActivationStore {
     private class Transaction(val sql: Connection, val remainingMillis: () -> Long) {
         fun <T> query(query: String, args: List<Any?> = emptyList(), run: (java.sql.ResultSet) -> T): T {
@@ -116,9 +117,11 @@ internal class TeachActivationJdbcStore(
             if (failure.sqlState == "23505") activationCheck(false)
             throw failure
         }
+        val selected = TeachActiveSkill(claim.revisionId, next.toString())
+        beforeCommit(selected) // Only the disposable fixture may pause here, with both writes uncommitted.
         tx.sql.setNetworkTimeout(Executor { it.run() }, remainingMillis().toInt().coerceAtLeast(1))
         mutationTime() // Last checkpoint before sending commit, not a promise about commit outcome.
         tx.sql.commit()
-        TeachActivationResult("activated", TeachActiveSkill(claim.revisionId, next.toString()))
+        TeachActivationResult("activated", selected)
     }
 }

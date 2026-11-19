@@ -21,8 +21,10 @@ internal class TeachActivationPostgres(private val manifest: String) : AutoClose
     val qaDb = "qa_pilot_$id"
     val sentinelDb = "prod_sentinel_$id"
     val qaRole = "qa_writer_$id"
+    val readerRole = "qa_reader_$id"
     val sentinelRole = "sentinel_owner_$id"
     private val qaPassword = UUID.randomUUID().toString()
+    private val readerPassword = UUID.randomUUID().toString()
     private val sentinelPassword = UUID.randomUUID().toString()
     private var startedContainer: String? = null
     private var ownedVolumes = emptyList<String>()
@@ -48,6 +50,7 @@ internal class TeachActivationPostgres(private val manifest: String) : AutoClose
             check(info.networkSettings.ports.bindings.getValue(ExposedPort.tcp(5432)).single().hostIp == "127.0.0.1")
             owner(container.databaseName) { sql ->
                 sql.exec("CREATE ROLE $qaRole LOGIN PASSWORD '$qaPassword'")
+                sql.exec("CREATE ROLE $readerRole LOGIN PASSWORD '$readerPassword'")
                 sql.exec("CREATE ROLE $sentinelRole LOGIN PASSWORD '$sentinelPassword'")
                 sql.exec("CREATE DATABASE $qaDb")
                 sql.exec("CREATE DATABASE $sentinelDb OWNER $sentinelRole")
@@ -55,6 +58,7 @@ internal class TeachActivationPostgres(private val manifest: String) : AutoClose
                     sql.exec("REVOKE ALL ON DATABASE $db FROM PUBLIC")
                 }
                 sql.exec("GRANT CONNECT ON DATABASE $qaDb TO $qaRole")
+                sql.exec("GRANT CONNECT ON DATABASE $qaDb TO $readerRole")
             }
             owner(qaDb) { sql ->
                 sql.exec("CREATE SCHEMA pilot")
@@ -67,6 +71,8 @@ internal class TeachActivationPostgres(private val manifest: String) : AutoClose
                 sql.exec("GRANT SELECT ON pilot.identity, pilot.active, pilot.audit TO $qaRole")
                 sql.exec("GRANT INSERT, UPDATE ON pilot.active TO $qaRole")
                 sql.exec("GRANT INSERT ON pilot.audit TO $qaRole")
+                sql.exec("GRANT USAGE ON SCHEMA pilot TO $readerRole")
+                sql.exec("GRANT SELECT ON pilot.identity, pilot.active TO $readerRole")
             }
             sentinel { sql -> sql.exec("CREATE SCHEMA pilot"); createCatalog(sql, "prod") }
         } catch (failure: Throwable) {
@@ -104,9 +110,20 @@ internal class TeachActivationPostgres(private val manifest: String) : AutoClose
     fun <T> qaOwner(run: (Connection) -> T): T = owner(qaDb, run)
     fun <T> sentinel(run: (Connection) -> T): T = source(sentinelDb, sentinelRole, sentinelPassword, 5).connection.use(run)
     fun qaConnection(db: String = qaDb, seconds: Int = 5): Connection = source(db, qaRole, qaPassword, seconds).connection
+    fun readerConnection(db: String = qaDb): Connection = source(db, readerRole, readerPassword, 5).connection
+
+    fun reader(database: String = qaDb, role: String = readerRole, id: String = storeId) =
+        TeachActiveSkillJdbcReader(id, database, role) { remainingMillis, checkpoint ->
+            TeachActivationDeadlineSocketFactory.connect(clockedSockets, remainingMillis, checkpoint) {
+                source(qaDb, readerRole, readerPassword, 0).apply {
+                    socketFactory = TeachActivationDeadlineSocketFactory::class.java.name
+                }.connection
+            }
+        }
 
     fun store(database: String = qaDb, role: String = qaRole, id: String = storeId,
-              beforeLock: (String) -> Unit = {}, afterRead: (TeachActiveSkill) -> Unit = {}) =
+              beforeLock: (String) -> Unit = {}, afterRead: (TeachActiveSkill) -> Unit = {},
+              beforeCommit: (TeachActiveSkill) -> Unit = {}) =
         TeachActivationJdbcStore(id, database, role, { remainingMillis ->
             TeachActivationDeadlineSocketFactory.connect(clockedSockets, remainingMillis) {
                 // Nonzero loginTimeout would let PgJDBC abandon a still-running connector thread.
@@ -114,7 +131,7 @@ internal class TeachActivationPostgres(private val manifest: String) : AutoClose
                     socketFactory = TeachActivationDeadlineSocketFactory::class.java.name
                 }.connection
             }
-        }, beforeLock, afterRead)
+        }, beforeLock, afterRead, beforeCommit)
 
     fun seed(sql: Connection, revision: String, generation: Long = 1) {
         sql.prepareStatement("INSERT INTO pilot.active VALUES (?, ?, ?)").use {

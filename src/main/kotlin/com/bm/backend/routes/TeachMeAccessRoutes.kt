@@ -8,6 +8,7 @@ import com.bm.backend.services.AdminAccessControlService
 import com.bm.backend.services.TeachMeAccessPolicy
 import com.bm.backend.services.TeachClarificationAdapter
 import com.bm.backend.services.TeachSupplierDraftAdapter
+import com.bm.backend.services.TeachSupplierSkillSelectionService
 import com.bm.backend.services.fixedTeachClarificationAdapter
 import com.bm.backend.services.fixedTeachSupplierDraftAdapter
 import com.google.firebase.auth.FirebaseAuthException
@@ -28,6 +29,7 @@ internal fun Route.teachMeAccessRoutes(
     supplierDraftAdapter: TeachSupplierDraftAdapter = fixedTeachSupplierDraftAdapter,
     draftPreviewEnabled: Boolean = false,
     activationPilot: TeachSkillActivationService? = null,
+    supplierSelection: TeachSupplierSkillSelectionService? = null,
     verifyToken: (String) -> AuthenticatedFirebaseUser = ::verifyFirebaseIdToken
 ) {
     if (!policy.enabled) return
@@ -43,7 +45,7 @@ internal fun Route.teachMeAccessRoutes(
     }
     teachWorkbookMessageRoutes(clarificationEnabled = clarificationEnabled, clarificationAdapter = clarificationAdapter,
         supplierDraftEnabled = supplierDraftEnabled, supplierDraftAdapter = supplierDraftAdapter,
-        draftPreviewEnabled = draftPreviewEnabled, activationPilot = activationPilot) { token ->
+        draftPreviewEnabled = draftPreviewEnabled, activationPilot = activationPilot, supplierSelection = supplierSelection) { token ->
         val user = try { verifyToken(token) } catch (_: FirebaseAuthException) {
             return@teachWorkbookMessageRoutes TeachWorkbookAuthDecision.InvalidToken
         }

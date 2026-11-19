@@ -9,7 +9,7 @@ private val SIZE = Regex("[+-]?(?:[0-9]+(?:\\.[0-9]*)?|\\.[0-9]+)(?:[eE][+-]?[0-
 private val VISIBILITY_ELEMENTS = setOf("cols", "col", "row", "sheetData", "sheetFormatPr")
 private const val COMPATIBILITY_NS = "http://schemas.openxmlformats.org/markup-compatibility/2006"
 
-/** Narrow clarification-only interpretation. Unknown visibility invalidates candidate selection, never inspection. */
+/** Structural row/column visibility for opt-in projections, never the public inspection receipt. */
 internal class TeachClarificationVisibility(private val sheetNamespace: String) {
     private val definedColumns = BitSet(16_385)
     private val hiddenColumns = BitSet(16_385)
@@ -28,13 +28,17 @@ internal class TeachClarificationVisibility(private val sheetNamespace: String) 
 
     fun columnVisible(column: Int): Boolean = known && !hiddenColumns[column]
 
-    fun skipMetadata(cursor: TeachWorkbookInspectionXml.Cursor, afterSheetData: Boolean, checkColumn: (XMLStreamReader) -> Unit = {}) = with(cursor) {
+    fun skipMetadata(
+        cursor: TeachWorkbookInspectionXml.Cursor, afterSheetData: Boolean,
+        onNested: (XMLStreamReader) -> Unit = {}, checkColumn: (XMLStreamReader) -> Unit = {},
+    ) = with(cursor) {
         when (reader.localName) {
             "cols" -> {
                 if (afterSheetData || reader.namespaceURI != sheetNamespace) known = false
                 val containerDepth = depth
                 var columns = 0
                 skip {
+                    onNested(reader)
                     when (reader.eventType) {
                         START_ELEMENT -> {
                             if (depth != containerDepth + 1 || reader.localName != "col" || reader.namespaceURI != sheetNamespace) {
@@ -56,14 +60,16 @@ internal class TeachClarificationVisibility(private val sheetNamespace: String) 
                 if (boolean(reader, "zeroHeight") || zeroSize(reader, "defaultRowHeight") ||
                     zeroSize(reader, "defaultColWidth") || zeroSize(reader, "baseColWidth")) known = false
                 skip {
+                    onNested(reader)
                     when (reader.eventType) {
                         START_ELEMENT -> known = false
                         CHARACTERS, SPACE, CDATA -> if (!reader.isWhiteSpace) known = false
                     }
                 }
             }
-            "col", "row", "AlternateContent", "customSheetViews" -> { known = false; skip() }
+            "col", "row", "AlternateContent", "customSheetViews" -> { known = false; skip { onNested(reader) } }
             else -> skip {
+                onNested(reader)
                 if (reader.eventType == START_ELEMENT &&
                     ((reader.namespaceURI == sheetNamespace && reader.localName in VISIBILITY_ELEMENTS) ||
                         (reader.namespaceURI == COMPATIBILITY_NS && reader.localName == "AlternateContent"))) known = false

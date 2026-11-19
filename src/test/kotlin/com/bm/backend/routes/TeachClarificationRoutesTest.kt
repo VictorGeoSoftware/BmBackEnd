@@ -106,10 +106,12 @@ class TeachClarificationRoutesTest {
 
     @Test fun `Netty QA guard checks authorization before body and rechecks on reply with opaque files`() = runBlocking {
         val reads = AtomicInteger()
+        val completion = TeachCallCompletion()
         val turns = AtomicInteger()
         val admins = InMemoryAdminUsersRepository().apply { add(admin); add("other@example.invalid") }
         val server = server {
             configurePlugins()
+            completion.install(this)
             receivePipeline.intercept(ApplicationReceivePipeline.Before) { reads.incrementAndGet() }
             mount(admins, adapter = TeachClarificationAdapter { context ->
                 assertEquals(coordinates, context.candidates)
@@ -135,6 +137,7 @@ class TeachClarificationRoutesTest {
             val port = server.resolvedConnectors().single().port
             fun raw(bytes: ByteArray = ask, token: String? = "fixture-token", path: String = endpoint, extra: String = "") =
                 begin(port, bytes, token, path, extra).use { it.getInputStream().readBytes().decodeToString() }
+                    .also { completion.await() }
             expectStatus(401, raw(token = null))
             expectStatus(401, raw(token = "invalid"))
             expectStatus(403, raw(token = "other"))

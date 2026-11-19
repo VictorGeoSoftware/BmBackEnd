@@ -82,38 +82,41 @@ class TeachDraftPreviewRoutesTest {
         }
     }
 
-    private fun Socket.expect(code: Int): String = use {
+    private fun Socket.expect(code: Int, completion: TeachCallCompletion? = null): String = use {
         val raw = getInputStream().readBytes().decodeToString()
         assertTrue(raw.startsWith("HTTP/1.1 $code "), "Expected $code: ${raw.substringBefore("\r\n")}")
         assertContains(raw.substringBefore("\r\n\r\n").lowercase(), "cache-control: no-store")
+        completion?.await()
         raw.substringAfter("\r\n\r\n")
     }
 
     @Test fun `Netty guard and metadata reject before body and revocation suppresses preview`() = runBlocking {
         val reads = AtomicInteger()
+        val completion = TeachCallCompletion()
         val admins = InMemoryAdminUsersRepository().apply { add(admin); add("other@example.invalid") }
         val server = server {
             configurePlugins()
+            completion.install(this)
             receivePipeline.intercept(ApplicationReceivePipeline.Before) { reads.incrementAndGet() }
             mount(admins)
         }
         try {
             server.start(wait = false)
             val port = server.resolvedConnectors().single().port
-            begin(port, token = null).expect(401)
-            begin(port, token = "invalid").expect(401)
-            begin(port, token = "other").expect(403)
-            begin(port, extra = "Authorization: Bearer other\r\n").expect(401)
-            begin(port, path = "$endpoint?preview=1").expect(400)
-            begin(port, extra = "Content-Type: $DRAFT_PREVIEW_MEDIA_TYPE\r\n").expect(400)
-            begin(port, extra = "$REFERENCE_FILENAME_HEADER: eA\r\n").expect(400)
-            begin(port, extra = "$WORKBOOK_FILENAME_HEADER: eA\r\n").expect(400)
-            begin(port, extra = "Content-Encoding: identity\r\n").expect(415)
-            begin(port, type = "$DRAFT_PREVIEW_MEDIA_TYPE; charset=utf-8").expect(415)
+            begin(port, token = null).expect(401, completion)
+            begin(port, token = "invalid").expect(401, completion)
+            begin(port, token = "other").expect(403, completion)
+            begin(port, extra = "Authorization: Bearer other\r\n").expect(401, completion)
+            begin(port, path = "$endpoint?preview=1").expect(400, completion)
+            begin(port, extra = "Content-Type: $DRAFT_PREVIEW_MEDIA_TYPE\r\n").expect(400, completion)
+            begin(port, extra = "$REFERENCE_FILENAME_HEADER: eA\r\n").expect(400, completion)
+            begin(port, extra = "$WORKBOOK_FILENAME_HEADER: eA\r\n").expect(400, completion)
+            begin(port, extra = "Content-Encoding: identity\r\n").expect(415, completion)
+            begin(port, type = "$DRAFT_PREVIEW_MEDIA_TYPE; charset=utf-8").expect(415, completion)
             assertEquals(0, reads.get())
-            assertContains(begin(port, prepare).expect(200), PREVIEW_FIXTURE_REVISION)
+            assertContains(begin(port, prepare).expect(200, completion), PREVIEW_FIXTURE_REVISION)
             admins.remove(admin)
-            begin(port).expect(403)
+            begin(port).expect(403, completion)
             assertEquals(1, reads.get())
         } finally { server.stop(0, 1_000) }
     }
@@ -141,7 +144,12 @@ class TeachDraftPreviewRoutesTest {
     }
 
     @Test fun `Netty strictly bounds prefix tuple and tail and checks workbook and revision`() = runBlocking {
-        val server = server { configurePlugins(); mount(InMemoryAdminUsersRepository().apply { add(admin) }) }
+        val completion = TeachCallCompletion()
+        val server = server {
+            configurePlugins()
+            completion.install(this)
+            mount(InMemoryAdminUsersRepository().apply { add(admin) })
+        }
         try {
             server.start(wait = false)
             val port = server.resolvedConnectors().single().port
@@ -152,15 +160,15 @@ class TeachDraftPreviewRoutesTest {
                 clarificationFrame("""[1,"ask",${workbook.size},"$PREVIEW_FIXTURE_PROFILE"]""", workbook),
                 clarificationFrame("""[1,"prepare",${workbook.size},"$PREVIEW_FIXTURE_PROFILE",{}]""", workbook),
                 clarificationFrame("""[1,"prepare",${workbook.size},"\uD800"]""", workbook), preview(revision = "z"))) {
-                begin(port, bytes).expect(400)
+                begin(port, bytes).expect(400, completion)
             }
             for (bytes in listOf(ByteBuffer.allocate(4).putInt(32 * 1024 + 1).array(),
-                clarificationFrame("""[1,"prepare",${WORKBOOK_BODY_LIMIT + 1},"$PREVIEW_FIXTURE_PROFILE"]"""))) begin(port, bytes).expect(413)
-            begin(port, clarificationFrame("""[1,"prepare",1,"$PREVIEW_FIXTURE_PROFILE"]""", byteArrayOf(1))).expect(415)
-            begin(port, preview(supplier = "demo-electricidad")).expect(409)
-            begin(port, preview(digest = "a".repeat(64))).expect(409)
-            begin(port, preview(revision = supplierDraftRevision(sha256(supplierDraftWorkbook()), "B2"))).expect(409)
-            assertContains(begin(port, preview()).expect(200), "\"decimal\":\"0\"")
+                clarificationFrame("""[1,"prepare",${WORKBOOK_BODY_LIMIT + 1},"$PREVIEW_FIXTURE_PROFILE"]"""))) begin(port, bytes).expect(413, completion)
+            begin(port, clarificationFrame("""[1,"prepare",1,"$PREVIEW_FIXTURE_PROFILE"]""", byteArrayOf(1))).expect(415, completion)
+            begin(port, preview(supplier = "demo-electricidad")).expect(409, completion)
+            begin(port, preview(digest = "a".repeat(64))).expect(409, completion)
+            begin(port, preview(revision = supplierDraftRevision(sha256(supplierDraftWorkbook()), "B2"))).expect(409, completion)
+            assertContains(begin(port, preview()).expect(200, completion), "\"decimal\":\"0\"")
         } finally { server.stop(0, 1_000) }
     }
 
