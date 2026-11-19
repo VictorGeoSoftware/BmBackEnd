@@ -160,3 +160,11 @@ Private project - B&M
 ## 👤 Author
 
 Victor - VictorGeoSoftware
+## Enséñame (QA)
+
+`GET /api/v1/teach-me/check-access` is only registered with `BM_ENV=qa`.
+Set `BM_TEACH_ME_ADMIN_EMAILS` on the QA backend process to a comma-separated
+list of BmWeb admin emails. Accounts must also be present in `admin_users`.
+An empty or missing list grants nothing. Restart or recreate the QA backend
+to apply list changes; removing general admin access takes effect on the next
+request without a restart. No configuration is needed in production.

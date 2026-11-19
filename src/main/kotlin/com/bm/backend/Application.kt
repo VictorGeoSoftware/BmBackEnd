@@ -18,6 +18,8 @@ import com.bm.backend.repositories.UserActivityRepository
 import com.bm.backend.repositories.WebPushTokensRepository
 import com.bm.backend.routes.priceTableRoutes
 import com.bm.backend.routes.adminAccessRoutes
+import com.bm.backend.routes.teachMeAccessRoutes
+import com.bm.backend.services.TeachMeAccessPolicy
 import com.bm.backend.routes.authRoutes
 import com.bm.backend.routes.collectedPricesRoutes
 import com.bm.backend.routes.grantedUsersRoutes
@@ -295,6 +297,10 @@ fun Application.configureRouting(
                     )
                     authRoutes(userActivityService, accessControlService)
                     adminAccessRoutes(adminAccessControlService)
+                    teachMeAccessRoutes(
+                        adminAccessControlService,
+                        TeachMeAccessPolicy(DeploymentInfo.environment, System.getenv("BM_TEACH_ME_ADMIN_EMAILS"))
+                    )
                     grantedUsersRoutes(grantedUsersService, adminAccessControlService)
                     collectedPricesRoutes(
                         collectedPricesService,
