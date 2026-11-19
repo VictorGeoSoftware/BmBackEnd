@@ -2,6 +2,8 @@ package com.bm.backend.routes
 
 import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.TeachWorkbookAuthDecision
+import com.bm.backend.models.TeachWorkbookPrincipal
+import com.bm.backend.services.TeachSkillActivationService
 import com.bm.backend.services.AdminAccessControlService
 import com.bm.backend.services.TeachMeAccessPolicy
 import com.bm.backend.services.TeachClarificationAdapter
@@ -25,6 +27,7 @@ internal fun Route.teachMeAccessRoutes(
     supplierDraftEnabled: Boolean = false,
     supplierDraftAdapter: TeachSupplierDraftAdapter = fixedTeachSupplierDraftAdapter,
     draftPreviewEnabled: Boolean = false,
+    activationPilot: TeachSkillActivationService? = null,
     verifyToken: (String) -> AuthenticatedFirebaseUser = ::verifyFirebaseIdToken
 ) {
     if (!policy.enabled) return
@@ -40,14 +43,14 @@ internal fun Route.teachMeAccessRoutes(
     }
     teachWorkbookMessageRoutes(clarificationEnabled = clarificationEnabled, clarificationAdapter = clarificationAdapter,
         supplierDraftEnabled = supplierDraftEnabled, supplierDraftAdapter = supplierDraftAdapter,
-        draftPreviewEnabled = draftPreviewEnabled) { token ->
+        draftPreviewEnabled = draftPreviewEnabled, activationPilot = activationPilot) { token ->
         val user = try { verifyToken(token) } catch (_: FirebaseAuthException) {
             return@teachWorkbookMessageRoutes TeachWorkbookAuthDecision.InvalidToken
         }
         when {
             !adminAccess.isAdmin(user.email) -> TeachWorkbookAuthDecision.NotAdmin
             !policy.allows(user.email) -> TeachWorkbookAuthDecision.NotNominated
-            else -> TeachWorkbookAuthDecision.Allowed
+            else -> TeachWorkbookPrincipal(user.uid)
         }
     }
 }

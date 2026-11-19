@@ -1,3 +1,8 @@
 package com.bm.backend.models
 
-internal enum class TeachWorkbookAuthDecision { Allowed, InvalidToken, NotAdmin, NotNominated }
+internal sealed interface TeachWorkbookAuthDecision {
+    data object Allowed : TeachWorkbookAuthDecision
+    data object InvalidToken : TeachWorkbookAuthDecision
+    data object NotAdmin : TeachWorkbookAuthDecision
+    data object NotNominated : TeachWorkbookAuthDecision
+}

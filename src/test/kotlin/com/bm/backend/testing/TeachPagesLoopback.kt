@@ -6,12 +6,14 @@ import kotlin.test.assertEquals
 import kotlin.test.assertTrue
 
 /** Use the component's test config, no Vite .env files, or inherited credential/loader/proxy settings. */
-internal fun runTeachPagesLoopback(testName: String, fixtureEnvironment: Map<String, String>) {
+internal fun runTeachPagesLoopback(testName: String, fixtureEnvironment: Map<String, String>, testFile: String = "clarifications") {
     val builder = ProcessBuilder("node", "--input-type=module", "-e", """
         import { startVitest } from 'vitest/node';
-        await startVitest('test', ['src/app/api/teach-me/clarifications/route.test.ts'],
+        const run = await startVitest('test', ['src/app/api/teach-me/' + process.argv[2] + '/route.test.ts'],
           { run: true, config: './vitest.config.ts', testNamePattern: process.argv[1] }, { envFile: false });
-    """.trimIndent(), testName)
+        const tests = run?.state.getFiles().flatMap(file => file.tasks) ?? [];
+        if (tests.filter(test => test.result?.state === 'pass').length !== 1) process.exitCode = 1;
+    """.trimIndent(), testName, testFile)
         .directory(File(checkNotNull(System.getenv("BM_TEACH_CLARIFY_TEST_WEB"))))
         .inheritIO()
     builder.environment().apply {

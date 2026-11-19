@@ -25,7 +25,7 @@ internal const val GESTERNOVA_PREVIEW_PROFILE = "gesternova-20td-sanitized"
 internal const val GESTERNOVA_SUPPLIER = "gesternova"
 private const val VERSION = 2
 // Approved synthetic fixture pin. No test resource is read at runtime.
-private const val PROFILE_HASH = "45c27cd6d6c646f182c2b1a4bd8f0863a21d5ffeef6c09df40f644d318cd85b6"
+internal const val GESTERNOVA_PREVIEW_HASH = "45c27cd6d6c646f182c2b1a4bd8f0863a21d5ffeef6c09df40f644d318cd85b6"
 internal val gesternovaPreviewRule = TeachDraftPreviewRule(
     kind = "fixed_period_prices",
     sheet = "Tarifas",
@@ -77,10 +77,13 @@ internal class TeachDraftPreviewService(
     private val validator: TeachWorkbookValidator,
     private val inspector: TeachWorkbookInspector,
 ) {
-    fun execute(frame: TeachDraftPreviewFrame, checkpoint: () -> Unit): TeachDraftPreviewResult {
+    fun execute(frame: TeachDraftPreviewFrame, checkpoint: () -> Unit): TeachDraftPreviewResult =
+        executePinned(frame, frame.workbookSha256 == GESTERNOVA_PREVIEW_HASH, checkpoint)
+
+    internal fun executePinned(frame: TeachDraftPreviewFrame, knownPin: Boolean, checkpoint: () -> Unit): TeachDraftPreviewResult {
         checkpoint()
         previewCheck(frame.profileKey == GESTERNOVA_PREVIEW_PROFILE)
-        if (frame.workbookSha256 != PROFILE_HASH) {
+        if (!knownPin) {
             // Distinguish an invalid XLSX from a different, valid sample; do not inspect its cells.
             validator.validate(frame.workbook, frame.workbook.size, checkpoint)
             throw TeachDraftPreviewConflict()

@@ -191,6 +191,17 @@ class TeachDraftPreviewRoutesTest {
         try {
             server.start(wait = false)
             val port = server.resolvedConnectors().single().port
+            suspend fun assertSlotReleased() = withTimeout(3_000) {
+                while (true) {
+                    val raw = withContext(Dispatchers.IO) { begin(port, prepare).use { it.getInputStream().readBytes().decodeToString() } }
+                    if (raw.startsWith("HTTP/1.1 200 ")) {
+                        assertContains(raw.substringBefore("\r\n\r\n").lowercase(), "cache-control: no-store")
+                        break
+                    }
+                    assertTrue(raw.startsWith("HTTP/1.1 429 "), raw.substringBefore("\r\n"))
+                    delay(5)
+                }
+            }
             val types = listOf(DRAFT_PREVIEW_MEDIA_TYPE, SUPPLIER_DRAFT_MEDIA_TYPE, CLARIFICATION_MEDIA_TYPE, DRAFT_PREVIEW_MEDIA_TYPE)
             val auth = types.map { type -> async(Dispatchers.IO) { begin(port, token = "hold-auth", type = type).expect(408) } }
             assertTrue(withContext(Dispatchers.IO) { heldAuth.await(2, TimeUnit.SECONDS) })
@@ -200,21 +211,15 @@ class TeachDraftPreviewRoutesTest {
             assertEquals(0, reads.get())
             releaseAuth.countDown()
             // Worker release is asynchronous; use a successful ordinary attempt as a barrier without holding a slot.
-            withTimeout(3_000) {
-                while (true) {
-                    val raw = withContext(Dispatchers.IO) { begin(port, prepare).use { it.getInputStream().readBytes().decodeToString() } }
-                    if (raw.startsWith("HTTP/1.1 200 ")) break
-                    assertTrue(raw.startsWith("HTTP/1.1 429 "), raw.substringBefore("\r\n"))
-                    delay(5)
-                }
-            }
+            assertSlotReleased()
             begin(port, token = "disconnect").use { withTimeout(3_000) { entered.await() } }
             withTimeout(1_000) { closed.await() }
             val uploads = types.map { type -> async(Dispatchers.IO) { begin(port, token = "hold-upload", type = type).expect(408) } }
             assertTrue(withContext(Dispatchers.IO) { heldUpload.await(2, TimeUnit.SECONDS) })
             begin(port).expect(429)
             uploads.awaitAll()
-            begin(port, prepare).expect(200)
+            // Receiving the 408 does not prove that the server's cleanup has returned its permit.
+            assertSlotReleased()
             assertEquals(7, reads.get())
         } finally { releaseAuth.countDown(); server.stop(0, 1_000) }
     }

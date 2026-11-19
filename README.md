@@ -516,3 +516,46 @@ This compares the complete oracle at the Pages → Netty boundary and tests wron
 bytes/revision, disabled flags and revocation without opening the denied body.
 It uses ephemeral loopback, controlled authorization and no QA stack. The full
 backend gate is still `./gradlew build`.
+
+### Enséñame: synthetic QA activation harness
+
+Only the test Netty composition can enable this capability. With the existing
+QA guard and preview opt-ins, `POST /api/v1/teach-me/clarifications` using
+`application/vnd.bm.teach-draft-preview-qa-pilot` accepts only the V2 `preview`
+frame above. It runs the V2 extractor against the exact workbook and returns
+`{kind:"qaPilotPreview",preview,active:{revisionId,generation},expiresAt,receipt}`
+(≤4 KiB). `active.revisionId` is null only when `generation` is `"0"`; other
+generations are canonical positive PostgreSQL `BIGINT` strings. `expiresAt` is UTC
+seconds. Only this endpoint issues evidence, not V2 preparation or ordinary preview.
+
+The opaque receipt is `base64url(payload).base64url(HMAC-SHA-256(payload))`,
+unpadded, using a fresh 32-byte key each test Netty start. Length-prefixed fields
+follow the approved protocol: purpose, `qa`, fixture catalog ID, registry manifest,
+actor, supplier, profile, workbook digest, tested revision, expected revision
+(empty if absent), generation, nonce, issuance and expiry. It expires in 300 s.
+
+`POST /api/v1/teach-me/activation` accepts singleton `application/json`, at most
+2 KiB of strict UTF-8, and exactly `{revisionId,expectedRevisionId,expectedGeneration,receipt}`.
+It reauthorizes the same verified UID after validating proof, before JDBC. Success
+is `{kind:"activated"|"alreadyActive",active:{revisionId,generation}}` after commit
+or a read-only no-op. `409` means repeat preview and explicit confirmation (bad
+proof, replay, expiry or stale compare-and-swap); `400` means malformed framing.
+Responses are `no-store`. If the result is lost, preview again to observe current
+state rather than retrying the confirmation or assuming rollback.
+
+Run the focused gate with JDK 17, then the joint with Node 20 on `PATH`:
+
+```sh
+./gradlew test --tests '*TeachDraftPreview*Test' --tests '*TeachMeAccessRoutesTest' \
+  --tests '*FirebaseRouteAuthTest' --tests '*TeachSkillActivation*Test'
+BM_TEACH_CLARIFY_TEST_WEB="$(cd ../BmWeb && pwd)" ./gradlew test --rerun \
+  --tests '*TeachSkillActivationRoutesTest.candidate Pages proxy and Ktor activate exact QA revision over loopback' --info
+```
+
+Retain the three earlier joints and `./gradlew build`. PostgreSQL 16 is disposable
+and required for the new integration cases; the joint must be run separately when
+disabled in the full build. The harness uses synthetic authorization, loopback and
+separate QA writer / simulated PROD sentinel roles. It never uses the QA stack,
+Firebase, a live catalog, an external extraction service or a model. See
+[architecture](ARCHITECTURE.md) and [constraints](CONSTRAINTS.md). Hosted QA release
+criteria remain open; the pilot does not enable import, validation or publication.

@@ -9,7 +9,10 @@ internal const val DRAFT_PREVIEW_MEDIA_TYPE = "application/vnd.bm.teach-draft-pr
 private const val BODY_LIMIT = 4 + TEACH_MANIFEST_LIMIT + WORKBOOK_BODY_LIMIT
 private val key = Regex("[a-z0-9-]{1,48}")
 
-internal suspend fun readDraftPreviewFrame(channel: ByteReadChannel, checkpoint: () -> Unit): TeachDraftPreviewFrame {
+internal suspend fun readDraftPreviewFrame(channel: ByteReadChannel, checkpoint: () -> Unit): TeachDraftPreviewFrame =
+    readDraftPreviewFrame(channel, false, checkpoint)
+
+internal suspend fun readDraftPreviewFrame(channel: ByteReadChannel, previewOnly: Boolean, checkpoint: () -> Unit): TeachDraftPreviewFrame {
     val reader = TeachFrameReader(channel, checkpoint)
     val tuple = reader.manifest()
     val count = when (tuple.string(1)) {
@@ -17,7 +20,7 @@ internal suspend fun readDraftPreviewFrame(channel: ByteReadChannel, checkpoint:
         "preview" -> 7
         else -> throw InvalidTeachUpload()
     }
-    if (tuple.size != count) throw InvalidTeachUpload()
+    if (tuple.size != count || (previewOnly && count != 7)) throw InvalidTeachUpload()
     val size = tuple.workbookSize()
     fun keyAt(index: Int) = tuple.string(index).takeIf(key::matches) ?: throw InvalidTeachUpload()
     val profile = keyAt(3)
