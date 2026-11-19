@@ -16,7 +16,7 @@ import java.util.concurrent.TimeUnit
 
 /** This fixture owns both DBs and their teardown. Never reads service configuration. */
 internal class TeachActivationPostgres(private val manifest: String, withProposals: Boolean = false,
-    promotionProviderId: UUID? = null) : AutoCloseable {
+    promotionProviderId: UUID? = null, withProdAnalog: Boolean = false) : AutoCloseable {
     val storeId = UUID.randomUUID().toString().replace("-", "")
     private val id = storeId.take(12)
     val qaDb = "qa_pilot_$id"
@@ -45,6 +45,11 @@ internal class TeachActivationPostgres(private val manifest: String, withProposa
             source(db, role, password, 0).apply { socketFactory = TeachActivationDeadlineSocketFactory::class.java.name }.connection
         }
     } else null
+    val prodAnalog = if (withProdAnalog) ProdAnalogPostgres(::owner, { db, role, password, remaining, checkpoint ->
+        TeachActivationDeadlineSocketFactory.connect(clockedSockets, remaining, checkpoint) {
+            source(db, role, password, 0).apply { socketFactory = TeachActivationDeadlineSocketFactory::class.java.name }.connection
+        }
+    }) else null
 
     init {
         try {
@@ -82,6 +87,7 @@ internal class TeachActivationPostgres(private val manifest: String, withProposa
             }
             sentinel { sql -> sql.exec("CREATE SCHEMA pilot"); createCatalog(sql, "prod") }
             proposals?.provision(container.databaseName)
+            prodAnalog?.provision(container.databaseName)
         } catch (failure: Throwable) {
             runCatching { close() }.exceptionOrNull()?.let(failure::addSuppressed)
             throw failure

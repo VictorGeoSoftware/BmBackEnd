@@ -464,8 +464,14 @@ internal class TeachProposalImportRoutesTest : TeachProposalHttpHarness() {
         val notify = object : PriceUpdatesNotifier {
             override suspend fun notify(notification: PriceUpdatesNotification) { synchronized(notifications) { notifications.add(notification) } }
         }
-        TeachActivationPostgres(registry.manifest, withProposals = true).use { db ->
+        TeachActivationPostgres(registry.manifest, withProposals = true, withProdAnalog = true).use { db ->
             val fixture = checkNotNull(db.proposals)
+            val analog = checkNotNull(db.prodAnalog)
+            fun untouchedAnalog() = analog.owner { sql -> sql.createStatement().use { st ->
+                st.executeQuery("SELECT (SELECT count(*) FROM analog.release), (SELECT count(*) FROM analog.batch), (SELECT count(*) FROM analog.proposal)").use {
+                    check(it.next()); assertEquals(listOf(0, 0, 0), (1..3).map(it::getInt))
+                }
+            } }
             val selector = assertNotNull(TeachSupplierSkillSelectionService.mount(db.reader(), registry))
             netty(assertNotNull(TeachProposalImportService.mount(selector, fixture.store())), pilot(db), otherRoutes = { admin ->
                 priceTableRoutes(PriceTableService(repo), external, notify, AccessControlService(InMemoryGrantedUsersRepository()), admin,
@@ -505,6 +511,34 @@ internal class TeachProposalImportRoutesTest : TeachProposalHttpHarness() {
                 assertEquals(1, published.changedCount)
                 assertTrue(published.changedIds.isEmpty())
             }
+            untouchedAnalog()
+            val analogService = ProdAnalogImportService(analog.binding, ProdAnalogCatalog(books.map { it.digest }.toSet()),
+                analog.releaseReader(), analog.imports(), listOf(workbook))
+            ProdAnalogAuthorization(analog.binding).use { auth ->
+                val admins = InMemoryAdminUsersRepository().apply { add(nominated) }
+                prodAnalogNetty(analogService, auth, otherRoutes = {
+                    priceTableRoutes(PriceTableService(repo), external, notify, AccessControlService(InMemoryGrantedUsersRepository()),
+                        AdminAccessControlService(admins), InternalApiAuthService(null))
+                }) { port, done ->
+                    val analogToken = auth.grant()
+                    val analogResponse = port.request("/api/v1$PROD_ANALOG_LIST", analogToken).GET().build()
+                    assertTrue(Json.decodeFromString<ProdAnalogPage>(checked(port.http.send(analogResponse, HttpResponse.BodyHandlers.ofString()), 200)).batches.isEmpty())
+                    done.await()
+                    val list = port.http.send(port.request("/api/v1/admin/price-table-results", "fixture-token").GET().build(), HttpResponse.BodyHandlers.ofString())
+                    assertEquals(200, list.statusCode())
+                    assertEquals(SYNTHETIC_PDF_NAME, Json.decodeFromString<PriceTableResponse>(list.body()).results.single().fileName)
+                    val upload = port.request("/api/v1/upload-price-proposal", "fixture-token")
+                        .header("Content-Type", "multipart/form-data; boundary=SyntheticPdfBoundary")
+                        .POST(HttpRequest.BodyPublishers.ofByteArray(("--SyntheticPdfBoundary\r\nContent-Disposition: form-data; " +
+                            "name=\"file\"; filename=\"$SYNTHETIC_PDF_NAME\"\r\nContent-Type: application/pdf\r\n\r\n").encodeToByteArray() +
+                            syntheticPdfBytes() + "\r\n--SyntheticPdfBoundary--\r\n".encodeToByteArray())).build()
+                    val replay = port.http.send(upload, HttpResponse.BodyHandlers.ofString())
+                    assertEquals(200, replay.statusCode())
+                    assertEquals(0, Json.decodeFromString<UploadPriceProposalResponse>(replay.body()).storage.processed_files)
+                    assertEquals(1, repo.writes.get())
+                }
+            }
+            untouchedAnalog()
         }
     }
 }

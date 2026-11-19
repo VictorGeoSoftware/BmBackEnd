@@ -79,7 +79,7 @@ private val syntheticColumns = mapOf(
 
 private val optionalBlanks = (16..18).flatMap { listOf("L$it", "M$it") }.toSet()
 
-private fun requireImportShape(shape: TeachDraftPreviewInspection) {
+internal fun requireImportShape(shape: TeachDraftPreviewInspection) {
     previewCheck(shape.rowVisibility == (14..20).associateWith { it != 15 && it != 20 })
     val cells = shape.sheet.cells.associateBy { it.a1 }
     val required = syntheticColumns.values.flatten().toSet()

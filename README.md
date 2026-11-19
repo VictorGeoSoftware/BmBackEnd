@@ -736,3 +736,36 @@ BM_TEACH_CLARIFY_TEST_WEB="$(cd ../BmWeb && pwd)" ./gradlew --offline test --rer
 
 See [architecture](ARCHITECTURE.md) and [constraints](CONSTRAINTS.md). No
 application migration, hosted access, Git integration or operational store.
+
+### Enséñame: consuming a released Skill in the synthetic production analogue
+
+The test composition mounts `POST /api/v1/prod-analog/proposal-import` (raw
+XLSX with canonical filename and attempt headers) and `GET
+/api/v1/prod-analog/proposal-imports` (bodyless; optional exclusive `cursor`).
+It uses opaque synthetic authorization distinct from QA. The response is
+`no-store`; receipts and lists identify `environment: "prod-analog"`, the exact
+revision and artifact digest, and the deployment ordinal as `generation`.
+Only successful committed manifests authorize new loads; absence is
+`409 no_released_skill`, and an invalid head or binding yields `503` without
+falling back. Replay of a committed attempt returns its original attribution.
+
+Netty generates an in-memory loopback TLS identity for this fixture. Pages
+pins the public leaf on each actual HTTPS connection before sending HTTP and
+waits for its request nonce on the private admission signal before reading a
+POST body. The analogue decoder rejects mixed, duplicate or noncanonical
+framing fields before auth or body admission; a single length or `chunked`
+still works. Neither TLS nor decoder changes apply to QA or operational routes.
+
+All composition, authority, and JDBC here are test-only. With JDK 17 and
+cached PostgreSQL 16/Testcontainers images, add `--tests '*ProdAnalog*Test'`
+to the focused offline test command. With cached Node 20 on `PATH`, run the
+analogue joint and the seven prior opt-ins:
+
+```sh
+BM_TEACH_CLARIFY_TEST_WEB="$(cd ../BmWeb && pwd)" ./gradlew --offline test --rerun \
+  --tests '*ProdAnalogReleaseRoutesTest.candidate Pages and Ktor import only successfully released revisions over loopback' --info
+```
+
+The joint runs real local Pages → Netty → PostgreSQL with an inert executor;
+it is not browser/hosted verification or an operational release process.
+The PDF multipart/list/dedupe regression continues to use the unchanged route.

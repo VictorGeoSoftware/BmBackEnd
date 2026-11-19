@@ -99,3 +99,28 @@ an already-open replay does not contact the fake. Before disclosing any opened
 receipt (GET, replay or new completion), the route rechecks the same token,
 UID, admin status and nomination after SQL has closed. A denial does not
 undo a completed reservation, fake effect or finalization.
+
+## Enséñame — consume an exact release in the production analogue
+
+This vertical is composed only in `src/test`. A separate loopback Netty server
+accepts analogue import and list; it receives neither a QA pointer nor a PR
+provider. It uses a fresh in-memory TLS identity; Pages checks the injected leaf
+pin on both the credential-free preflight and the socket carrying the request.
+A fixture-only HTTP/1 decoder rejects conflicting or noncanonical framing
+before it can normalize headers or admit a body. The separate deployment
+controller checks the simulated protected-base merge and the in-process
+executor's success for its own attempt and destination.
+Only its deploy role can append a manifest, under a supplier transaction lock.
+Ordinal is assigned at deployment start; replay of the same committed event is
+read-only, and a late lower ordinal cannot displace the head.
+
+A resolver with an independent immutable copy of the approved synthetic V2 pins
+reads the newest committed success before checking integrity. The canonical
+promotion bytes are evidence, not executable JSON. It verifies the complete
+artifact tuple and SHA-256 against the exact runtime revision, applies the
+existing bounded deterministic rule, and never falls back to history or QA.
+The actor-scoped writer atomically persists the batch and three rows with a
+foreign key to that pinned success. A separate list role reads only that actor's
+committed rows; replays recover the original receipt even after supersession.
+The disposable PostgreSQL database and all four roles are separate from QA,
+the protected sentinel and the PDF store.

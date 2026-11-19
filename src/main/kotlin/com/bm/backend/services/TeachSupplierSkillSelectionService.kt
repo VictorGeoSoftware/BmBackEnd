@@ -26,10 +26,32 @@ private fun normalizePilotAlias(literal: String) = literal.trim(' ').map {
     if (it in 'A'..'Z') it.lowercaseChar() else it
 }.joinToString("")
 
+private val filenameSuppliers = filenameAliases.groupBy({ normalizePilotAlias(it.first) }, { it.second })
+
+/** Identity evidence only; not a catalog lookup or a teaching pin. */
+internal fun identifyTeachSupplier(
+    filename: String, markers: List<Pair<String?, String?>>, checkpoint: () -> Unit,
+): Pair<String, TeachSupplierSkillSelection.Source> {
+    val byName = filenameSuppliers[normalizePilotAlias(filename.dropLast(".xlsx".length))]?.distinct()?.singleOrNull()
+    val known = markers.mapNotNull { (label, value) ->
+        if (label == null && value == null) null else {
+            if (label != MARKER || value == null) invalidSupplierEvidence()
+            normalizePilotAlias(value).takeIf { it in contentAliases } ?: invalidSupplierEvidence()
+        }
+    }.distinct()
+    if (known.size > 1) throw TeachSupplierSelectionConflict(TeachSupplierSelectionError.Ambiguous)
+    val byContent = known.singleOrNull()
+    if (byName != null && byContent != null && byName != byContent) {
+        throw TeachSupplierSelectionConflict(TeachSupplierSelectionError.Conflicting)
+    }
+    val supplier = byName ?: byContent ?: throw TeachSupplierSelectionConflict(TeachSupplierSelectionError.Unknown)
+    checkpoint()
+    return supplier to if (byName != null) TeachSupplierSkillSelection.Source.Filename else TeachSupplierSkillSelection.Source.Content
+}
+
 internal class TeachSupplierSkillSelectionService private constructor(
     private val reader: TeachActiveSkillReader,
     private val registry: TeachActivationRegistry,
-    private val byStem: Map<String, String>,
 ) {
     val catalogId: String get() = reader.storeId
     val manifest: String get() = registry.manifest
@@ -37,9 +59,8 @@ internal class TeachSupplierSkillSelectionService private constructor(
     companion object {
         fun mount(reader: TeachActiveSkillReader, registry: TeachActivationRegistry): TeachSupplierSkillSelectionService? {
             if (!teachFixtureId.matches(reader.storeId)) return null
-            val aliases = filenameAliases.groupBy({ normalizePilotAlias(it.first) }, { it.second })
-            if (aliases.values.any { it.distinct().size != 1 }) return null
-            val service = TeachSupplierSkillSelectionService(reader, registry, aliases.mapValues { it.value.first() })
+            if (filenameSuppliers.values.any { it.distinct().size != 1 }) return null
+            val service = TeachSupplierSkillSelectionService(reader, registry)
             return try {
                 reader.verify(registry.manifest).forEach { (supplier, active) -> service.resolve(supplier, active) }
                 service
@@ -52,26 +73,12 @@ internal class TeachSupplierSkillSelectionService private constructor(
         filename: String, validator: TeachWorkbookValidator, inspector: TeachWorkbookInspector,
         bytes: ByteArray, size: Int, remainingMillis: () -> Long, checkpoint: () -> Unit,
     ): TeachSupplierSkillSelection {
-        val byName = byStem[normalizePilotAlias(filename.dropLast(".xlsx".length))]
-        val markers = inspector.inspectSupplierMarkers(validator, bytes, size, checkpoint).mapNotNull { (label, value) ->
-            if (label == null && value == null) null else {
-                if (label != MARKER || value == null) invalidSupplierEvidence()
-                normalizePilotAlias(value).takeIf { it in contentAliases } ?: invalidSupplierEvidence()
-            }
-        }.distinct()
-        if (markers.size > 1) throw TeachSupplierSelectionConflict(TeachSupplierSelectionError.Ambiguous)
-        val byContent = markers.singleOrNull()
-        if (byName != null && byContent != null && byName != byContent) {
-            throw TeachSupplierSelectionConflict(TeachSupplierSelectionError.Conflicting)
-        }
-        val supplier = byName ?: byContent ?: throw TeachSupplierSelectionConflict(TeachSupplierSelectionError.Unknown)
-        checkpoint()
+        val (supplier, source) = identifyTeachSupplier(filename, inspector.inspectSupplierMarkers(validator, bytes, size, checkpoint), checkpoint)
         val active = reader.read(registry.manifest, supplier, remainingMillis, checkpoint)
         checkpoint()
         if (active == null) throw TeachSupplierSelectionConflict(TeachSupplierSelectionError.NoActiveSkill)
         val revision = resolve(supplier, active)
-        return TeachSupplierSkillSelection(revision, active.generation,
-            if (byName != null) TeachSupplierSkillSelection.Source.Filename else TeachSupplierSkillSelection.Source.Content)
+        return TeachSupplierSkillSelection(revision, active.generation, source)
     }
 
     private fun resolve(supplier: String, active: TeachActiveSkill) = active.revisionId

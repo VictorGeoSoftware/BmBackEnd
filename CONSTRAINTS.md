@@ -106,3 +106,29 @@
 - No changes to the default validation v2 fixture or runtime; the opt-in adds
   only the promotion audit relation and the redundant FK-target uniqueness.
   Hosted QA, actual protected branch permissions and release remain unverified.
+
+## Enséñame — synthetic production analogue
+
+- No live deployment, portable executable format, application startup wiring,
+  migration, shared store, or credential. Only the test composition can mount
+  this loopback Netty. No write route for release. A PR, a simulated merge and
+  QA evidence do not confer release authority.
+- The TLS key is generated in memory per Netty composition; only the public
+  leaf pin crosses into the Pages runner. There is no trust fallback or shared
+  credential in HTTP. Admit a streamed POST only on its pinned transport with
+  its own nonce. Apply strict header parsing before Netty normalizes `Content-Length`
+  or `Transfer-Encoding`; do not change the QA or operational decoder.
+- Successful manifests are append-only for the fixture lifetime. No mutable
+  head or automatic rollback. Returning to A requires a new successful A
+  deployment with a higher ordinal. An unverifiable head fails closed. After
+  uncertain completion, reconcile only the same deployment or import attempt;
+  no automatic retry and no claim that timeout or revocation undoes commit.
+- Verify database, session/effective role, PostgreSQL version and descriptor on
+  mount and each access. Column grants are not RLS: SQL scopes all import
+  dedupe, readback and pagination to the verified analogue actor. Keep auth and
+  upload work bounded (four workers, four slots, 15 seconds); keep admission
+  until the worker and socket/transaction cleanup are complete.
+- Only the versioned second synthetic XLSX and provisioner-approved derivatives.
+  Retain canonical manifests, scoped attempt fingerprints, release attribution
+  and synthetic proposals only within the disposable fixture. Never retain the
+  workbook, filename or token; no export, shared volumes or private diagnostics.

@@ -247,7 +247,7 @@ internal fun Route.teachWorkbookMessageRoutes(
     } }
 }
 
-private suspend fun ApplicationCall.withWorkbookPeer(block: suspend (() -> Unit) -> Unit) {
+internal suspend fun ApplicationCall.withWorkbookPeer(block: suspend (() -> Unit) -> Unit) {
     val engineCall = (this as? RoutingApplicationCall)?.engineCall ?: this
     val channel = (engineCall as? NettyApplicationCall)?.context?.channel()
     if (channel == null) {
@@ -725,7 +725,7 @@ private suspend fun ApplicationCall.denyWorkbookUpload(decision: TeachWorkbookAu
 private class WorkbookDeadline : RuntimeException()
 internal class TeachUploadTooLarge : RuntimeException()
 
-private fun decodeFilename(values: List<String>?): String {
+internal fun decodeFilename(values: List<String>?): String {
     fun invalid(): Nothing = throw InvalidTeachUpload()
     val wire = values?.singleOrNull()?.trim(' ', '\t') ?: invalid()
     if (!filenameWire.matches(wire)) invalid()
@@ -737,7 +737,7 @@ private fun decodeFilename(values: List<String>?): String {
     return name
 }
 
-private fun validateExtension(name: String, extension: String) {
+internal fun validateExtension(name: String, extension: String) {
     val ext = name.takeLast(extension.length).map { if (it in 'A'..'Z') it.lowercaseChar() else it }.joinToString("")
     if (ext != extension || name.dropLast(extension.length).isBlank()) throw InvalidTeachUpload()
 }

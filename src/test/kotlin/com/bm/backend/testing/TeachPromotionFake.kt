@@ -14,7 +14,7 @@ internal class TeachPromotionFake(
     allowed: List<TeachPromotionDiff>,
     private val beforeLookup: (() -> Unit) -> Unit = {},
     private val afterCreate: (TeachPromotionReceipt, () -> Unit) -> TeachPromotionReceipt = { receipt, _ -> receipt },
-) : TeachPromotionProvider {
+) : TeachPromotionProvider, AutoCloseable {
     override val fixtureId: UUID = UUID.randomUUID()
     override val atomicFixture = true
     private val exact = allowed.associateBy { it.revision }
@@ -50,6 +50,8 @@ internal class TeachPromotionFake(
     }
 
     fun inspect(): List<TeachPromotionReceipt> = synchronized(opened) { opened.values.toList() }
+
+    override fun close() { synchronized(opened) { opened.clear() } }
 
     private fun find(proposal: TeachPromotionProposal) = opened[proposal.key]?.also { if (it.proposal != proposal) fail() }
     private fun fail(): Nothing = throw TeachPromotionProviderUnavailable()
