@@ -10,8 +10,8 @@ import kotlinx.serialization.json.Json
 
 internal const val PROPOSAL_VALIDATION_PATH = "/teach-me/proposal-validation"
 internal const val PROPOSAL_VALIDATION_LIMIT = 1024
-private val canonicalRef = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
-internal fun parseTeachProposalValidation(text: String): TeachProposalValidationConfirmation {
+internal val canonicalTeachValidationRef = Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")
+internal fun parseTeachProposalValidation(text: String, confirmField: String = "confirmExpectedPrices"): TeachProposalValidationConfirmation {
     var pos = 0
     fun space() { while (pos < text.length && text[pos] in " \t\r\n") pos++ }
     fun delimiter(value: Char) {
@@ -43,9 +43,9 @@ internal fun parseTeachProposalValidation(text: String): TeachProposalValidation
         when (key) {
             "validationRef" -> {
                 if (ref != null) throw InvalidTeachUpload()
-                ref = string().takeIf(canonicalRef::matches) ?: throw InvalidTeachUpload()
+                ref = string().takeIf(canonicalTeachValidationRef::matches) ?: throw InvalidTeachUpload()
             }
-            "confirmExpectedPrices" -> {
+            confirmField -> {
                 space()
                 if (affirmed || !text.startsWith("true", pos)) throw InvalidTeachUpload()
                 pos += 4
@@ -60,7 +60,11 @@ internal fun parseTeachProposalValidation(text: String): TeachProposalValidation
     return TeachProposalValidationConfirmation(UUID.fromString(ref ?: throw InvalidTeachUpload()))
 }
 
-internal suspend fun readTeachProposalValidation(channel: ByteReadChannel, length: Long, checkpoint: () -> Unit): TeachProposalValidationConfirmation {
+internal suspend fun readTeachProposalValidation(channel: ByteReadChannel, length: Long, checkpoint: () -> Unit) =
+    readTeachConfirmedRef(channel, length, "confirmExpectedPrices", checkpoint)
+
+internal suspend fun readTeachConfirmedRef(channel: ByteReadChannel, length: Long, confirmField: String,
+    checkpoint: () -> Unit): TeachProposalValidationConfirmation {
     val bytes = ByteArray(PROPOSAL_VALIDATION_LIMIT + 1)
     var size = 0
     while (size < bytes.size) {
@@ -74,5 +78,5 @@ internal suspend fun readTeachProposalValidation(channel: ByteReadChannel, lengt
     if (length != size.toLong()) throw InvalidTeachUpload()
     val text = try { Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(bytes, 0, size)).toString() }
         catch (_: CharacterCodingException) { throw InvalidTeachUpload() }
-    return parseTeachProposalValidation(text)
+    return parseTeachProposalValidation(text, confirmField)
 }

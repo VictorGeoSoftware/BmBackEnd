@@ -78,3 +78,24 @@ fresh READ COMMITTED statement can read a competing transaction's original
 event. The existing list reader joins actor and reference in the same read-only
 snapshot only for the explicit enriched projection. Neither path retries against
 another store or uses the active revision; the ordinary list wire is unchanged.
+
+## Enséñame — simulated promotion of an exact QA revision
+
+The fixture binds `TeachProductionPromotionService` to the same validation/import
+composition and immutable V2 registry, plus a separately attested store and
+ephemeral fake identity. The SQL join proves committed evidence for the current
+UID; the active pointer is not consulted. The canonical artifact is an explicit,
+value-checked data projection of the exact registry entry, not serialization of
+the entry or projection from imported proposals.
+
+`TeachPromotionStore` owns scoped read, reservation and finalization; the
+fixture implements them with limited PostgreSQL roles. The duplicate composite
+uniqueness on the validation event is provisioned only in the promotion fixture
+so the new audit's composite FK also enforces ownership. `TeachPromotionProvider`
+offers only exact lookup and atomic create-if-absent. Reauthorization and fake
+I/O occur outside SQL. Separate transactions commit the reservation and CAS
+finalization; the fake retains its state across Netty recomposition. A read or
+an already-open replay does not contact the fake. Before disclosing any opened
+receipt (GET, replay or new completion), the route rechecks the same token,
+UID, admin status and nomination after SQL has closed. A denial does not
+undo a completed reservation, fake effect or finalization.

@@ -8,6 +8,7 @@ internal class TeachProposalPostgres(
     private val catalog: TeachActivationPostgres,
     manifest: String,
     private val owner: (String, (Connection) -> Unit) -> Unit,
+    private val promotionProviderId: UUID?,
     private val connect: (String, String, String, () -> Long, () -> Unit) -> Connection,
 ) {
     val identity = TeachProposalImportIdentity(UUID.randomUUID().toString().replace("-", ""), catalog.storeId, manifest, schemaVersion = 2)
@@ -19,6 +20,10 @@ internal class TeachProposalPostgres(
     private val writerPassword = UUID.randomUUID().toString()
     private val readerPassword = UUID.randomUUID().toString()
     private val validatorPassword = UUID.randomUUID().toString()
+    private val promoter = "promotion_writer_$suffix"
+    private val promotionReader = "promotion_reader_$suffix"
+    private val promoterPassword = UUID.randomUUID().toString()
+    private val promotionReaderPassword = UUID.randomUUID().toString()
 
     fun provision(adminDb: String) {
         owner(adminDb) { sql ->
@@ -28,6 +33,11 @@ internal class TeachProposalPostgres(
             sql.exec("CREATE DATABASE $db")
             sql.exec("REVOKE ALL ON DATABASE $db FROM PUBLIC")
             sql.exec("GRANT CONNECT ON DATABASE $db TO $writer, $reader, $validator")
+            if (promotionProviderId != null) {
+                sql.exec("CREATE ROLE $promoter LOGIN PASSWORD '$promoterPassword'")
+                sql.exec("CREATE ROLE $promotionReader LOGIN PASSWORD '$promotionReaderPassword'")
+                sql.exec("GRANT CONNECT ON DATABASE $db TO $promoter, $promotionReader")
+            }
         }
         owner(db) { sql ->
             sql.exec("CREATE SCHEMA proposals")
@@ -66,6 +76,7 @@ internal class TeachProposalPostgres(
             sql.exec("GRANT SELECT (id, actor, environment, revision, generation, manifest, validation_ref) ON proposals.batch TO $validator")
             sql.exec("GRANT INSERT (validation_ref, actor), SELECT (validation_ref, actor, validated_at) ON proposals.validation TO $validator")
             sql.exec("GRANT SELECT (validation_ref, actor, validated_at) ON proposals.validation TO $reader")
+            if (promotionProviderId != null) provisionPromotion(sql, promotionProviderId)
         }
         catalog.sentinel { sql ->
             sql.exec("CREATE SCHEMA proposals")
@@ -91,4 +102,38 @@ internal class TeachProposalPostgres(
     fun validationConnection(database: String = db) = connect(database, validator, validatorPassword, { 5_000 }, {})
     fun connection(writable: Boolean, database: String = db) = if (writable)
         connect(database, writer, writerPassword, { 5_000 }, {}) else connect(database, reader, readerPassword, { 5_000 }, {})
+
+    private fun provisionPromotion(sql: Connection, providerId: UUID) {
+        sql.exec("ALTER TABLE proposals.validation ADD CONSTRAINT validation_promotion_target UNIQUE (validation_ref, actor)")
+        sql.exec("""CREATE TABLE proposals.promotion (
+            validation_ref uuid NOT NULL, actor text NOT NULL,
+            destination text NOT NULL DEFAULT 'bm-pilot/skills-fixture' CONSTRAINT promotion_destination CHECK (destination = 'bm-pilot/skills-fixture'),
+            op_key uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE,
+            digest text NOT NULL CONSTRAINT promotion_digest CHECK (digest ~ '^[0-9a-f]{64}$'),
+            requested_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+            proposal_id bigint UNIQUE, opened_at timestamptz,
+            CONSTRAINT promotion_completion CHECK ((proposal_id IS NULL AND opened_at IS NULL) OR
+                (proposal_id IS NOT NULL AND proposal_id > 0 AND opened_at IS NOT NULL AND opened_at >= requested_at)),
+            PRIMARY KEY (validation_ref, destination),
+            CONSTRAINT promotion_event_fk FOREIGN KEY (validation_ref, actor) REFERENCES proposals.validation (validation_ref, actor))""")
+        sql.exec("COMMENT ON TABLE proposals.promotion IS 'bm.teach.promotion/v1:$providerId'")
+        sql.exec("GRANT USAGE ON SCHEMA proposals TO $promoter, $promotionReader")
+        sql.exec("GRANT SELECT (id, catalog, manifest, environment, schema_version) ON proposals.identity TO $promoter, $promotionReader")
+        sql.exec("GRANT SELECT (id, validation_ref, actor, supplier, revision, generation, environment, manifest) ON proposals.batch TO $promoter, $promotionReader")
+        sql.exec("GRANT SELECT (validation_ref, actor, result, validated_at) ON proposals.validation TO $promoter, $promotionReader")
+        sql.exec("GRANT SELECT (validation_ref, actor, destination, op_key, digest, proposal_id, opened_at) ON proposals.promotion TO $promoter, $promotionReader")
+        sql.exec("GRANT INSERT (validation_ref, actor, digest), UPDATE (proposal_id, opened_at) ON proposals.promotion TO $promoter")
+    }
+
+    fun promotionStore(beforeReserveCommit: () -> Unit = {}, afterReserveCommit: () -> Unit = {},
+        beforeFinalizeCommit: () -> Unit = {}, afterFinalizeCommit: () -> Unit = {},
+        descriptor: TeachProposalImportIdentity = identity, afterRead: () -> Unit = {}, beforeOpenedReplay: () -> Unit = {}) = TeachProductionPromotionJdbcStore(
+        descriptor, checkNotNull(promotionProviderId), db, promoter, promotionReader,
+        { write, remaining, checkpoint -> connect(db, if (write) promoter else promotionReader,
+            if (write) promoterPassword else promotionReaderPassword, remaining, checkpoint) },
+        beforeReserveCommit, afterReserveCommit, beforeFinalizeCommit, afterFinalizeCommit, afterRead, beforeOpenedReplay,
+    )
+
+    fun promotionConnection(write: Boolean, database: String = db) = connect(database, if (write) promoter else promotionReader,
+        if (write) promoterPassword else promotionReaderPassword, { 5_000 }, {})
 }

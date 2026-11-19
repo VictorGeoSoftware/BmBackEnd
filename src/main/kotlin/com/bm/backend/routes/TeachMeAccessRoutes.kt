@@ -11,6 +11,7 @@ import com.bm.backend.services.TeachSupplierDraftAdapter
 import com.bm.backend.services.TeachSupplierSkillSelectionService
 import com.bm.backend.services.TeachProposalImportService
 import com.bm.backend.services.TeachProposalValidationService
+import com.bm.backend.services.TeachProductionPromotionService
 import com.bm.backend.services.fixedTeachClarificationAdapter
 import com.bm.backend.services.fixedTeachSupplierDraftAdapter
 import com.google.firebase.auth.FirebaseAuthException
@@ -35,6 +36,7 @@ internal fun Route.teachMeAccessRoutes(
     supplierSelection: TeachSupplierSkillSelectionService? = null,
     proposalImport: TeachProposalImportService? = null,
     proposalValidation: TeachProposalValidationService? = null,
+    productionPromotion: TeachProductionPromotionService? = null,
     verifyToken: (String) -> AuthenticatedFirebaseUser = ::verifyFirebaseIdToken
 ) {
     if (!policy.enabled) return
@@ -74,5 +76,6 @@ internal fun Route.teachMeAccessRoutes(
     teachWorkbookMessageRoutes(clarificationEnabled = clarificationEnabled, clarificationAdapter = clarificationAdapter,
         supplierDraftEnabled = supplierDraftEnabled, supplierDraftAdapter = supplierDraftAdapter,
         draftPreviewEnabled = draftPreviewEnabled, activationPilot = activationPilot, supplierSelection = supplierSelection,
-        proposalImport = proposalImport, proposalValidation = proposalValidation, authorizeValidation = { decide(it, true) }) { decide(it, false) }
+        proposalImport = proposalImport, proposalValidation = proposalValidation, productionPromotion = productionPromotion,
+        authorizeValidation = { decide(it, true) }) { decide(it, false) }
 }

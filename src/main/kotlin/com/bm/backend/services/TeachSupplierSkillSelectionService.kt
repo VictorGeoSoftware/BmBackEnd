@@ -33,6 +33,7 @@ internal class TeachSupplierSkillSelectionService private constructor(
 ) {
     val catalogId: String get() = reader.storeId
     val manifest: String get() = registry.manifest
+    fun isBoundTo(candidate: TeachActivationRegistry) = registry === candidate
     companion object {
         fun mount(reader: TeachActiveSkillReader, registry: TeachActivationRegistry): TeachSupplierSkillSelectionService? {
             if (!teachFixtureId.matches(reader.storeId)) return null

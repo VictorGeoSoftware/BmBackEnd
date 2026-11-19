@@ -15,7 +15,8 @@ import java.util.concurrent.ScheduledThreadPoolExecutor
 import java.util.concurrent.TimeUnit
 
 /** This fixture owns both DBs and their teardown. Never reads service configuration. */
-internal class TeachActivationPostgres(private val manifest: String, withProposals: Boolean = false) : AutoCloseable {
+internal class TeachActivationPostgres(private val manifest: String, withProposals: Boolean = false,
+    promotionProviderId: UUID? = null) : AutoCloseable {
     val storeId = UUID.randomUUID().toString().replace("-", "")
     private val id = storeId.take(12)
     val qaDb = "qa_pilot_$id"
@@ -39,7 +40,7 @@ internal class TeachActivationPostgres(private val manifest: String, withProposa
                 PortBinding(Ports.Binding.bindIp("127.0.0.1"), ExposedPort.tcp(5432)),
             )
         }
-    val proposals = if (withProposals) TeachProposalPostgres(this, manifest, ::owner) { db, role, password, remaining, checkpoint ->
+    val proposals = if (withProposals) TeachProposalPostgres(this, manifest, ::owner, promotionProviderId) { db, role, password, remaining, checkpoint ->
         TeachActivationDeadlineSocketFactory.connect(clockedSockets, remaining, checkpoint) {
             source(db, role, password, 0).apply { socketFactory = TeachActivationDeadlineSocketFactory::class.java.name }.connection
         }

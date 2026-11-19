@@ -82,3 +82,27 @@
   peer/budget before commit and close SQL resources before returning admission.
   Loss after commit starts is not proof of rollback. Recovery is scoped readback
   or intentional replay of the same target, without an extra event.
+
+## Enséñame — simulated promotion harness
+
+- Fixture-only PostgreSQL 16, Netty loopback and in-process fake. No Git, remote
+  provider, network egress, access tokens at the fake, deployment, merge or
+  publication. Do not mount from application configuration or use real data.
+- One audited row per committed validation and fixed destination. Only final
+  ID/time may change, with no reset or deletion before fixture teardown. Do not
+  retain artifact bytes in SQL, input hashes, proposal values, workbook, chat,
+  or refs/UID in logs. The fake only sees the fixed proposal metadata and data
+  diff, with neither validation reference nor actor/credentials.
+- A timeout or response loss is not rollback. Recovery needs current
+  authorization, the original committed key/digest, and the same fake state and
+  identity. No blind resend on failed lookup, identity loss or receipt mismatch;
+  a committed fake effect can remain pending in SQL. The conditional guarantee
+  applies only within this disposable fixture, not to hosted providers.
+- Promotion rechecks use the original deadline. If the caller times out or
+  disconnects during a blocking verifier call, its decision is discarded but
+  the shared upload permit is held until the verifier actually returns. A
+  completion callback releases the permit without resuming the operation.
+  Other Enséñame routes retain their existing admission behavior.
+- No changes to the default validation v2 fixture or runtime; the opt-in adds
+  only the promotion audit relation and the redundant FK-target uniqueness.
+  Hosted QA, actual protected branch permissions and release remain unverified.

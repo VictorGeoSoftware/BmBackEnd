@@ -19,13 +19,17 @@ internal class TeachWorkbookAuthWorkers(
         Thread(task, "teach-workbook-auth-${workerId.incrementAndGet()}").apply { isDaemon = true }
     })
 
-    fun submit(token: String, validationWire: Boolean = false): Deferred<Result<TeachWorkbookAuthDecision>>? {
+    fun submit(token: String, validationWire: Boolean = false, onFinished: (() -> Unit)? = null): Deferred<Result<TeachWorkbookAuthDecision>>? {
         val result = CompletableDeferred<Result<TeachWorkbookAuthDecision>>()
         try {
             executor.execute {
                 // This worker owns only the token and a decision. Cancelling the result cannot
                 // free the worker: it remains unavailable until decide() actually returns/throws.
-                result.complete(runCatching { (if (validationWire) decideValidation ?: decide else decide)(token) })
+                try {
+                    result.complete(runCatching { (if (validationWire) decideValidation ?: decide else decide)(token) })
+                } finally {
+                    onFinished?.invoke()
+                }
             }
         } catch (_: RejectedExecutionException) {
             return null

@@ -15,6 +15,9 @@ import io.ktor.server.engine.*
 import io.ktor.server.netty.Netty
 import io.ktor.server.request.*
 import io.ktor.server.routing.*
+import io.netty.channel.ChannelHandlerContext
+import io.netty.handler.codec.http.HttpRequest as NettyRequest
+import io.netty.handler.codec.http.HttpServerExpectContinueHandler
 import io.mockk.every
 import io.mockk.mockkObject
 import io.mockk.mockkStatic
@@ -58,6 +61,7 @@ internal abstract class TeachProposalHttpHarness {
                           receives: AtomicInteger = AtomicInteger(), completion: TeachCallCompletion = TeachCallCompletion(),
                           otherRoutes: Route.(AdminAccessControlService) -> Unit = {},
                           validation: TeachProposalValidationService? = null,
+                          promotion: TeachProductionPromotionService? = null,
                           onVerify: (String) -> Unit = {},
                           resolveUid: (String) -> String = { it },
                           onReceive: () -> Unit = {},
@@ -68,14 +72,14 @@ internal abstract class TeachProposalHttpHarness {
             connector { host = "127.0.0.1"; port = 0 }
             module {
                 configurePlugins()
-                completion.install(this) { it.request.path() in setOf(path, listPath, "/api/v1$PROPOSAL_VALIDATION_PATH", "/api/v1/teach-me/activation", "/api/v1/teach-me/clarifications") }
+                completion.install(this) { it.request.path() in setOf(path, listPath, "/api/v1$PROPOSAL_VALIDATION_PATH", "/api/v1$PRODUCTION_PROMOTION_PATH", "/api/v1/teach-me/activation", "/api/v1/teach-me/clarifications") }
                 receivePipeline.intercept(ApplicationReceivePipeline.Before) { receives.incrementAndGet(); onReceive() }
                 routing { route("/api/v1") {
                     val adminAccess = AdminAccessControlService(admins)
                     otherRoutes(adminAccess)
                     teachMeAccessRoutes(adminAccess, TeachMeAccessPolicy(env, "$nominated,$other"),
                         clarificationEnabled = pilot != null, supplierDraftEnabled = pilot != null, draftPreviewEnabled = pilot != null,
-                        activationPilot = pilot, proposalImport = service, proposalValidation = validation) { token ->
+                        activationPilot = pilot, proposalImport = service, proposalValidation = validation, productionPromotion = promotion) { token ->
                         onVerify(token)
                         val (uid, email) = when (token) {
                             "fixture-token" -> "synthetic-author" to (if (revoked.get()) excluded else nominated)
@@ -89,7 +93,18 @@ internal abstract class TeachProposalHttpHarness {
                     }
                 } }
             }
-        })
+        }) {
+            if (promotion != null) channelPipelineConfig = {
+                replace("continue", "teach-fixture-continue", object : HttpServerExpectContinueHandler() {
+                    override fun channelRead(ctx: ChannelHandlerContext, msg: Any) {
+                        if (msg is NettyRequest && msg.uri().substringBefore('?') == "/api/v1$PRODUCTION_PROMOTION_PATH") {
+                            ctx.channel().attr(teachPromotionDeferredContinue).set(true)
+                            ctx.fireChannelRead(msg)
+                        } else super.channelRead(ctx, msg)
+                    }
+                })
+            }
+        }
         return try {
             server.start(wait = false)
             run(runBlocking { server.resolvedConnectors().single().port }, completion)

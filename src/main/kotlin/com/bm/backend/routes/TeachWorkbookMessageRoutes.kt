@@ -15,12 +15,15 @@ import com.bm.backend.models.TeachWorkbookReceipt
 import com.bm.backend.models.TeachProposalImportReceipt
 import com.bm.backend.models.TeachProposalImportPage
 import com.bm.backend.models.TeachProposalValidationResult
+import com.bm.backend.models.TeachPromotionResult
 import com.bm.backend.models.TeachValidatedImportPage
 import com.bm.backend.repositories.ports.TeachProposalStoreUnavailable
 import com.bm.backend.repositories.ports.TeachProposalAttemptMismatch
 import com.bm.backend.repositories.ports.TeachProposalValidationDeadline
 import com.bm.backend.services.TeachProposalImportService
 import com.bm.backend.services.TeachProposalValidationService
+import com.bm.backend.services.TeachProductionPromotionService
+import com.bm.backend.repositories.ports.TeachPromotionProviderUnavailable
 import com.bm.backend.services.teachProposalAttemptId
 import com.bm.backend.repositories.ports.TeachSkillCatalogUnavailable
 import com.bm.backend.services.InvalidWorkbook
@@ -73,6 +76,7 @@ import io.ktor.server.routing.route
 import io.ktor.utils.io.cancel
 import io.netty.channel.ChannelFutureListener
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.coroutineScope
@@ -106,7 +110,7 @@ private val teachUploadPaths = listOf(WORKBOOK_MESSAGE_PATH, REFERENCE_PATH, WOR
 private val teachUploadApiSegments = teachUploadPaths.map { ("/api/v1$it").drop(1).split('/') }.toSet()
 private val activationApiSegments = ("/api/v1$ACTIVATION_PATH").drop(1).split('/')
 private val selectionApiSegments = ("/api/v1$SUPPLIER_SELECTION_PATH").drop(1).split('/')
-private val proposalApiSegments = listOf(PROPOSAL_IMPORT_PATH, PROPOSAL_IMPORT_LIST_PATH, PROPOSAL_VALIDATION_PATH).map { "/api/v1$it".drop(1).split('/') }
+private val proposalApiSegments = listOf(PROPOSAL_IMPORT_PATH, PROPOSAL_IMPORT_LIST_PATH, PROPOSAL_VALIDATION_PATH, PRODUCTION_PROMOTION_PATH).map { "/api/v1$it".drop(1).split('/') }
 internal const val REFERENCE_FILENAME_HEADER = "X-Teach-Reference-Filename"
 internal const val REFERENCE_BODY_LIMIT = 2 * 1024 * 1024
 private val filenameWire = Regex("[A-Za-z0-9_-]{1,340}")
@@ -139,6 +143,7 @@ internal fun Route.teachWorkbookMessageRoutes(
     supplierSelection: TeachSupplierSkillSelectionService? = null,
     proposalImport: TeachProposalImportService? = null,
     proposalValidation: TeachProposalValidationService? = null,
+    productionPromotion: TeachProductionPromotionService? = null,
     authorizeValidation: ((String) -> TeachWorkbookAuthDecision)? = null,
     authorize: (String) -> TeachWorkbookAuthDecision,
 ) {
@@ -161,6 +166,15 @@ internal fun Route.teachWorkbookMessageRoutes(
     val draftPreview = if (supplierDraft != null && draftPreviewEnabled) TeachDraftPreviewService(validator, inspector) else null
     val pilot = activationPilot.takeIf { draftPreview != null }
     val validation = proposalValidation?.takeIf { it.isBoundTo(proposalImport) }
+    val promotion = productionPromotion?.takeIf { it.isBoundTo(validation) && authorizeValidation != null }
+    route(PRODUCTION_PROMOTION_PATH) { handle {
+        if (call.response.headers[HttpHeaders.CacheControl] == null) call.response.header(HttpHeaders.CacheControl, "no-store")
+        if (promotion == null) call.respond(HttpStatusCode.NotFound)
+        else {
+            call.response.header(HttpHeaders.Allow, "GET, POST")
+            call.respond(HttpStatusCode.MethodNotAllowed)
+        }
+    } }
     route(PROPOSAL_VALIDATION_PATH) { handle {
         if (call.response.headers[HttpHeaders.CacheControl] == null) call.response.header(HttpHeaders.CacheControl, "no-store")
         if (validation == null) call.respond(HttpStatusCode.NotFound)
@@ -171,11 +185,12 @@ internal fun Route.teachWorkbookMessageRoutes(
     } }
     // At most the same four admitted upload requests can dispatch blocking catalog work.
     val catalogDispatcher = Dispatchers.IO.limitedParallelism(4)
-    val paths = teachUploadPaths + listOfNotNull(ACTIVATION_PATH.takeIf { pilot != null },
+    val paths = (teachUploadPaths + listOfNotNull(ACTIVATION_PATH.takeIf { pilot != null },
         SUPPLIER_SELECTION_PATH.takeIf { supplierSelection != null }, PROPOSAL_VALIDATION_PATH.takeIf { validation != null }) +
-        if (proposalImport != null) listOf(PROPOSAL_IMPORT_PATH, PROPOSAL_IMPORT_LIST_PATH) else emptyList()
-    for (path in paths.filter { it != CLARIFICATION_PATH || clarification != null }) route(path,
-        if (path == PROPOSAL_IMPORT_LIST_PATH) HttpMethod.Get else HttpMethod.Post) { handle {
+        (if (proposalImport != null) listOf(PROPOSAL_IMPORT_PATH, PROPOSAL_IMPORT_LIST_PATH) else emptyList()))
+        .map { it to if (it == PROPOSAL_IMPORT_LIST_PATH) HttpMethod.Get else HttpMethod.Post } +
+        if (promotion != null) listOf(PRODUCTION_PROMOTION_PATH to HttpMethod.Get, PRODUCTION_PROMOTION_PATH to HttpMethod.Post) else emptyList()
+    for ((path, method) in paths.filter { it.first != CLARIFICATION_PATH || clarification != null }) route(path, method) { handle {
         if (call.response.headers[HttpHeaders.CacheControl] == null) call.response.header(HttpHeaders.CacheControl, "no-store")
         // A direct HTTP/1 caller should not reuse the connection after an early rejection.
         if (call.request.local.version.startsWith("HTTP/1")) call.response.header(HttpHeaders.Connection, "close")
@@ -197,6 +212,7 @@ internal fun Route.teachWorkbookMessageRoutes(
         val listImports = path == PROPOSAL_IMPORT_LIST_PATH
         val importMode = listImports || path == PROPOSAL_IMPORT_PATH
         val validate = path == PROPOSAL_VALIDATION_PATH
+        val promote = path == PRODUCTION_PROMOTION_PATH
         val enriched = listImports && call.request.uri.substringAfter('?', "").startsWith("validation=")
         if (enriched && validation == null) {
             call.respond(HttpStatusCode.NotFound)
@@ -209,7 +225,7 @@ internal fun Route.teachWorkbookMessageRoutes(
 
         val authHeader = call.request.headers[HttpHeaders.Authorization]
         if (authHeader.isNullOrBlank() || !authHeader.startsWith("Bearer ") ||
-            ((path == CLARIFICATION_PATH || activate || select || importMode || validate) && (call.request.headers.getAll(HttpHeaders.Authorization)?.size != 1 || ',' in authHeader))) {
+            ((path == CLARIFICATION_PATH || activate || select || importMode || validate || promote) && (call.request.headers.getAll(HttpHeaders.Authorization)?.size != 1 || ',' in authHeader))) {
             call.respond(HttpStatusCode.Unauthorized, ErrorResponse(message = "Missing or invalid Authorization header"))
             return@handle
         }
@@ -225,6 +241,7 @@ internal fun Route.teachWorkbookMessageRoutes(
                 draftPreview.takeIf { path == CLARIFICATION_PATH }, pilot.takeIf { activate || pilotPreview }, activate,
                 supplierSelection.takeIf { select }, proposalImport.takeIf { importMode }, listImports,
                 validation.takeIf { validate || enriched }, enriched,
+                promotion.takeIf { promote }, method == HttpMethod.Get,
                 catalogDispatcher, beforeUpload, timeoutMillis, checkPeer)
         }
     } }
@@ -278,6 +295,8 @@ private suspend fun ApplicationCall.receiveTeachUpload(
     listImports: Boolean,
     validation: TeachProposalValidationService?,
     enriched: Boolean,
+    promotion: TeachProductionPromotionService?,
+    readOnly: Boolean,
     catalogDispatcher: kotlinx.coroutines.CoroutineDispatcher,
     beforeUpload: suspend () -> Unit,
     timeoutMillis: Long,
@@ -286,7 +305,7 @@ private suspend fun ApplicationCall.receiveTeachUpload(
     val admitted = System.nanoTime()
     fun remaining() = timeoutMillis * 1_000_000 - (System.nanoTime() - admitted)
     fun remainingMillis() = (remaining() / 1_000_000).also { if (it <= 0) throw WorkbookDeadline() }
-    val decision = authWorkers.submit(token, validation != null || enriched)
+    val decision = authWorkers.submit(token, validation != null || enriched || promotion != null)
     if (decision == null) {
         checkPeer()
         respond(HttpStatusCode.TooManyRequests)
@@ -294,6 +313,7 @@ private suspend fun ApplicationCall.receiveTeachUpload(
     }
 
     var acquiredUpload = false
+    var promotionRecheckFinished: CompletableDeferred<Unit>? = null
     try {
         val outcome = withTimeoutOrNull(remaining().nanoseconds) {
             val context = currentCoroutineContext()
@@ -325,8 +345,42 @@ private suspend fun ApplicationCall.receiveTeachUpload(
                 throw InvalidTeachUpload()
             }
             val type = types?.singleOrNull()
+            if (promotion == null && request.headers.getAll(TEACH_PROMOTION_REF) != null) throw InvalidTeachUpload()
             if ((selection != null || proposalImport != null) && request.headers.names().any { isSelectionOverride(it, proposalImport != null) }) throw InvalidTeachUpload()
             val catalogRemaining = { checkpoint(); remainingMillis() }
+            if (promotion != null) {
+                val principal = authorization as? TeachWorkbookPrincipal ?: return@withTimeoutOrNull HttpStatusCode.Forbidden
+                if (!promotion.acceptsActor(principal.uid)) return@withTimeoutOrNull HttpStatusCode.Forbidden
+                val ref = readTeachPromotionRef(readOnly, checkpoint)
+                suspend fun recheckPromotion() {
+                    checkpoint()
+                    val finished = CompletableDeferred<Unit>() // No parent: caller cancellation is not worker completion.
+                    val recheck = authWorkers.submit(token, validationWire = true, onFinished = { finished.complete(Unit) })
+                        ?: throw PromotionRecheck(429)
+                    promotionRecheckFinished = finished
+                    val same = try {
+                        val verified = recheck.await()
+                        finished.await() // Only one tracked recheck at a time; the next can replace this ticket.
+                        verified.getOrThrow()
+                    } finally { recheck.cancel() }
+                    checkpoint()
+                    if (same != principal) throw PromotionRecheck(if (same == TeachWorkbookAuthDecision.InvalidToken) 401 else 403)
+                }
+                try {
+                    val result = withContext(catalogDispatcher) {
+                        if (readOnly) promotion.read(principal.uid, ref, catalogRemaining, checkpoint)?.let { it to 200 }
+                        else promotion.request(principal.uid, ref, catalogRemaining, checkpoint, ::recheckPromotion)
+                    } ?: return@withTimeoutOrNull HttpStatusCode.NotFound
+                    val bytes = clarificationJson.encodeToString(TeachPromotionResult.serializer(), result.first).encodeToByteArray()
+                    checkpoint()
+                    if (bytes.size > 2048) return@withTimeoutOrNull HttpStatusCode.InternalServerError
+                    // This is a separate disclosure check, after SQL has closed. Denial never undoes a committed PR.
+                    if (result.first.kind == "opened") recheckPromotion()
+                    respondBytes(bytes, ContentType.parse("application/json; charset=UTF-8"), HttpStatusCode.fromValue(result.second))
+                    return@withTimeoutOrNull Unit
+                } catch (failure: PromotionRecheck) { return@withTimeoutOrNull HttpStatusCode.fromValue(failure.status) }
+                  catch (_: TeachPromotionProviderUnavailable) { return@withTimeoutOrNull HttpStatusCode.BadGateway }
+            }
             if (validation != null && !listImports) {
                 if (request.headers.names().any(::isValidationOverride)) throw InvalidTeachUpload()
                 if (!type.equals("application/json", ignoreCase = true) || request.headers.getAll(HttpHeaders.ContentEncoding) != null)
@@ -604,6 +658,9 @@ private suspend fun ApplicationCall.receiveTeachUpload(
         checkPeer()
         if (remaining() <= 0) respond(HttpStatusCode.RequestTimeout)
         else respond(HttpStatusCode.Conflict, mapOf("error" to "attempt_mismatch"))
+    } catch (_: UnsupportedPromotionFraming) {
+        checkPeer()
+        respond(HttpStatusCode.UnsupportedMediaType)
     } catch (_: InvalidTeachSupplierDraft) {
         checkPeer()
         respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_message"))
@@ -628,7 +685,12 @@ private suspend fun ApplicationCall.receiveTeachUpload(
     } finally {
         // Invalidate only the result, never the running task or its worker slot.
         decision.cancel()
-        if (acquiredUpload) uploadPermits.release()
+        if (acquiredUpload) {
+            val finished = promotionRecheckFinished
+            if (finished == null) uploadPermits.release()
+            // Either runs now or on the worker when the actual verifier exits, even after peer/timeout cancellation.
+            else finished.invokeOnCompletion { uploadPermits.release() }
+        }
     }
 }
 

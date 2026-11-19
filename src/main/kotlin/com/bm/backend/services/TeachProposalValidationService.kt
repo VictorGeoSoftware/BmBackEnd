@@ -1,6 +1,7 @@
 package com.bm.backend.services
 
 import com.bm.backend.models.TeachProposalValidationConfirmation
+import com.bm.backend.models.TeachProposalImportIdentity
 import com.bm.backend.repositories.ports.TeachProposalStoreUnavailable
 import com.bm.backend.repositories.ports.TeachProposalValidationStore
 import com.bm.backend.repositories.ports.TeachProposalValidationDeadline
@@ -25,6 +26,8 @@ internal class TeachProposalValidationService private constructor(
     }
 
     fun isBoundTo(service: TeachProposalImportService?) = imports === service
+    fun isBoundTo(registry: TeachActivationRegistry, identity: TeachProposalImportIdentity) =
+        imports.isBoundTo(registry) && store.identity == identity && identity.schemaVersion == 2
 
     fun acceptsActor(uid: String) = syntheticValidationActor.matches(uid)
 

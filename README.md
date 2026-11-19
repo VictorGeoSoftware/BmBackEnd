@@ -695,3 +695,44 @@ BM_TEACH_CLARIFY_TEST_WEB="$(cd ../BmWeb && pwd)" ./gradlew test --rerun \
 The joint uses the candidate Pages handlers and disposable PG on ephemeral
 loopback, with the existing synthetic workbook/oracle. This is not browser
 E2E, hosted Firebase, QA-stack verification, or a release procedure.
+
+### Enséñame: request a simulated promotion (synthetic harness only)
+
+The optional fixture mounts `GET` and `POST` at
+`/api/v1/teach-me/production-promotion`. GET has no body and uses one
+`X-Teach-Promotion-Ref`. POST confirms `{"validationRef":"<uuid>","confirmPromotion":true}`
+in fixed-length strict UTF-8 JSON (up to 1 KiB), with no selector header.
+Only the currently nominated synthetic importer/validator can act on its
+committed QA validation. The exact historical V2 identity is eligible after
+another revision replaces it; validation never transfers to another import.
+
+The fixture's Pages POST waits for a pilot-only HTTP `100 Continue` signal
+after Netty admission, authorization and framing checks. Ordinary `100`
+responses do not release the Pages body. Direct requests still authorize
+before opening the route body. The path shares four authorization workers,
+four permits and the 15-second deadline. Responses are no-store, closed and
+at most 2 KiB. Readback is `notRequested`, `pending` or `opened`, scoped to
+the exact import and validation, without provider I/O. POST returns `201`
+only after a newly committed completion, `200` for an observed original;
+failures can leave a committed reservation or completion. Reconsult and
+explicitly recover the same reference; there is no background retry.
+
+The fixture alone reserves an opaque key in PostgreSQL 16, closes SQL before
+the in-memory fake lookup/conditional create, then verifies that exact
+receipt and finalizes using a scoped compare-and-set. The data-only artifact
+is one added JSON file under `skills-fixture/gesternova/`; the teaching pin
+stays internal. The destination is `bm-pilot/skills-fixture`, base
+`protected-fixture`; the `pr-pilot.invalid` URL identifies only a simulated PR.
+Nothing is merged or published.
+
+JDK 17: add `--tests '*TeachProductionPromotion*Test'` to the focused gate above
+and keep `./gradlew --offline build`. With cached Node 20 on `PATH`, run the six
+prior opt-in joints plus this one (all in Gradle `--offline` mode):
+
+```sh
+BM_TEACH_CLARIFY_TEST_WEB="$(cd ../BmWeb && pwd)" ./gradlew --offline test --rerun \
+  --tests '*TeachProductionPromotionRoutesTest.candidate Pages proxy and Ktor propose exact validated QA revision over loopback' --info
+```
+
+See [architecture](ARCHITECTURE.md) and [constraints](CONSTRAINTS.md). No
+application migration, hosted access, Git integration or operational store.

@@ -60,6 +60,7 @@ internal class TeachProposalImportService private constructor(
         store.list(actor, before, remaining, checkpoint)
 
     val identity get() = store.identity
+    fun isBoundTo(registry: TeachActivationRegistry) = selector.isBoundTo(registry)
     fun verifyValidationProjection() = store.verifyValidationProjection()
     fun listWithValidation(actor: String, before: Long?, remaining: () -> Long, checkpoint: () -> Unit) =
         store.listWithValidation(actor, before, remaining, checkpoint)
