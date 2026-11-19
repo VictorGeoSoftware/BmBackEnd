@@ -1,6 +1,7 @@
 package com.bm.backend.routes
 
 import com.bm.backend.models.ErrorResponse
+import com.bm.backend.models.TeachClarificationResult
 import com.bm.backend.models.TeachReferenceAttachment
 import com.bm.backend.models.TeachReferenceReceipt
 import com.bm.backend.models.TeachWorkbookAttachment
@@ -8,11 +9,15 @@ import com.bm.backend.models.TeachWorkbookAuthDecision
 import com.bm.backend.models.TeachWorkbookReceipt
 import com.bm.backend.services.InvalidWorkbook
 import com.bm.backend.services.InvalidReference
+import com.bm.backend.services.TeachClarificationAdapter
+import com.bm.backend.services.TeachClarificationConflict
+import com.bm.backend.services.TeachClarificationService
 import com.bm.backend.services.TeachReferenceValidator
 import com.bm.backend.services.TeachWorkbookAuthWorkers
 import com.bm.backend.services.TeachWorkbookInspector
 import com.bm.backend.services.TeachWorkbookValidator
 import com.bm.backend.services.WorkbookBudgetExceeded
+import com.bm.backend.services.fixedTeachClarificationAdapter
 import com.bm.backend.services.isWorkbookBidi
 import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
@@ -44,6 +49,7 @@ import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.job
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.serialization.json.Json
 import java.io.IOException
 import java.nio.ByteBuffer
 import java.nio.charset.CharacterCodingException
@@ -57,12 +63,14 @@ internal const val WORKBOOK_BODY_LIMIT = 5 * 1024 * 1024
 private const val WORKBOOK_MESSAGE_PATH = "/teach-me/messages"
 private const val REFERENCE_PATH = "/teach-me/references"
 private const val WORKBOOK_INSPECTION_PATH = "/teach-me/inspect-workbook"
-private val teachUploadPaths = listOf(WORKBOOK_MESSAGE_PATH, REFERENCE_PATH, WORKBOOK_INSPECTION_PATH)
+private const val CLARIFICATION_PATH = "/teach-me/clarifications"
+private val teachUploadPaths = listOf(WORKBOOK_MESSAGE_PATH, REFERENCE_PATH, WORKBOOK_INSPECTION_PATH, CLARIFICATION_PATH)
 private val teachUploadApiSegments = teachUploadPaths.map { ("/api/v1$it").drop(1).split('/') }.toSet()
 internal const val REFERENCE_FILENAME_HEADER = "X-Teach-Reference-Filename"
 internal const val REFERENCE_BODY_LIMIT = 2 * 1024 * 1024
 private val filenameWire = Regex("[A-Za-z0-9_-]{1,340}")
-private class InvalidTeachUpload : RuntimeException()
+internal class InvalidTeachUpload : RuntimeException()
+private val clarificationJson = Json { classDiscriminator = "kind" }
 
 internal fun ApplicationCall.isTeachUpload(): Boolean {
     if (request.httpMethod != HttpMethod.Post) return false
@@ -81,9 +89,11 @@ internal fun Route.teachWorkbookMessageRoutes(
     validator: TeachWorkbookValidator = TeachWorkbookValidator(),
     timeoutMillis: Long = 15_000,
     beforeUpload: suspend () -> Unit = {},
+    clarificationEnabled: Boolean = false,
+    clarificationAdapter: TeachClarificationAdapter = fixedTeachClarificationAdapter,
     authorize: (String) -> TeachWorkbookAuthDecision,
 ) {
-    // All three POST routes use this one set of workers and permits; GET is independent.
+    // All POST routes use this one set of workers and permits; GET is independent.
     val authWorkers = TeachWorkbookAuthWorkers(authorize)
     val owner = application
     val monitor = owner.environment.monitor
@@ -97,13 +107,15 @@ internal fun Route.teachWorkbookMessageRoutes(
     val uploadPermits = Semaphore(4)
     val referenceValidator = TeachReferenceValidator()
     val inspector = TeachWorkbookInspector()
-    for (path in teachUploadPaths) post(path) {
+    val clarification = if (clarificationEnabled) TeachClarificationService(validator, inspector, referenceValidator, clarificationAdapter) else null
+    for (path in teachUploadPaths.filter { it != CLARIFICATION_PATH || clarification != null }) post(path) {
         if (call.response.headers[HttpHeaders.CacheControl] == null) call.response.header(HttpHeaders.CacheControl, "no-store")
         // A direct HTTP/1 caller should not reuse the connection after an early rejection.
         if (call.request.local.version.startsWith("HTTP/1")) call.response.header(HttpHeaders.Connection, "close")
 
         val authHeader = call.request.headers[HttpHeaders.Authorization]
-        if (authHeader.isNullOrBlank() || !authHeader.startsWith("Bearer ")) {
+        if (authHeader.isNullOrBlank() || !authHeader.startsWith("Bearer ") ||
+            (path == CLARIFICATION_PATH && (call.request.headers.getAll(HttpHeaders.Authorization)?.size != 1 || ',' in authHeader))) {
             call.respond(HttpStatusCode.Unauthorized, ErrorResponse(message = "Missing or invalid Authorization header"))
             return@post
         }
@@ -114,7 +126,8 @@ internal fun Route.teachWorkbookMessageRoutes(
         }
         call.withWorkbookPeer { checkPeer ->
             call.receiveTeachUpload(token, authWorkers, uploadPermits, validator, referenceValidator,
-                path == REFERENCE_PATH, inspector.takeIf { path == WORKBOOK_INSPECTION_PATH }, beforeUpload, timeoutMillis, checkPeer)
+                path == REFERENCE_PATH, inspector.takeIf { path == WORKBOOK_INSPECTION_PATH },
+                clarification.takeIf { path == CLARIFICATION_PATH }, beforeUpload, timeoutMillis, checkPeer)
         }
     }
 }
@@ -156,6 +169,7 @@ private suspend fun ApplicationCall.receiveTeachUpload(
     referenceValidator: TeachReferenceValidator,
     reference: Boolean,
     inspector: TeachWorkbookInspector?,
+    clarification: TeachClarificationService?,
     beforeUpload: suspend () -> Unit,
     timeoutMillis: Long,
     checkPeer: () -> Unit,
@@ -195,6 +209,18 @@ private suspend fun ApplicationCall.receiveTeachUpload(
                 throw InvalidTeachUpload()
             }
             val type = types?.singleOrNull()
+            if (clarification != null) {
+                if (!CLARIFICATION_MEDIA_TYPE.equals(type, ignoreCase = true) || request.headers.getAll(HttpHeaders.ContentEncoding) != null) {
+                    return@withTimeoutOrNull HttpStatusCode.UnsupportedMediaType
+                }
+                checkpoint()
+                val channel = receiveChannel()
+                val frame = try { readClarificationFrame(channel, checkpoint) } finally { channel.cancel() }
+                val result = clarification.clarify(frame, checkpoint)
+                checkpoint()
+                return@withTimeoutOrNull clarificationJson.encodeToString(TeachClarificationResult.serializer(), result)
+                    .encodeToByteArray().also { check(it.size <= 4096); checkpoint() }
+            }
             val encoded = request.headers.getAll(if (reference) REFERENCE_FILENAME_HEADER else WORKBOOK_FILENAME_HEADER)
             val filename: String
             val referenceType = if (reference) type?.lowercase() else null
@@ -259,6 +285,9 @@ private suspend fun ApplicationCall.receiveTeachUpload(
     } catch (_: WorkbookDeadline) {
         checkPeer()
         respond(HttpStatusCode.RequestTimeout)
+    } catch (_: TeachClarificationConflict) {
+        checkPeer()
+        respond(HttpStatusCode.Conflict)
     } catch (_: InvalidTeachUpload) {
         checkPeer()
         respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_message"))
@@ -295,7 +324,7 @@ private suspend fun ApplicationCall.denyWorkbookUpload(decision: TeachWorkbookAu
 }
 
 private class WorkbookDeadline : RuntimeException()
-private class TeachUploadTooLarge : RuntimeException()
+internal class TeachUploadTooLarge : RuntimeException()
 
 private fun decodeFilename(values: List<String>?): String {
     fun invalid(): Nothing = throw InvalidTeachUpload()

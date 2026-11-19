@@ -203,7 +203,7 @@ match against the upload. Both layers enforce the file-specific byte limits:
 into a fixed-size buffer only after authorization and upload admission. A
 one-byte excess probe does not retain the excess in the file buffer or drain
 the remaining body. The proxy shares four slots across the two routes and
-uses a 15-second deadline per request. All three Ktor POST routes share four private
+uses a 15-second deadline per request. All Enséñame Ktor POST routes share four private
 authorization workers with direct handoff (no queue) and four independent upload permits. Its single
 15-second deadline starts when authorization is admitted and also covers upload
 and validation (including inspection and response encoding when requested). Saturation returns `429` without opening the body; authorization
@@ -311,3 +311,70 @@ browser retains only the confirmed comment and presentation metadata for the
 lifetime of the same view/account, not a retrievable history. See the coordination
 specs `docs/specs/teach-workbook-attachment.md` and
 `docs/specs/teach-reference-attachments.md` for the approved boundaries.
+
+### Clarify workbook rules (isolated local QA pilot)
+
+`POST /api/v1/teach-me/clarifications` is only mounted when `BM_ENV=qa` and
+`BM_TEACH_CLARIFY_LOCAL=true`. It is off by default; do not enable in hosted QA.
+BmWeb needs its own `NEXT_PUBLIC_TEACH_CLARIFY_LOCAL=true` opt-in. The Ktor route
+rechecks the same Firebase, current admin and nomination guard before reading
+either turn and shares the existing four auth workers, four upload permits and
+15-second per-request deadline (including local adapter and encoding). An
+observed Netty peer close cancels the request; an unobserved FIN is not probed.
+
+Accepts a single `Content-Type: application/vnd.bm.teach-clarification` with no
+parameters, query or `Content-Encoding`. The unsigned four-byte big-endian
+prefix gives the strict UTF-8 JSON tuple length (1–32 KiB). The exact tuple is
+`[1,"ask",xlsxBytes]` or `[1,"reply",xlsxBytes,pdfBytes,pngBytes,workbookSha256,answer]`.
+Raw XLSX bytes follow, then PDF and PNG in that order if nonzero. No names,
+IDs, base64 attachments or URLs. Byte limits: XLSX one byte to 5 MiB,
+PDF/PNG up to 2 MiB each (zero means absent), 9 MiB + 32 KiB + 4 bytes total,
+and a nonblank answer of at most 4 KiB of decoded UTF-8. Segment lengths are
+checked before allocation; truncation and the first excess byte are rejected
+without draining. Errors are non-cacheable: `400` framing/text, `413` exceeded
+budgets, `415` unsupported type/encoding/structure, `409` continuity, `401`/`403`
+access, `404` unavailable, `408` deadline, `429` busy and generic `500` internal
+failure. The proxy sanitizes replies and may return generic `502`.
+
+The inspector's typed structural result identifies exactly two literal
+`Precio fijo` text headers in visible sheets, in inspection order. For this
+pilot only, the header heuristic uses the first row with a visible nonblank
+literal: standard hidden flags, zero row height and zero column width exclude
+cells. Overlapping or malformed column ranges, unsupported default-hidden
+sizing, collapsed outlines, and ambiguous visibility yield `not_applicable`
+on ask and `409` on reply. These checks use the same bounded worksheet parse and do not change
+`/inspect-workbook` headers, grammar or wire. Success is
+closed `200 application/json; charset=UTF-8` (`no-store`, up to 4 KiB):
+`{"kind":"question","workbookSha256":"…","candidates":[{"sheet":"Tarifas","a1":"B2"},{"sheet":"Tarifas","a1":"C2"}]}`,
+`{"kind":"not_applicable"}`, or `{"kind":"acknowledged"}`. The reply resubmits the
+same XLSX; the server computes SHA-256 on the received chunks and reconstructs
+candidates. A digest is not a grant or evidence of a prior request. The fixed
+in-process adapter gets only verified sheet ordinals and A1 coordinates,
+the reply as inert data and read-only views of optional validated PDF/PNG byte
+segments. Only the expected decision for the stage is accepted. No XLSX bytes
+or credentials cross the port; there is no attachment interpretation, provider,
+rule creation, import, persistence or payload logging. Bytes are request-local.
+Existing messages, references and inspection wires are unchanged.
+
+JDK 17 focused gate:
+
+```sh
+./gradlew test --tests '*TeachMeAccessRoutesTest' --tests '*FirebaseRouteAuthTest' \
+  --tests '*TeachWorkbook*Test' --tests '*TeachReference*Test' \
+  --tests '*TeachClarificationRoutesTest' --tests '*TeachClarificationServiceTest'
+```
+
+With Node 20 also on `PATH`, run the joint gate from BmBackend using the BmWeb
+checkout with installed dependencies:
+
+```sh
+BM_TEACH_CLARIFY_TEST_WEB="$(cd ../BmWeb && pwd)" ./gradlew test --rerun \
+  --tests '*TeachClarificationRoutesTest.candidate Pages proxy and Ktor share the same two synthetic turns over loopback' --info
+```
+
+An ephemeral Netty listener mounts the candidate guard with a controlled token
+verifier and in-memory admin repository. The test drives an ephemeral Node HTTP
+server running the candidate Pages handler, then asserts both turns and exact
+reference bytes at the local adapter. This does not certify real Firebase/QA
+access, deployed infrastructure, a model provider or browser layout. The full
+backend gate remains `./gradlew build`.

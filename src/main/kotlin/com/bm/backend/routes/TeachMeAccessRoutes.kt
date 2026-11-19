@@ -4,6 +4,8 @@ import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.TeachWorkbookAuthDecision
 import com.bm.backend.services.AdminAccessControlService
 import com.bm.backend.services.TeachMeAccessPolicy
+import com.bm.backend.services.TeachClarificationAdapter
+import com.bm.backend.services.fixedTeachClarificationAdapter
 import com.google.firebase.auth.FirebaseAuthException
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
@@ -13,9 +15,11 @@ import io.ktor.server.response.respond
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.get
 
-fun Route.teachMeAccessRoutes(
+internal fun Route.teachMeAccessRoutes(
     adminAccess: AdminAccessControlService,
     policy: TeachMeAccessPolicy,
+    clarificationEnabled: Boolean = false,
+    clarificationAdapter: TeachClarificationAdapter = fixedTeachClarificationAdapter,
     verifyToken: (String) -> AuthenticatedFirebaseUser = ::verifyFirebaseIdToken
 ) {
     if (!policy.enabled) return
@@ -29,7 +33,7 @@ fun Route.teachMeAccessRoutes(
         }
         call.respond(HttpStatusCode.NoContent)
     }
-    teachWorkbookMessageRoutes { token ->
+    teachWorkbookMessageRoutes(clarificationEnabled = clarificationEnabled, clarificationAdapter = clarificationAdapter) { token ->
         val user = try { verifyToken(token) } catch (_: FirebaseAuthException) {
             return@teachWorkbookMessageRoutes TeachWorkbookAuthDecision.InvalidToken
         }

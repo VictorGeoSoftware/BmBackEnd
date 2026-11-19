@@ -1,5 +1,6 @@
 package com.bm.backend.services
 
+import com.bm.backend.models.TeachClarificationInspection
 import com.bm.backend.models.TeachWorkbookAttachment
 import com.bm.backend.models.TeachWorkbookCell
 import com.bm.backend.models.TeachWorkbookInspection
@@ -32,14 +33,27 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
     fun inspect(
         validator: TeachWorkbookValidator, bytes: ByteArray, size: Int, filename: String, checkpoint: () -> Unit,
     ): ByteArray {
-        val inspection = validator.readPackage(bytes, size, checkpoint) { names, read ->
-            val xml = TeachWorkbookInspectionXml(limits, checkpoint, read)
-            validator.identify(names, exact = true,
-                types = { xml.metadata(TYPES, TYPES_NS, "Types", it) },
-                rels = { xml.metadata(RELS, RELS_NS, "Relationships", it) },
-            ) { main, contentType -> inspectParts(xml, names, main, contentType) }
-        }
+        val inspection = inspectStructure(validator, bytes, size, checkpoint)
         return encode(TeachWorkbookInspectionReceipt(TeachWorkbookAttachment("workbook", filename, size), inspection), checkpoint)
+    }
+
+    fun inspectForClarification(
+        validator: TeachWorkbookValidator, bytes: ByteArray, size: Int, checkpoint: () -> Unit,
+    ): TeachClarificationInspection {
+        val visibleHeaders = mutableListOf<List<String>?>()
+        val workbook = inspectStructure(validator, bytes, size, checkpoint, visibleHeaders)
+        return TeachClarificationInspection(workbook, visibleHeaders)
+    }
+
+    private fun inspectStructure(
+        validator: TeachWorkbookValidator, bytes: ByteArray, size: Int, checkpoint: () -> Unit,
+        visibleHeaders: MutableList<List<String>?>? = null,
+    ): TeachWorkbookInspection = validator.readPackage(bytes, size, checkpoint) { names, read ->
+        val xml = TeachWorkbookInspectionXml(limits, checkpoint, read)
+        validator.identify(names, exact = true,
+            types = { xml.metadata(TYPES, TYPES_NS, "Types", it) },
+            rels = { xml.metadata(RELS, RELS_NS, "Relationships", it) },
+        ) { main, contentType -> inspectParts(xml, names, main, contentType, visibleHeaders) }
     }
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -60,6 +74,7 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
 
     private fun inspectParts(
         xml: TeachWorkbookInspectionXml, names: Set<String>, main: String, contentType: (String) -> String?,
+        visibleHeaders: MutableList<List<String>?>?,
     ): TeachWorkbookInspection {
         val sheets = mutableListOf<TeachWorkbookSheetBinding>()
         val sheetNames = hashSetOf<String>()
@@ -154,22 +169,25 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
         }.orEmpty()
         var totalCells = 0
         val inspected = sheets.map { sheet ->
-            xml.parse(targets.getValue(sheet.relationshipId), SHEET_NS, "worksheet") {
-                worksheet(sheet, strings) { within(++totalCells <= limits.cells) }
+            val visibility = if (visibleHeaders != null && sheet.state == "visible") TeachClarificationVisibility(SHEET_NS) else null
+            val inspectedSheet = xml.parse(targets.getValue(sheet.relationshipId), SHEET_NS, "worksheet") {
+                worksheet(sheet, strings, visibility) { within(++totalCells <= limits.cells) }
             }
+            visibleHeaders?.add(if (visibility != null) visibility.result() else emptyList())
+            inspectedSheet
         }
         return TeachWorkbookInspection(1, dateSystem, inspected)
     }
 
     private fun TeachWorkbookInspectionXml.Cursor.worksheet(
-        sheet: TeachWorkbookSheetBinding, strings: List<String>, countCell: () -> Unit,
+        sheet: TeachWorkbookSheetBinding, strings: List<String>, visibility: TeachClarificationVisibility?, countCell: () -> Unit,
     ): TeachWorkbookSheet {
         val cells = mutableListOf<TeachWorkbookCell>()
         var headers: List<String>? = null
         var sheetData = false
         elements {
             if (reader.localName != "sheetData") {
-                skip()
+                if (visibility != null) visibility.skipMetadata(this, sheetData) else skip()
             } else {
                 expect("sheetData")
                 workbookCheck(!sheetData)
@@ -186,6 +204,8 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                     previousRow = row
                     var previousCol = 0
                     val firstCell = cells.size
+                    val visibleHeaderRow = visibility?.takeIf { it.rowVisible(reader) && it.headers == null }
+                    val visibleCells = visibleHeaderRow?.let { mutableListOf<TeachWorkbookCell>() }
                     elements {
                         if (reader.localName == "extLst") {
                             expect("extLst")
@@ -198,16 +218,13 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                             val col = match.groupValues[1].fold(0) { acc, c -> acc * 26 + (c - 'A' + 1) }
                             workbookCheck(col in (previousCol + 1)..16_384 && match.groupValues[2] == rowRef)
                             previousCol = col
-                            cells.add(cell(ref, strings))
+                            val parsed = cell(ref, strings)
+                            cells.add(parsed)
+                            if (visibleCells != null && visibleHeaderRow.columnVisible(col)) visibleCells.add(parsed)
                         }
                     }
-                    if (headers == null) {
-                        val rowCells = cells.subList(firstCell, cells.size)
-                        fun text(cell: TeachWorkbookCell) = cell.kind == "text" && cell.value!!.content.any { !isUnicodeSpace(it) }
-                        if (rowCells.any { it.kind in NON_TEXT_HEADER_LITERALS || text(it) }) {
-                            headers = rowCells.filter(::text).map { it.a1 }
-                        }
-                    }
+                    if (headers == null) headers = headerCoordinates(cells.subList(firstCell, cells.size))
+                    if (visibleCells != null) visibleHeaderRow.headers = headerCoordinates(visibleCells)
                 }
             }
         }
@@ -332,6 +349,12 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
         attr(name)?.takeIf(String::isNotBlank) ?: throw InvalidWorkbook()
 }
 
+/** null: keep looking; empty: a literal row exists but has no text headers. */
+private fun headerCoordinates(row: List<TeachWorkbookCell>): List<String>? {
+    fun text(cell: TeachWorkbookCell) = cell.kind == "text" && cell.value!!.content.any { !isUnicodeSpace(it) }
+    return if (row.any { it.kind in NON_TEXT_HEADER_LITERALS || text(it) }) row.filter(::text).map { it.a1 } else null
+}
+
 private fun validDate(text: String): Boolean {
     if (!DATE.matches(text) || text.startsWith("0000")) return false
     return try {
@@ -341,7 +364,7 @@ private fun validDate(text: String): Boolean {
 }
 
 /** Unicode White_Space, not Java's narrower isWhitespace or Kotlin's broader union. */
-private fun isUnicodeSpace(c: Char) = c in '\u0009'..'\u000d' || c in '\u2000'..'\u200a' ||
+internal fun isUnicodeSpace(c: Char) = c in '\u0009'..'\u000d' || c in '\u2000'..'\u200a' ||
     c in " \u0085\u00a0\u1680\u2028\u2029\u202f\u205f\u3000"
 
 private fun within(allowed: Boolean) { if (!allowed) throw WorkbookBudgetExceeded() }

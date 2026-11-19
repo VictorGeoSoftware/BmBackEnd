@@ -315,7 +315,8 @@ fun Application.configureRouting(
                     adminAccessRoutes(adminAccessControlService)
                     teachMeAccessRoutes(
                         adminAccessControlService,
-                        TeachMeAccessPolicy(DeploymentInfo.environment, System.getenv("BM_TEACH_ME_ADMIN_EMAILS"))
+                        TeachMeAccessPolicy(DeploymentInfo.environment, System.getenv("BM_TEACH_ME_ADMIN_EMAILS")),
+                        clarificationEnabled = System.getenv("BM_TEACH_CLARIFY_LOCAL") == "true",
                     )
                     grantedUsersRoutes(grantedUsersService, adminAccessControlService)
                     collectedPricesRoutes(

@@ -124,9 +124,12 @@ internal class TeachWorkbookInspectionXml(
 
         fun empty() = elements { throw InvalidWorkbook() }
 
-        fun skip() {
+        fun skip(visit: (Cursor.() -> Unit)? = null) {
             val until = depth - 1
-            while (depth > until) next()
+            while (depth > until) {
+                next()
+                visit?.invoke(this)
+            }
         }
 
         fun scalar(accept: (String) -> Unit = {}) {
