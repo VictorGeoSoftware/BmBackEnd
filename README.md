@@ -655,3 +655,43 @@ The focused gate includes the unchanged PDF multipart/admin-list routes against
 a separate simulated store and an allowlisted child pointed at a synthetic
 Docling HTTP server on loopback. Run the prior clarification, draft, preview
 and activation joints separately as well; default skips are not evidence.
+
+### Enséñame: validate a committed QA import (synthetic harness only)
+
+The optional validation capability is mounted only by tests, not by application
+startup or flags. `POST /api/v1/teach-me/proposal-validation` accepts a singleton
+`application/json` content type and fixed-length UTF-8 body of up to 1 KiB:
+`{"validationRef":"<lowercase canonical UUID>","confirmExpectedPrices":true}`.
+No query, transfer/content encoding, duplicate fields or client evidence. The
+server verifies current admin/nomination and the fixture UID before opening the
+body, and rechecks the same UID before a write or replay. The deadline and
+admission limits are shared with normal import.
+
+`201 validated` and `200 alreadyValidated` return the exact `importId`,
+`revisionId`, `generation` and UTC `validatedAt`; a foreign, unknown or retired
+fixture reference returns the same `404`. The only readback is the scoped
+`GET /api/v1/teach-me/proposal-imports?validation=1` (optional `&cursor=<id>`).
+Its snapshot adds `validationRef` and `validation: null | {kind,validatedAt}`
+per batch. The plain list has neither field. Responses are `no-store` at the
+application boundaries; malformed requests rejected by the HTTP engines before
+routing have the engines' own response handling.
+
+The author can validate a committed A after B becomes active, including an A
+import that finished after the replacement. No active pointer is read or written
+and no evidence transfers to B or another load. The isolated test PostgreSQL
+database retains the append-only event across server recomposition until its
+container and volume are destroyed. It does not record real users or data.
+
+JDK 17: include `--tests '*TeachProposalValidation*Test'` in the focused gate
+above, and run `./gradlew build`. The direct tests run real Netty/PG16 (including
+scoped ACL, concurrent write/replay, rollback/response loss, and teardown). With
+Node 20 also run the five earlier joints plus:
+
+```sh
+BM_TEACH_CLARIFY_TEST_WEB="$(cd ../BmWeb && pwd)" ./gradlew test --rerun \
+  --tests '*TeachProposalValidationRoutesTest.candidate Pages proxy and Ktor validate exact committed QA import over loopback' --info
+```
+
+The joint uses the candidate Pages handlers and disposable PG on ephemeral
+loopback, with the existing synthetic workbook/oracle. This is not browser
+E2E, hosted Firebase, QA-stack verification, or a release procedure.

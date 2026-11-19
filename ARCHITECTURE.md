@@ -61,3 +61,20 @@ actor/attempt claim serializes duplicate writers. One transaction appends the ba
 and three cited proposal rows with exact SQL decimals, or the whole write rolls
 back. Committed attempts replay without selection; an independent read-only
 snapshot lists only the authenticated actor's committed batches.
+
+## Enséñame — validate a committed synthetic QA import
+
+`TeachProposalValidationService` mounts only with the same verified import
+capability and the schema-v2 proposals descriptor. The shared QA route verifies
+the current principal before reading JSON and rechecks the same token and UID
+immediately before confirmation or replay. It uses the existing admission,
+deadline and bounded IO dispatcher. No application startup supplies the service.
+
+`TeachProposalValidationStore` is an append/replay boundary, not a catalog reader.
+Its test-only adapter verifies the writer and store binding on every connection.
+It resolves the immutable committed batch by UUID and verified UID, then inserts
+an event with a composite foreign key. Uniqueness serializes confirmations; a
+fresh READ COMMITTED statement can read a competing transaction's original
+event. The existing list reader joins actor and reference in the same read-only
+snapshot only for the explicit enriched projection. Neither path retries against
+another store or uses the active revision; the ordinary list wire is unchanged.

@@ -62,3 +62,23 @@
   disposable fixture lifetime. No workbook, filename, token, export or backup.
   The PDF test uses inert bytes and an isolated simulated repository with a fake
   downstream on loopback. Nothing here validates or promotes a revision.
+
+## Enséñame — isolated QA result validation harness
+
+- Confirm exactly one committed import of the current, nominated synthetic UID.
+  A historical A remains eligible after B replaces it; B and other loads of A
+  never inherit evidence. Neither validation nor replay reads or changes the
+  catalog, proposals, extractor, or PDF path. This is not promotion eligibility.
+- PostgreSQL assigns the private target during import and the timestamp during
+  confirmation. Only an immutable successful event (reference, UID, timestamp,
+  fixed outcome) is retained for the disposable fixture's lifetime. Do not retain
+  labels, contact details, filenames, workbooks, prices, tokens or attempts here.
+- Provisioning exists only in tests. Verify database, effective role, descriptor,
+  QA environment, catalog binding, registry manifest and schema version. Writer
+  and list roles have only column grants needed for their path. This is not RLS;
+  every target lookup, join and replay is scoped to the verified UID. The runtime
+  receives no provisioner, catalog or sentinel connection for validation.
+- The four workers, four permits and 15-second deadline remain shared. Check the
+  peer/budget before commit and close SQL resources before returning admission.
+  Loss after commit starts is not proof of rollback. Recovery is scoped readback
+  or intentional replay of the same target, without an extra event.

@@ -24,7 +24,7 @@ internal class TeachProposalImportService private constructor(
                       { revision, inspection, checkpoint -> applyTeachPriceRule(revision.rule, inspection, checkpoint) }): TeachProposalImportService? {
             val id = store.identity
             if (!teachFixtureId.matches(id.storeId) || id.storeId == selector.catalogId || id.catalogId != selector.catalogId ||
-                id.manifest != selector.manifest || id.environment != "qa" || id.schemaVersion != 1) return null
+                id.manifest != selector.manifest || id.environment != "qa" || id.schemaVersion !in 1..2) return null
             return try { store.verify(); TeachProposalImportService(selector, store, apply) }
             catch (_: TeachProposalStoreUnavailable) { null }
         }
@@ -58,6 +58,11 @@ internal class TeachProposalImportService private constructor(
 
     fun list(actor: String, before: Long?, remaining: () -> Long, checkpoint: () -> Unit) =
         store.list(actor, before, remaining, checkpoint)
+
+    val identity get() = store.identity
+    fun verifyValidationProjection() = store.verifyValidationProjection()
+    fun listWithValidation(actor: String, before: Long?, remaining: () -> Long, checkpoint: () -> Unit) =
+        store.listWithValidation(actor, before, remaining, checkpoint)
 }
 
 // Approved synthetic table coordinates, not its values or a hash of the incoming workbook.

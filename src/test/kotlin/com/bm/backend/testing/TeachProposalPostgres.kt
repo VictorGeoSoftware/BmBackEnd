@@ -10,21 +10,24 @@ internal class TeachProposalPostgres(
     private val owner: (String, (Connection) -> Unit) -> Unit,
     private val connect: (String, String, String, () -> Long, () -> Unit) -> Connection,
 ) {
-    val identity = TeachProposalImportIdentity(UUID.randomUUID().toString().replace("-", ""), catalog.storeId, manifest)
+    val identity = TeachProposalImportIdentity(UUID.randomUUID().toString().replace("-", ""), catalog.storeId, manifest, schemaVersion = 2)
     private val suffix = identity.storeId.take(12)
     val db = "qa_import_$suffix"
     private val writer = "import_writer_$suffix"
     private val reader = "import_reader_$suffix"
+    private val validator = "validation_writer_$suffix"
     private val writerPassword = UUID.randomUUID().toString()
     private val readerPassword = UUID.randomUUID().toString()
+    private val validatorPassword = UUID.randomUUID().toString()
 
     fun provision(adminDb: String) {
         owner(adminDb) { sql ->
             sql.exec("CREATE ROLE $writer LOGIN PASSWORD '$writerPassword'")
             sql.exec("CREATE ROLE $reader LOGIN PASSWORD '$readerPassword'")
+            sql.exec("CREATE ROLE $validator LOGIN PASSWORD '$validatorPassword'")
             sql.exec("CREATE DATABASE $db")
             sql.exec("REVOKE ALL ON DATABASE $db FROM PUBLIC")
-            sql.exec("GRANT CONNECT ON DATABASE $db TO $writer, $reader")
+            sql.exec("GRANT CONNECT ON DATABASE $db TO $writer, $reader, $validator")
         }
         owner(db) { sql ->
             sql.exec("CREATE SCHEMA proposals")
@@ -41,24 +44,35 @@ internal class TeachProposalPostgres(
                 environment text NOT NULL CHECK (environment = 'qa'), supplier text NOT NULL CHECK (supplier = 'gesternova'),
                 revision text NOT NULL CHECK (revision ~ '^[0-9a-f]{64}$'), generation bigint NOT NULL CHECK (generation > 0),
                 manifest text NOT NULL CHECK (manifest ~ '^[0-9a-f]{64}$'), source text NOT NULL CHECK (source IN ('filename', 'content')),
-                imported_at timestamptz NOT NULL DEFAULT clock_timestamp(), UNIQUE (actor, attempt))""")
+                imported_at timestamptz NOT NULL DEFAULT clock_timestamp(), UNIQUE (actor, attempt),
+                validation_ref uuid NOT NULL DEFAULT gen_random_uuid() UNIQUE, UNIQUE (validation_ref, actor))""")
             sql.exec("CREATE INDEX import_actor_id ON proposals.batch (actor, id DESC)")
             sql.exec("""CREATE TABLE proposals.proposal (
                 batch_id bigint REFERENCES proposals.batch(id), workbook_row integer NOT NULL CHECK (workbook_row BETWEEN 16 AND 18),
                 provenance jsonb NOT NULL CHECK (provenance->'proposalCell'->>'a1' = 'I' || workbook_row::text),
                 energy numeric(18,12) NOT NULL CHECK (energy >= 0), power1 numeric(18,12) NOT NULL CHECK (power1 >= 0),
                 power2 numeric(18,12) NOT NULL CHECK (power2 >= 0), PRIMARY KEY(batch_id, workbook_row))""")
-            sql.exec("GRANT USAGE ON SCHEMA proposals TO $writer, $reader")
-            sql.exec("GRANT SELECT ON proposals.identity TO $writer, $reader")
-            sql.exec("GRANT SELECT (id, actor, attempt, digest, revision, generation), INSERT ON proposals.batch TO $writer")
+            sql.exec("""CREATE TABLE proposals.validation (
+                validation_ref uuid PRIMARY KEY, actor text NOT NULL, validated_at timestamptz NOT NULL DEFAULT clock_timestamp(),
+                result text NOT NULL DEFAULT 'expected_prices_confirmed' CHECK (result = 'expected_prices_confirmed'),
+                FOREIGN KEY (validation_ref, actor) REFERENCES proposals.batch(validation_ref, actor))""")
+            sql.exec("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
+            sql.exec("GRANT USAGE ON SCHEMA proposals TO $writer, $reader, $validator")
+            sql.exec("GRANT SELECT ON proposals.identity TO $writer, $reader, $validator")
+            sql.exec("GRANT SELECT (id, actor, attempt, digest, revision, generation), INSERT (actor, attempt, digest, environment, supplier, revision, generation, manifest, source) ON proposals.batch TO $writer")
             sql.exec("GRANT INSERT ON proposals.proposal TO $writer")
-            sql.exec("GRANT SELECT (id, actor, supplier, revision, generation, imported_at) ON proposals.batch TO $reader")
+            sql.exec("GRANT SELECT (id, actor, supplier, revision, generation, imported_at, validation_ref) ON proposals.batch TO $reader")
             sql.exec("GRANT SELECT ON proposals.proposal TO $reader")
+            sql.exec("GRANT SELECT (id, actor, environment, revision, generation, manifest, validation_ref) ON proposals.batch TO $validator")
+            sql.exec("GRANT INSERT (validation_ref, actor), SELECT (validation_ref, actor, validated_at) ON proposals.validation TO $validator")
+            sql.exec("GRANT SELECT (validation_ref, actor, validated_at) ON proposals.validation TO $reader")
         }
         catalog.sentinel { sql ->
             sql.exec("CREATE SCHEMA proposals")
             sql.exec("CREATE TABLE proposals.canary (fixture text PRIMARY KEY, proposal_count integer NOT NULL)")
             sql.exec("INSERT INTO proposals.canary VALUES ('prod-synthetic', 17)")
+            sql.exec("CREATE TABLE proposals.validation (canary text PRIMARY KEY, validation_count integer NOT NULL)")
+            sql.exec("INSERT INTO proposals.validation VALUES ('prod-synthetic', 23)")
         }
     }
 
@@ -69,6 +83,12 @@ internal class TeachProposalPostgres(
             { remaining, check -> connect(db, reader, readerPassword, remaining, check) }, afterRow, beforeClaim, afterCommit)
 
     fun owner(run: (Connection) -> Unit) = owner(db, run)
+    fun validationStore(descriptor: TeachProposalImportIdentity = identity, database: String = db, writeRole: String = validator,
+                        beforeInsert: () -> Unit = {}, beforeCommit: () -> Unit = {}, afterCommit: () -> Unit = {}) =
+        TeachProposalValidationJdbcStore(descriptor, database, writeRole,
+            { remaining, check -> connect(db, validator, validatorPassword, remaining, check) }, beforeInsert, beforeCommit, afterCommit)
+
+    fun validationConnection(database: String = db) = connect(database, validator, validatorPassword, { 5_000 }, {})
     fun connection(writable: Boolean, database: String = db) = if (writable)
         connect(database, writer, writerPassword, { 5_000 }, {}) else connect(database, reader, readerPassword, { 5_000 }, {})
 }

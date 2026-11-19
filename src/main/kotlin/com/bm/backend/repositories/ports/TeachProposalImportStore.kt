@@ -5,6 +5,7 @@ import com.bm.backend.models.TeachProposalImportIdentity
 import com.bm.backend.models.TeachProposalImportPage
 import com.bm.backend.models.TeachProposalImportPending
 import com.bm.backend.models.TeachProposalImportReceipt
+import com.bm.backend.models.TeachValidatedImportPage
 
 internal class TeachProposalStoreUnavailable : RuntimeException()
 internal class TeachProposalAttemptMismatch : RuntimeException()
@@ -19,4 +20,7 @@ internal interface TeachProposalImportStore {
     fun record(attempt: TeachProposalImportAttempt, pending: TeachProposalImportPending?, remaining: () -> Long,
                checkpoint: () -> Unit): TeachProposalImportReceipt
     fun list(actor: String, before: Long?, remaining: () -> Long, checkpoint: () -> Unit): TeachProposalImportPage
+    fun verifyValidationProjection(): Unit = throw TeachProposalStoreUnavailable()
+    fun listWithValidation(actor: String, before: Long?, remaining: () -> Long, checkpoint: () -> Unit): TeachValidatedImportPage =
+        throw TeachProposalStoreUnavailable()
 }

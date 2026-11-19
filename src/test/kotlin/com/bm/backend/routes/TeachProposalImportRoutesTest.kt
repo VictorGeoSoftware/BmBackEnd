@@ -41,30 +41,26 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicInteger
 import kotlin.test.*
 
-class TeachProposalImportRoutesTest {
-    private val books = activationWorkbooks().take(2)
-    private val registry = TeachActivationRegistry(books.map { it.digest }.toSet())
-    private val workbook = importWorkbook()
+internal abstract class TeachProposalHttpHarness {
+    protected val books = activationWorkbooks().take(2)
+    protected val registry = TeachActivationRegistry(books.map { it.digest }.toSet())
+    protected val workbook = importWorkbook()
     private val path = "/api/v1$PROPOSAL_IMPORT_PATH"
     private val listPath = "/api/v1$PROPOSAL_IMPORT_LIST_PATH"
-    private val nominated = "author@example.invalid"
+    protected val nominated = "author@example.invalid"
     private val other = "another@example.invalid"
     private val excluded = "not-nominated@example.invalid"
-    private val name = "bm-pilot-gesternova.xlsx"
-    private val http = HttpClient.newBuilder().proxy(ProxySelector.of(null)).version(HttpClient.Version.HTTP_1_1).build()
+    protected val name = "bm-pilot-gesternova.xlsx"
+    protected val http = HttpClient.newBuilder().proxy(ProxySelector.of(null)).version(HttpClient.Version.HTTP_1_1).build()
 
-    private class Counted(private val reader: TeachActiveSkillReader) : TeachActiveSkillReader by reader {
-        val reads = AtomicInteger()
-        override fun read(manifest: String, supplier: String, remainingMillis: () -> Long, checkpoint: () -> Unit): TeachActiveSkill? {
-            reads.incrementAndGet()
-            return reader.read(manifest, supplier, remainingMillis, checkpoint)
-        }
-    }
-
-    private fun <T> netty(service: TeachProposalImportService?, pilot: TeachSkillActivationService? = null,
+    protected fun <T> netty(service: TeachProposalImportService?, pilot: TeachSkillActivationService? = null,
                           env: String = "qa", revoked: AtomicBoolean = AtomicBoolean(),
                           receives: AtomicInteger = AtomicInteger(), completion: TeachCallCompletion = TeachCallCompletion(),
                           otherRoutes: Route.(AdminAccessControlService) -> Unit = {},
+                          validation: TeachProposalValidationService? = null,
+                          onVerify: (String) -> Unit = {},
+                          resolveUid: (String) -> String = { it },
+                          onReceive: () -> Unit = {},
                           run: (Int, TeachCallCompletion) -> T): T {
         val admins = InMemoryAdminUsersRepository().apply { add(nominated); add(other); add(excluded) }
         val server = embeddedServer(Netty, applicationEngineEnvironment {
@@ -72,14 +68,15 @@ class TeachProposalImportRoutesTest {
             connector { host = "127.0.0.1"; port = 0 }
             module {
                 configurePlugins()
-                completion.install(this) { it.request.path() in setOf(path, listPath, "/api/v1/teach-me/activation", "/api/v1/teach-me/clarifications") }
-                receivePipeline.intercept(ApplicationReceivePipeline.Before) { receives.incrementAndGet() }
+                completion.install(this) { it.request.path() in setOf(path, listPath, "/api/v1$PROPOSAL_VALIDATION_PATH", "/api/v1/teach-me/activation", "/api/v1/teach-me/clarifications") }
+                receivePipeline.intercept(ApplicationReceivePipeline.Before) { receives.incrementAndGet(); onReceive() }
                 routing { route("/api/v1") {
                     val adminAccess = AdminAccessControlService(admins)
                     otherRoutes(adminAccess)
                     teachMeAccessRoutes(adminAccess, TeachMeAccessPolicy(env, "$nominated,$other"),
                         clarificationEnabled = pilot != null, supplierDraftEnabled = pilot != null, draftPreviewEnabled = pilot != null,
-                        activationPilot = pilot, proposalImport = service) { token ->
+                        activationPilot = pilot, proposalImport = service, proposalValidation = validation) { token ->
+                        onVerify(token)
                         val (uid, email) = when (token) {
                             "fixture-token" -> "synthetic-author" to (if (revoked.get()) excluded else nominated)
                             "other-token" -> "synthetic-other" to other
@@ -88,7 +85,7 @@ class TeachProposalImportRoutesTest {
                             else -> throw FirebaseAuthException(ErrorCode.UNAUTHENTICATED, "invalid synthetic token", null, null,
                                 AuthErrorCode.INVALID_ID_TOKEN)
                         }
-                        AuthenticatedFirebaseUser(uid, email, null, Instant.EPOCH, Instant.MAX)
+                        AuthenticatedFirebaseUser(resolveUid(uid), email, null, Instant.EPOCH, Instant.MAX)
                     }
                 } }
             }
@@ -99,29 +96,29 @@ class TeachProposalImportRoutesTest {
         } finally { server.stop(100, 1_000) }
     }
 
-    private fun pilot(db: TeachActivationPostgres) = assertNotNull(TeachSkillActivationService.mount(db.store(), registry,
+    protected fun pilot(db: TeachActivationPostgres) = assertNotNull(TeachSkillActivationService.mount(db.store(), registry,
         Clock.systemUTC(), ByteArray(32).also(SecureRandom()::nextBytes)))
     private fun uri(port: Int, path: String) = URI("http://127.0.0.1:$port$path")
-    private fun request(port: Int, path: String, token: String) = HttpRequest.newBuilder(uri(port, path)).timeout(Duration.ofSeconds(18))
+    protected fun request(port: Int, path: String, token: String) = HttpRequest.newBuilder(uri(port, path)).timeout(Duration.ofSeconds(18))
         .header("Authorization", "Bearer $token")
-    private fun id(number: Int) = number.toString(16).padStart(32, '0')
-    private fun encoded(filename: String) = Base64.getUrlEncoder().withoutPadding().encodeToString(filename.encodeToByteArray())
-    private fun post(port: Int, attempt: Int, bytes: ByteArray = workbook, filename: String = name, token: String = "fixture-token") =
+    protected fun id(number: Int) = number.toString(16).padStart(32, '0')
+    protected fun encoded(filename: String) = Base64.getUrlEncoder().withoutPadding().encodeToString(filename.encodeToByteArray())
+    protected fun post(port: Int, attempt: Int, bytes: ByteArray = workbook, filename: String = name, token: String = "fixture-token") =
         request(port, path, token).header("Content-Type", WORKBOOK_MEDIA_TYPE).header(WORKBOOK_FILENAME_HEADER, encoded(filename))
             .header(PROPOSAL_IMPORT_ATTEMPT_HEADER, id(attempt)).POST(HttpRequest.BodyPublishers.ofByteArray(bytes)).build()
-    private fun get(port: Int, query: String = "", token: String = "fixture-token") = request(port, listPath + query, token).GET().build()
-    private fun checked(response: HttpResponse<String>, status: Int): String {
+    protected fun get(port: Int, query: String = "", token: String = "fixture-token") = request(port, listPath + query, token).GET().build()
+    protected fun checked(response: HttpResponse<String>, status: Int): String {
         assertEquals(status, response.statusCode(), "unexpected import HTTP status")
         assertEquals(listOf("no-store"), response.headers().allValues("Cache-Control"))
         return response.body()
     }
-    private fun send(req: HttpRequest, status: Int, completion: TeachCallCompletion): String =
+    protected fun send(req: HttpRequest, status: Int, completion: TeachCallCompletion): String =
         checked(http.send(req, HttpResponse.BodyHandlers.ofString()), status).also { completion.await() }
-    private fun receipt(raw: String) = Json.decodeFromString<TeachProposalImportReceipt>(raw)
-    private fun page(raw: String) = Json.decodeFromString<TeachProposalImportPage>(raw)
-    private fun assertError(raw: String, error: String) = assertEquals(buildJsonObject { put("error", error) }, Json.parseToJsonElement(raw))
+    protected fun receipt(raw: String) = Json.decodeFromString<TeachProposalImportReceipt>(raw)
+    protected fun page(raw: String) = Json.decodeFromString<TeachProposalImportPage>(raw)
+    protected fun assertError(raw: String, error: String) = assertEquals(buildJsonObject { put("error", error) }, Json.parseToJsonElement(raw))
 
-    private fun activate(port: Int, completion: TeachCallCompletion, book: TeachActivationWorkbook,
+    protected fun activate(port: Int, completion: TeachCallCompletion, book: TeachActivationWorkbook,
                          previous: TeachActivationWorkbook? = null) {
         val priorGeneration = if (previous == null) "0" else "1"
         val preview = Json.parseToJsonElement(send(request(port, "/api/v1/teach-me/clarifications", "fixture-token")
@@ -139,7 +136,7 @@ class TeachProposalImportRoutesTest {
             200, completion)).jsonObject.getValue("kind").jsonPrimitive.content)
     }
 
-    private fun snapshot(fixture: TeachProposalPostgres) = buildList {
+    protected fun snapshot(fixture: TeachProposalPostgres) = buildList {
         fixture.owner { sql ->
             sql.transactionIsolation = Connection.TRANSACTION_REPEATABLE_READ
             sql.autoCommit = false
@@ -149,6 +146,19 @@ class TeachProposalImportRoutesTest {
             }
         }
     }
+}
+
+internal class TeachProposalImportRoutesTest : TeachProposalHttpHarness() {
+    private class Counted(private val reader: TeachActiveSkillReader) : TeachActiveSkillReader by reader {
+        val reads = AtomicInteger()
+        override fun read(manifest: String, supplier: String, remainingMillis: () -> Long, checkpoint: () -> Unit): TeachActiveSkill? {
+            reads.incrementAndGet()
+            return reader.read(manifest, supplier, remainingMillis, checkpoint)
+        }
+    }
+
+    private val path = "/api/v1$PROPOSAL_IMPORT_PATH"
+    private val listPath = "/api/v1$PROPOSAL_IMPORT_LIST_PATH"
 
     private fun acl(db: TeachActivationPostgres, fixture: TeachProposalPostgres) {
         fun denied(block: () -> Unit) = assertEquals("42501", assertFailsWith<SQLException>(block = block).sqlState)
@@ -323,7 +333,7 @@ class TeachProposalImportRoutesTest {
                 failRow.set(false); send(post(port, 4), 201, done)
                 assertNull(TeachProposalImportService.mount(selector, fixture.store(database = db.qaDb)))
                 assertNull(TeachProposalImportService.mount(selector, fixture.store(writeRole = db.qaRole)))
-                fixture.owner { it.exec("UPDATE proposals.identity SET schema_version = 2") }
+                fixture.owner { it.exec("UPDATE proposals.identity SET schema_version = 3") }
                 assertError(send(get(port), 503, done), "store_unavailable")
                 assertError(send(post(port, 5), 503, done), "store_unavailable")
             }

@@ -88,7 +88,7 @@ class TeachProposalImportServiceTest {
         assertEquals(TeachSupplierSelectionError.NoActiveSkill, assertFailsWith<TeachSupplierSelectionConflict> { prepare(service) }.error)
         active = TeachActiveSkill("f".repeat(64), "1")
         assertFailsWith<TeachSkillCatalogUnavailable> { prepare(service) }
-        for (invalid in listOf(expectedIdentity.copy(schemaVersion = 2), expectedIdentity.copy(environment = "prod"),
+        for (invalid in listOf(expectedIdentity.copy(schemaVersion = 3), expectedIdentity.copy(environment = "prod"),
             expectedIdentity.copy(catalogId = "c".repeat(32)), expectedIdentity.copy(manifest = "f".repeat(64)))) {
             assertNull(TeachProposalImportService.mount(selector, store(invalid)))
         }

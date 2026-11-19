@@ -10,9 +10,11 @@ import com.bm.backend.services.TeachClarificationAdapter
 import com.bm.backend.services.TeachSupplierDraftAdapter
 import com.bm.backend.services.TeachSupplierSkillSelectionService
 import com.bm.backend.services.TeachProposalImportService
+import com.bm.backend.services.TeachProposalValidationService
 import com.bm.backend.services.fixedTeachClarificationAdapter
 import com.bm.backend.services.fixedTeachSupplierDraftAdapter
 import com.google.firebase.auth.FirebaseAuthException
+import com.google.firebase.auth.AuthErrorCode
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpStatusCode
 import io.ktor.server.application.call
@@ -32,6 +34,7 @@ internal fun Route.teachMeAccessRoutes(
     activationPilot: TeachSkillActivationService? = null,
     supplierSelection: TeachSupplierSkillSelectionService? = null,
     proposalImport: TeachProposalImportService? = null,
+    proposalValidation: TeachProposalValidationService? = null,
     verifyToken: (String) -> AuthenticatedFirebaseUser = ::verifyFirebaseIdToken
 ) {
     if (!policy.enabled) return
@@ -45,17 +48,31 @@ internal fun Route.teachMeAccessRoutes(
         }
         call.respond(HttpStatusCode.NoContent)
     }
-    teachWorkbookMessageRoutes(clarificationEnabled = clarificationEnabled, clarificationAdapter = clarificationAdapter,
-        supplierDraftEnabled = supplierDraftEnabled, supplierDraftAdapter = supplierDraftAdapter,
-        draftPreviewEnabled = draftPreviewEnabled, activationPilot = activationPilot, supplierSelection = supplierSelection,
-        proposalImport = proposalImport) { token ->
-        val user = try { verifyToken(token) } catch (_: FirebaseAuthException) {
-            return@teachWorkbookMessageRoutes TeachWorkbookAuthDecision.InvalidToken
+    fun decide(token: String, validationWire: Boolean): TeachWorkbookAuthDecision {
+        val user = try { verifyToken(token) } catch (failure: FirebaseAuthException) {
+            if (validationWire && failure.authErrorCode !in setOf(AuthErrorCode.INVALID_ID_TOKEN, AuthErrorCode.EXPIRED_ID_TOKEN,
+                    AuthErrorCode.REVOKED_ID_TOKEN, AuthErrorCode.USER_DISABLED, AuthErrorCode.USER_NOT_FOUND, AuthErrorCode.TENANT_ID_MISMATCH)) {
+                throw TeachValidationIdentityUnavailable()
+            }
+            return TeachWorkbookAuthDecision.InvalidToken
+        } catch (failure: IllegalArgumentException) {
+            if (validationWire) return TeachWorkbookAuthDecision.InvalidToken
+            throw failure
+        } catch (failure: RuntimeException) {
+            if (validationWire) throw TeachValidationIdentityUnavailable()
+            throw failure
         }
-        when {
-            !adminAccess.isAdmin(user.email) -> TeachWorkbookAuthDecision.NotAdmin
+        val authorized = if (!validationWire) adminAccess.isAdmin(user.email) else try {
+            adminAccess.isAdminForProposalValidation(user.email)
+        } catch (_: Exception) { throw TeachValidationIdentityUnavailable() }
+        return when {
+            !authorized -> TeachWorkbookAuthDecision.NotAdmin
             !policy.allows(user.email) -> TeachWorkbookAuthDecision.NotNominated
             else -> TeachWorkbookPrincipal(user.uid)
         }
     }
+    teachWorkbookMessageRoutes(clarificationEnabled = clarificationEnabled, clarificationAdapter = clarificationAdapter,
+        supplierDraftEnabled = supplierDraftEnabled, supplierDraftAdapter = supplierDraftAdapter,
+        draftPreviewEnabled = draftPreviewEnabled, activationPilot = activationPilot, supplierSelection = supplierSelection,
+        proposalImport = proposalImport, proposalValidation = proposalValidation, authorizeValidation = { decide(it, true) }) { decide(it, false) }
 }

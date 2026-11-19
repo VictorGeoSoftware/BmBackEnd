@@ -84,16 +84,42 @@ internal class TeachProposalJdbcStore(
         }
     }
 
-    override fun list(actor: String, before: Long?, remaining: () -> Long, checkpoint: () -> Unit) = tx(false, remaining, checkpoint) {
-        val batches = query("""SELECT id, supplier, revision, generation, imported_at FROM proposals.batch
-            WHERE actor = ? ${if (before != null) "AND id < ?" else ""} ORDER BY id DESC LIMIT 5""",
+    override fun verifyValidationProjection() {
+        val start = System.nanoTime()
+        val remaining = { (5_000 - (System.nanoTime() - start) / 1_000_000).also { if (it <= 0) unavailable() } }
+        tx(false, remaining, { remaining() }) {
+            query("""SELECT b.validation_ref, v.validated_at FROM proposals.batch b LEFT JOIN proposals.validation v
+                ON v.validation_ref = b.validation_ref AND v.actor = b.actor WHERE false""") { check(!it.next()) }
+        }
+    }
+
+    override fun list(actor: String, before: Long?, remaining: () -> Long, checkpoint: () -> Unit): TeachProposalImportPage {
+        val (rows, cursor) = listSnapshot(actor, before, false, remaining, checkpoint)
+        return TeachProposalImportPage("imports", rows.map { it.first }, cursor)
+    }
+
+    override fun listWithValidation(actor: String, before: Long?, remaining: () -> Long, checkpoint: () -> Unit): TeachValidatedImportPage {
+        val (rows, cursor) = listSnapshot(actor, before, true, remaining, checkpoint)
+        return TeachValidatedImportPage("imports", rows.map { (batch, ref, evidence) ->
+            TeachValidatedImportBatch(batch, checkNotNull(ref), evidence)
+        }, cursor)
+    }
+
+    private fun listSnapshot(actor: String, before: Long?, enriched: Boolean, remaining: () -> Long, checkpoint: () -> Unit) =
+        tx(false, remaining, checkpoint) {
+        val batches = query("""SELECT b.id, b.supplier, b.revision, b.generation, b.imported_at
+            ${if (enriched) ", b.validation_ref, v.validated_at" else ""} FROM proposals.batch b
+            ${if (enriched) "LEFT JOIN proposals.validation v ON v.validation_ref = b.validation_ref AND v.actor = b.actor" else ""}
+            WHERE b.actor = ? ${if (before != null) "AND b.id < ?" else ""} ORDER BY b.id DESC LIMIT 5""",
             *listOfNotNull(actor, before).toTypedArray()) { rs ->
             buildList {
-                while (rs.next()) add(TeachProposalImportBatch(rs.getString(1), rs.getString(2), rs.getString(3),
-                    rs.getString(4), rs.getTimestamp(5).toInstant().toString(), emptyList()))
+                while (rs.next()) add(Triple(TeachProposalImportBatch(rs.getString(1), rs.getString(2), rs.getString(3),
+                    rs.getString(4), rs.getTimestamp(5).toInstant().toString(), emptyList()),
+                    if (enriched) rs.getString(6) else null,
+                    if (enriched) rs.getTimestamp(7)?.toInstant()?.toString()?.let { TeachProposalValidationEvidence("validated", it) } else null))
             }
         }
-        val page = batches.take(TEACH_IMPORT_LIST_PAGE_SIZE).map { batch ->
+        val page = batches.take(TEACH_IMPORT_LIST_PAGE_SIZE).map { (batch, ref, evidence) ->
             val proposals = query("""SELECT p.provenance, p.energy, p.power1, p.power2 FROM proposals.proposal p
                 JOIN proposals.batch b ON b.id = p.batch_id WHERE b.actor = ? AND b.id = ? ORDER BY p.workbook_row""",
                 actor, batch.importId.toLong()) { rs ->
@@ -108,9 +134,9 @@ internal class TeachProposalJdbcStore(
                 }
             }
             if (proposals.size != 3) unavailable()
-            batch.copy(proposals = proposals)
+            Triple(batch.copy(proposals = proposals), ref, evidence)
         }
-        TeachProposalImportPage("imports", page, page.lastOrNull()?.importId?.takeIf { batches.size > page.size })
+        page to page.lastOrNull()?.first?.importId?.takeIf { batches.size > page.size }
     }
 
     private fun <T> tx(writable: Boolean, remaining: () -> Long, checkpoint: () -> Unit, run: Tx.() -> T): T {
@@ -141,7 +167,7 @@ internal class TeachProposalJdbcStore(
         }
     }
 
-    private class Tx(private val sql: Connection, private val remaining: () -> Long, private val checkpoint: () -> Unit) {
+    internal class Tx(private val sql: Connection, private val remaining: () -> Long, private val checkpoint: () -> Unit) {
         private fun bounded() {
             checkpoint()
             val ms = remaining().toInt()

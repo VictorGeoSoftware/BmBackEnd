@@ -22,11 +22,16 @@ class AdminAccessControlService(
     /**
      * Returns true when the given account is permitted to act as an admin.
      */
-    fun isAdmin(email: String?): Boolean {
+    fun isAdmin(email: String?): Boolean = checkAdmin(email, logDenial = true)
+
+    /** Validation audit keeps account identifiers out of diagnostics. */
+    internal fun isAdminForProposalValidation(email: String?): Boolean = checkAdmin(email, logDenial = false)
+
+    private fun checkAdmin(email: String?, logDenial: Boolean): Boolean {
         val normalized = email?.trim()?.lowercase().orEmpty()
         if (normalized.isBlank()) return false
         val allowed = adminUsersRepository.existsByEmail(normalized)
-        if (!allowed) {
+        if (!allowed && logDenial) {
             logger.warn("AUDIT: Admin access denied for non-admin account email={}", normalized)
         }
         return allowed
