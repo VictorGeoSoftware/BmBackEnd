@@ -10,12 +10,16 @@ import com.bm.backend.services.InvalidWorkbook
 import com.bm.backend.services.InvalidReference
 import com.bm.backend.services.TeachReferenceValidator
 import com.bm.backend.services.TeachWorkbookAuthWorkers
+import com.bm.backend.services.TeachWorkbookInspector
 import com.bm.backend.services.TeachWorkbookValidator
 import com.bm.backend.services.WorkbookBudgetExceeded
 import com.bm.backend.services.isWorkbookBidi
+import io.ktor.http.ContentType
 import io.ktor.http.HttpHeaders
 import io.ktor.http.HttpMethod
 import io.ktor.http.HttpStatusCode
+import io.ktor.http.URLDecodeException
+import io.ktor.http.decodeURLPart
 import io.ktor.server.application.Application
 import io.ktor.server.application.ApplicationCall
 import io.ktor.server.application.ApplicationStopped
@@ -27,6 +31,7 @@ import io.ktor.server.request.path
 import io.ktor.server.request.uri
 import io.ktor.server.response.header
 import io.ktor.server.response.respond
+import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.RoutingApplicationCall
 import io.ktor.server.routing.application
@@ -51,13 +56,26 @@ internal const val WORKBOOK_FILENAME_HEADER = "X-Teach-Workbook-Filename"
 internal const val WORKBOOK_BODY_LIMIT = 5 * 1024 * 1024
 private const val WORKBOOK_MESSAGE_PATH = "/teach-me/messages"
 private const val REFERENCE_PATH = "/teach-me/references"
+private const val WORKBOOK_INSPECTION_PATH = "/teach-me/inspect-workbook"
+private val teachUploadPaths = listOf(WORKBOOK_MESSAGE_PATH, REFERENCE_PATH, WORKBOOK_INSPECTION_PATH)
+private val teachUploadApiSegments = teachUploadPaths.map { ("/api/v1$it").drop(1).split('/') }.toSet()
 internal const val REFERENCE_FILENAME_HEADER = "X-Teach-Reference-Filename"
 internal const val REFERENCE_BODY_LIMIT = 2 * 1024 * 1024
 private val filenameWire = Regex("[A-Za-z0-9_-]{1,340}")
 private class InvalidTeachUpload : RuntimeException()
 
-internal fun ApplicationCall.isTeachUpload() = request.httpMethod == HttpMethod.Post &&
-    request.path().trimEnd('/').let { it == "/api/v1$WORKBOOK_MESSAGE_PATH" || it == "/api/v1$REFERENCE_PATH" }
+internal fun ApplicationCall.isTeachUpload(): Boolean {
+    if (request.httpMethod != HttpMethod.Post) return false
+    val segments = try {
+        // As in Ktor 2.3 routing: skip empty segments and decode each segment, not the whole path.
+        // Also keep no-store for trailing-slash variants that routing may leave unmatched.
+        // All upload paths have four segments; one extra is enough to rule out a match.
+        request.path().splitToSequence('/').filter(String::isNotEmpty).take(5).map { it.decodeURLPart() }.toList()
+    } catch (_: URLDecodeException) {
+        return false // Leave malformed request paths to Ktor.
+    }
+    return segments in teachUploadApiSegments
+}
 
 internal fun Route.teachWorkbookMessageRoutes(
     validator: TeachWorkbookValidator = TeachWorkbookValidator(),
@@ -65,7 +83,7 @@ internal fun Route.teachWorkbookMessageRoutes(
     beforeUpload: suspend () -> Unit = {},
     authorize: (String) -> TeachWorkbookAuthDecision,
 ) {
-    // Both POST routes use this one set of workers and permits; GET is independent.
+    // All three POST routes use this one set of workers and permits; GET is independent.
     val authWorkers = TeachWorkbookAuthWorkers(authorize)
     val owner = application
     val monitor = owner.environment.monitor
@@ -78,7 +96,8 @@ internal fun Route.teachWorkbookMessageRoutes(
     })
     val uploadPermits = Semaphore(4)
     val referenceValidator = TeachReferenceValidator()
-    for (path in listOf(WORKBOOK_MESSAGE_PATH, REFERENCE_PATH)) post(path) {
+    val inspector = TeachWorkbookInspector()
+    for (path in teachUploadPaths) post(path) {
         if (call.response.headers[HttpHeaders.CacheControl] == null) call.response.header(HttpHeaders.CacheControl, "no-store")
         // A direct HTTP/1 caller should not reuse the connection after an early rejection.
         if (call.request.local.version.startsWith("HTTP/1")) call.response.header(HttpHeaders.Connection, "close")
@@ -95,7 +114,7 @@ internal fun Route.teachWorkbookMessageRoutes(
         }
         call.withWorkbookPeer { checkPeer ->
             call.receiveTeachUpload(token, authWorkers, uploadPermits, validator, referenceValidator,
-                path == REFERENCE_PATH, beforeUpload, timeoutMillis, checkPeer)
+                path == REFERENCE_PATH, inspector.takeIf { path == WORKBOOK_INSPECTION_PATH }, beforeUpload, timeoutMillis, checkPeer)
         }
     }
 }
@@ -136,6 +155,7 @@ private suspend fun ApplicationCall.receiveTeachUpload(
     validator: TeachWorkbookValidator,
     referenceValidator: TeachReferenceValidator,
     reference: Boolean,
+    inspector: TeachWorkbookInspector?,
     beforeUpload: suspend () -> Unit,
     timeoutMillis: Long,
     checkPeer: () -> Unit,
@@ -217,6 +237,8 @@ private suspend fun ApplicationCall.receiveTeachUpload(
                 referenceValidator.validate(bytes, size, pdf, checkpoint)
                 checkpoint()
                 TeachReferenceReceipt(TeachReferenceAttachment(if (pdf) "reference_pdf" else "reference_png", filename, size))
+            } else if (inspector != null) {
+                inspector.inspect(validator, bytes, size, filename, checkpoint).also { checkpoint() }
             } else {
                 validator.validate(bytes, size, checkpoint)
                 checkpoint()
@@ -231,6 +253,7 @@ private suspend fun ApplicationCall.receiveTeachUpload(
             outcome is HttpStatusCode -> respond(outcome)
             outcome is TeachWorkbookReceipt -> respond(HttpStatusCode.OK, outcome)
             outcome is TeachReferenceReceipt -> respond(HttpStatusCode.OK, outcome)
+            outcome is ByteArray -> respondBytes(outcome, ContentType.parse("application/json; charset=UTF-8"), HttpStatusCode.OK)
             else -> error("Unexpected Enséñame upload outcome")
         }
     } catch (_: WorkbookDeadline) {

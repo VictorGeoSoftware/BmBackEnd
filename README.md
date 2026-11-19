@@ -203,10 +203,10 @@ match against the upload. Both layers enforce the file-specific byte limits:
 into a fixed-size buffer only after authorization and upload admission. A
 one-byte excess probe does not retain the excess in the file buffer or drain
 the remaining body. The proxy shares four slots across the two routes and
-uses a 15-second deadline per request. Both Ktor POST routes share four private
+uses a 15-second deadline per request. All three Ktor POST routes share four private
 authorization workers with direct handoff (no queue) and four independent upload permits. Its single
 15-second deadline starts when authorization is admitted and also covers upload
-and validation. Saturation returns `429` without opening the body; authorization
+and validation (including inspection and response encoding when requested). Saturation returns `429` without opening the body; authorization
 expiry returns `408` if still connected. The proxy can return `502` if its own
 upstream deadline expires first. Read rejection/timeout cancels the reader;
 checkpoints cover preflight, ZIP reads, inflation and XML.
@@ -232,8 +232,9 @@ records (up to 256) **before** constructing Apache Commons Compress 1.28.0's
 permitted. The caller uses the bounded raw member stream and checks exact
 compressed consumption, actual inflated size, and CRC32; the 32 MiB aggregate
 and 256 KiB per identification XML budgets count output bytes, not ZIP claims.
-JDK StAX reads only `[Content_Types].xml` and `_rels/.rels`, with DTD and external
-resolution disabled. No workbook sheets, formulas, or values are interpreted.
+For message receipts JDK StAX reads only `[Content_Types].xml` and `_rels/.rels`,
+with DTD and external resolution disabled. No workbook sheets, formulas, or
+values are interpreted in `/messages`.
 
 References use byte-only envelope checks. PDF is limited to `%PDF-1.0`–`1.7`
 with a line-terminated header, a `startxref` pointing to a classic `xref` table
@@ -250,6 +251,55 @@ IO 2.20.0, Codec 1.19.0, and Lang 3.18.0 are Apache-2.0 (JAR LICENSE/NOTICE).
 Review of Apache security pages and GitHub's Maven advisories found no advisory
 matching these selected versions at implementation time; this is not a full
 backend audit. No Commons FileUpload dependency is used.
+
+### Inspect a workbook (controlled client, QA only)
+
+`POST /api/v1/teach-me/inspect-workbook` accepts the same Firebase bearer,
+canonical singleton XLSX `Content-Type`, singleton `X-Teach-Workbook-Filename`
+(at most 340 wire bytes and 255 strictly decoded UTF-8 bytes), and nonempty raw
+body as `/messages`. The limit is **5,242,880 actual bytes**, independent of
+`Content-Length`. No query, `Content-Encoding`, multipart, attachment ID or URL.
+Every request rechecks current admin access and nomination. There is no new web
+proxy or UI. A prior receipt is not a resource: the client must resubmit the
+original bytes explicitly (reselect the file if the client discarded it).
+
+The only success is complete `200 application/json; charset=UTF-8`, `no-store`:
+
+```json
+{"attachment":{"kind":"workbook","filename":"sintetico.xlsx","sizeBytes":123},"inspection":{"version":1,"dateSystem":"1900","sheets":[{"name":"Ejemplo","state":"visible","headers":["A2"],"cells":[{"a1":"A2","kind":"text","value":"Tarifa"},{"a1":"A3","kind":"number","value":"0"},{"a1":"C3","kind":"blank"},{"a1":"D3","kind":"formula"}]}]}}
+```
+
+The narrowed Transitional SpreadsheetML profile resolves only the internal
+workbook, worksheets and optional shared strings. It preserves sheet order,
+names and `visible`/`hidden`/`veryHidden` state, and requires explicit increasing
+canonical A1 coordinates. An absent cell is omitted; explicit blanks and formulas
+have no `value`; an empty string is text. Boolean values are JSON booleans;
+numbers, explicit dates, text and classic error tokens are strings. Numeric
+lexemes (max 64 bytes) and date text are not converted; a date-formatted serial
+remains a number and `dateSystem` (`1900`/`1904`) does not change it. Headers are
+candidate non-whitespace text coordinates on the first row with a nonblank
+literal (ignoring formula/error cells), not a semantic determination.
+
+Inspection runs inside BmBackend on the same request buffer. Each ZIP member is
+inflated/verified once, including opaque members; final integrity checks precede
+serialization. Only selected XML is parsed: **262,144 bytes per part, 2,097,152
+bytes total**, within the existing **33,554,432** total inflated ZIP bytes and
+**256** ZIP members. Parsed XML is strict UTF-8 (optional initial BOM), with no
+DTD, external resolution, `xml:base`, XInclude or processing instructions, and
+at most **16** levels, **32** combined attributes/namespace declarations per
+element and **100,000** StAX events. The model allows **8** sheets, **1,024**
+shared strings, **512** explicit rows per sheet and **1,024** explicit cells
+overall, with **1,024 decoded UTF-8 bytes** per cell string/shared entry. The
+whole encoded response, including escapes and receipt, must fit in **65,536
+UTF-8 bytes** before success is sent. Links/objects stay opaque. No macro or
+formula execution, cached formula values, storage, external service, or model
+call; no payload logging. These are pilot limits, not general Excel support.
+
+Errors are atomic and generic: `400 invalid_message` (metadata/empty body),
+`413 upload_too_large` (budget exceeded), `415 unsupported_workbook` (type,
+encoding, integrity or profile), `401`/`403` (access), `404` outside QA, `408`
+(deadline) and `429` (admission). Existing receipt/proxy contracts do not change.
+See the [approved coordination spec](../docs/specs/inspect-workbook.md).
 
 Use only synthetic files in local QA. The browser requires an Excel and supports
 one optional PDF and one optional PNG. It validates PDF → PNG → Excel in separate

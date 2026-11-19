@@ -6,6 +6,8 @@ import com.bm.backend.services.TeachMeAccessPolicy
 import com.bm.backend.services.TeachWorkbookAuthWorkers
 import com.bm.backend.services.TeachWorkbookValidator
 import com.bm.backend.testing.InMemoryAdminUsersRepository
+import com.bm.backend.testing.bookParts
+import com.bm.backend.testing.inspectionParts
 import com.bm.backend.testing.syntheticWorkbookOfSize
 import com.bm.backend.testing.syntheticReferencePng
 import com.bm.backend.testing.syntheticZip
@@ -297,7 +299,9 @@ class TeachWorkbookMessageRoutesTest {
 
     @Test fun `Netty peer close abandons a reference before a late grant with mixed auth saturation`() = peerClose(true)
 
-    private fun peerClose(reference: Boolean) = runBlocking {
+    @Test fun `Netty peer close abandons inspection before grant with all three routes sharing auth slots`() = peerClose(false, inspect = true)
+
+    private fun peerClose(reference: Boolean, inspect: Boolean = false) = runBlocking {
         val one = CountDownLatch(1)
         val others = CountDownLatch(1)
         val admitted = AtomicInteger()
@@ -338,12 +342,16 @@ class TeachWorkbookMessageRoutesTest {
         try {
             server.start(wait = false)
             val port = server.resolvedConnectors().single().port
-            val workbook = syntheticZip()
-            fun begin(token: String, useReference: Boolean = false): Socket = Socket().apply {
+            val workbook = syntheticZip(if (inspect) inspectionParts() else bookParts())
+            fun begin(token: String, useReference: Boolean = false, useInspection: Boolean = false): Socket = Socket().apply {
                 sockets.add(this)
                 soTimeout = 2_000
                 connect(InetSocketAddress("127.0.0.1", port), 2_000)
-                val endpoint = if (useReference) "/teach-me/references" else path
+                val endpoint = when {
+                    useReference -> "/teach-me/references"
+                    useInspection -> "/teach-me/inspect-workbook"
+                    else -> path
+                }
                 val mediaType = if (useReference) "image/png" else WORKBOOK_MEDIA_TYPE
                 val nameHeader = if (useReference) REFERENCE_FILENAME_HEADER else WORKBOOK_FILENAME_HEADER
                 val bytes = if (useReference) syntheticReferencePng() else workbook
@@ -352,16 +360,17 @@ class TeachWorkbookMessageRoutesTest {
                     "$nameHeader: ${wire(if (useReference) "synthetic.png" else filename)}", "Content-Length: ${bytes.size}")
                 getOutputStream().apply {
                     write(headers.joinToString("\r\n", postfix = "\r\n\r\n").toByteArray(Charsets.US_ASCII))
-                    write(bytes)
+                    // This caller disconnects during authorization, before sending its declared body.
+                    if (!(inspect && token == "disconnect")) write(bytes)
                     flush()
                 }
             }
-            fun probe(): Int = begin("probe").use {
+            fun probe(): Int = begin("probe", useInspection = inspect).use {
                 it.getInputStream().bufferedReader(Charsets.US_ASCII).readLine().split(' ')[1].toInt()
             }
 
-            val disconnect = begin("disconnect", reference)
-            repeat(3) { begin("hold") }
+            val disconnect = begin("disconnect", reference, inspect)
+            repeat(3) { begin("hold", useReference = inspect && it == 0) }
             withTimeout(3_000) { fourAdmitted.await() }
             disconnect.close()
             withTimeout(3_000) {
