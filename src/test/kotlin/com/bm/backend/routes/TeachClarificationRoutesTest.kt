@@ -30,7 +30,6 @@ import kotlinx.coroutines.*
 import kotlinx.serialization.json.*
 import org.junit.jupiter.api.Test
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable
-import java.io.File
 import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
@@ -430,26 +429,17 @@ class TeachClarificationRoutesTest {
                 fixedTeachClarificationAdapter.respond(context)
             })
         }
-        var child: Process? = null
         try {
             server.start(wait = false)
-            val builder = ProcessBuilder("npm", "test", "--", "src/app/api/teach-me/clarifications/route.test.ts", "-t", "chains actual Pages handler over HTTP to Ktor")
-                .directory(File(checkNotNull(System.getenv("BM_TEACH_CLARIFY_TEST_WEB"))))
-                .inheritIO()
             val base64 = Base64.getEncoder()
-            builder.environment().apply {
-                put("NEXT_PUBLIC_APP_ENV", "qa")
-                put("BM_TEACH_CLARIFY_TEST_PORT", server.resolvedConnectors().single().port.toString())
-                put("BM_TEACH_CLARIFY_TEST_WORKBOOK", base64.encodeToString(jointWorkbook))
-                put("BM_TEACH_CLARIFY_TEST_PDF", base64.encodeToString(pdf))
-                put("BM_TEACH_CLARIFY_TEST_PNG", base64.encodeToString(png))
-            }
-            child = builder.start()
-            assertTrue(child.waitFor(40, TimeUnit.SECONDS), "Node proxy test timed out")
-            assertEquals(0, child.exitValue(), "Node proxy test failed")
+            runTeachPagesLoopback("chains actual Pages handler over HTTP to Ktor", mapOf(
+                "BM_TEACH_CLARIFY_TEST_PORT" to server.resolvedConnectors().single().port.toString(),
+                "BM_TEACH_CLARIFY_TEST_WORKBOOK" to base64.encodeToString(jointWorkbook),
+                "BM_TEACH_CLARIFY_TEST_PDF" to base64.encodeToString(pdf),
+                "BM_TEACH_CLARIFY_TEST_PNG" to base64.encodeToString(png),
+            ))
             assertEquals(2, turns.get(), "Two authorized requests reached the candidate adapter")
         } finally {
-            if (child?.isAlive == true) { child.descendants().forEach { it.destroyForcibly() }; child.destroyForcibly() }
             server.stop(0, 1_000)
         }
     }

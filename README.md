@@ -378,3 +378,69 @@ server running the candidate Pages handler, then asserts both turns and exact
 reference bytes at the local adapter. This does not certify real Firebase/QA
 access, deployed infrastructure, a model provider or browser layout. The full
 backend gate remains `./gradlew build`.
+
+### Draft a demo supplier skill (isolated local QA pilot)
+
+Default off. Requires `BM_ENV=qa`, `BM_TEACH_CLARIFY_LOCAL=true`, and
+`BM_TEACH_DRAFT_LOCAL=true` on the backend, plus `NEXT_PUBLIC_APP_ENV=qa`,
+`NEXT_PUBLIC_TEACH_CLARIFY_LOCAL=true`, and `NEXT_PUBLIC_TEACH_DRAFT_LOCAL=true`
+in BmWeb. Do not configure this in hosted QA or production. The author still
+needs a current admin grant and nomination on every POST before the body is
+opened. It shares the same auth/stream permits, 15-second deadline and
+observed-close behavior as clarification; no new endpoint or context store.
+
+Use the existing `/api/v1/teach-me/clarifications` route with one
+`Content-Type: application/vnd.bm.teach-supplier-draft`, no parameters,
+encoding, query or filename headers. The four-byte big-endian prefix gives
+the strict UTF-8 tuple length (1–32 KiB). The v1 tuples are:
+
+```text
+[1,"ask",xlsxBytes]
+[1,"draft",xlsxBytes,workbookSha256,supplierKey,answer]
+[1,"revise",xlsxBytes,workbookSha256,supplierKey,priorRevisionId,answer]
+```
+
+Only the raw XLSX segment follows, 1 byte to 5 MiB, with exact end. No PDF/PNG
+or other attachments in this wire. All three turns require the exact bytes
+of [`ensename-demo.xlsx`](src/test/resources/ensename/ensename-demo.xlsx).
+The fixture has one `Tarifas` worksheet with two literal `Precio fijo` headers
+at `B2` and `C2`, and no prices, formulas or external links. The backend pins
+its byte digest and uses the existing bounded validator and visible-header
+selector on every turn, not the filename or any retained data. A local rename
+is harmless; resaving or substituting a commercial workbook is not supported.
+
+The answer must be `La columna B` or `La columna C` after trimming exterior
+ASCII spaces, still subject to the 4 KiB UTF-8 answer cap. The only supplier
+key is `demo-electricidad`. `ask` returns the existing `question` schema (or
+`not_applicable` if the expected evidence is absent). `draft`/`revise` return
+`{"kind":"draft","draft":…}` (closed v1 JSON, max 4 KiB), with `schemaVersion`,
+`supplierKey`, `workbookSha256`, `rule: {kind:"fixed_price_column",header:{sheet:"Tarifas",a1:"B2"}}`
+(or `C2`), and `revisionId`. Both digests are 64 lowercase hex characters.
+The revision ID is SHA-256 of UTF-8 fields separated by LF, without a final
+LF: `bm.teach.supplier-draft/v1`, supplier key, workbook digest, rule kind,
+sheet and cell. A correction must name the ID for the opposite column, not
+an arbitrary draft. Revisions are content fingerprints, not grants, proof
+of prior requests, monotonic versions or stored objects.
+
+The fixed in-process adapter gets only verified ordinal/A1 descriptors and
+the closed selection; disagreement is an internal failure. No model or
+provider, price extraction, preview, activation, PDF or catalog calls, state,
+storage or payload logging. Out-of-profile workbook/digest/continuity gives
+`409`; invalid selection, same-column correction, unknown supplier or frame
+gives `400`; the existing sanitized budget, access and service errors apply.
+Normal clarification keeps its existing wire and opaque reference behavior.
+
+Add `--tests '*TeachSupplierDraft*Test'` to the focused JDK 17 gate. With
+Node 20 on `PATH`, run the existing joint test above and separately run:
+
+```sh
+BM_TEACH_CLARIFY_TEST_WEB="$(cd ../BmWeb && pwd)" ./gradlew test --rerun \
+  --tests '*TeachSupplierDraftRoutesTest.candidate Pages proxy and Ktor draft and revise over loopback' --info
+```
+
+That gate uses the versioned fixture, candidate Pages handler, Netty and a
+controlled verifier/admin repository on ephemeral loopback. It checks the
+question, both content-derived IDs, invalid continuity and live admin
+revocation before the denied body is opened. Vitest runs without inherited
+credentials or Vite `.env` files; the test does not certify hosted QA, real
+Firebase, a real model or browser layout.
