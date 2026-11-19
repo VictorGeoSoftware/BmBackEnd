@@ -19,6 +19,7 @@ import com.bm.backend.repositories.WebPushTokensRepository
 import com.bm.backend.routes.priceTableRoutes
 import com.bm.backend.routes.adminAccessRoutes
 import com.bm.backend.routes.teachMeAccessRoutes
+import com.bm.backend.routes.isTeachWorkbookUpload
 import com.bm.backend.services.TeachMeAccessPolicy
 import com.bm.backend.routes.authRoutes
 import com.bm.backend.routes.collectedPricesRoutes
@@ -58,6 +59,7 @@ import com.bm.backend.services.UserConsumptionService
 import com.bm.backend.services.UserDataService
 import com.bm.backend.services.UserActivityService
 import com.bm.backend.services.ValidationException
+import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.metrics.micrometer.*
@@ -137,6 +139,11 @@ fun Application.configurePlugins(): PrometheusMeterRegistry {
         registry = prometheusMeterRegistry
     }
 
+    // Cover even unmatched (non-QA) and rate-limited upload requests, without mounting a non-QA route.
+    intercept(ApplicationCallPipeline.Plugins) {
+        if (call.isTeachWorkbookUpload()) call.response.header(HttpHeaders.CacheControl, "no-store")
+    }
+
     install(StatusPages) {
         // Validation failures are expected, caller-fixable and safe to echo back.
         exception<ValidationException> { call, cause ->
@@ -153,12 +160,17 @@ fun Application.configurePlugins(): PrometheusMeterRegistry {
         // stack trace (previously it was silently swallowed) and return a generic
         // message, since `cause.message` can leak SQL fragments and file paths.
         exception<Throwable> { call, cause ->
-            call.application.log.error(
-                "Unhandled exception while processing {} {}",
-                call.request.httpMethod.value,
-                call.request.path(),
-                cause,
-            )
+            if (call.isTeachWorkbookUpload()) {
+                // Third-party parse/IO errors can contain user-controlled metadata. Never log the exception here.
+                call.application.log.error("Unhandled Enséñame upload failure")
+            } else {
+                call.application.log.error(
+                    "Unhandled exception while processing {} {}",
+                    call.request.httpMethod.value,
+                    call.request.path(),
+                    cause,
+                )
+            }
             call.respond(
                 io.ktor.http.HttpStatusCode.InternalServerError,
                 ErrorResponse(

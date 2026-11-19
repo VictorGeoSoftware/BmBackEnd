@@ -1,0 +1,244 @@
+package com.bm.backend.routes
+
+import com.bm.backend.models.ErrorResponse
+import com.bm.backend.models.TeachWorkbookAttachment
+import com.bm.backend.models.TeachWorkbookAuthDecision
+import com.bm.backend.models.TeachWorkbookReceipt
+import com.bm.backend.services.InvalidWorkbook
+import com.bm.backend.services.TeachWorkbookAuthWorkers
+import com.bm.backend.services.TeachWorkbookValidator
+import com.bm.backend.services.WorkbookBudgetExceeded
+import com.bm.backend.services.isWorkbookBidi
+import io.ktor.http.HttpHeaders
+import io.ktor.http.HttpMethod
+import io.ktor.http.HttpStatusCode
+import io.ktor.server.application.Application
+import io.ktor.server.application.ApplicationCall
+import io.ktor.server.application.ApplicationStopped
+import io.ktor.server.application.call
+import io.ktor.server.netty.NettyApplicationCall
+import io.ktor.server.request.receiveChannel
+import io.ktor.server.request.httpMethod
+import io.ktor.server.request.path
+import io.ktor.server.request.uri
+import io.ktor.server.response.header
+import io.ktor.server.response.respond
+import io.ktor.server.routing.Route
+import io.ktor.server.routing.RoutingApplicationCall
+import io.ktor.server.routing.application
+import io.ktor.server.routing.post
+import io.ktor.utils.io.cancel
+import io.netty.channel.ChannelFutureListener
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.job
+import kotlinx.coroutines.withTimeoutOrNull
+import java.io.IOException
+import java.nio.ByteBuffer
+import java.nio.charset.CharacterCodingException
+import java.util.Base64
+import java.util.concurrent.Semaphore
+import kotlin.time.Duration.Companion.nanoseconds
+
+internal const val WORKBOOK_MEDIA_TYPE = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+internal const val WORKBOOK_FILENAME_HEADER = "X-Teach-Workbook-Filename"
+internal const val WORKBOOK_BODY_LIMIT = 5 * 1024 * 1024
+private const val WORKBOOK_MESSAGE_PATH = "/teach-me/messages"
+private val filenameWire = Regex("[A-Za-z0-9_-]{1,340}")
+private class InvalidWorkbookMessage : RuntimeException()
+
+internal fun ApplicationCall.isTeachWorkbookUpload() = request.httpMethod == HttpMethod.Post &&
+    request.path().trimEnd('/') == "/api/v1$WORKBOOK_MESSAGE_PATH"
+
+internal fun Route.teachWorkbookMessageRoutes(
+    validator: TeachWorkbookValidator = TeachWorkbookValidator(),
+    timeoutMillis: Long = 15_000,
+    beforeUpload: suspend () -> Unit = {},
+    authorize: (String) -> TeachWorkbookAuthDecision,
+) {
+    val authWorkers = TeachWorkbookAuthWorkers(authorize)
+    val owner = application
+    val monitor = owner.environment.monitor
+    monitor.subscribe(ApplicationStopped, object : (Application) -> Unit {
+        override fun invoke(stopped: Application) {
+            if (stopped !== owner) return
+            monitor.unsubscribe(ApplicationStopped, this)
+            authWorkers.close()
+        }
+    })
+    val uploadPermits = Semaphore(4)
+    post(WORKBOOK_MESSAGE_PATH) {
+        if (call.response.headers[HttpHeaders.CacheControl] == null) call.response.header(HttpHeaders.CacheControl, "no-store")
+        // A direct HTTP/1 caller should not reuse the connection after an early rejection.
+        if (call.request.local.version.startsWith("HTTP/1")) call.response.header(HttpHeaders.Connection, "close")
+
+        val authHeader = call.request.headers[HttpHeaders.Authorization]
+        if (authHeader.isNullOrBlank() || !authHeader.startsWith("Bearer ")) {
+            call.respond(HttpStatusCode.Unauthorized, ErrorResponse(message = "Missing or invalid Authorization header"))
+            return@post
+        }
+        val token = authHeader.removePrefix("Bearer ").trim()
+        if (token.isBlank()) {
+            call.respond(HttpStatusCode.Unauthorized, ErrorResponse(message = "Missing Firebase ID token"))
+            return@post
+        }
+        call.withWorkbookPeer { checkPeer ->
+            call.receiveWorkbookMessage(token, authWorkers, uploadPermits, validator, beforeUpload, timeoutMillis, checkPeer)
+        }
+    }
+}
+
+private suspend fun ApplicationCall.withWorkbookPeer(block: suspend (() -> Unit) -> Unit) {
+    val engineCall = (this as? RoutingApplicationCall)?.engineCall ?: this
+    val channel = (engineCall as? NettyApplicationCall)?.context?.channel()
+    if (channel == null) {
+        block {} // The in-memory Ktor test host has no transport channel.
+        return
+    }
+    try {
+        coroutineScope {
+            val job = coroutineContext.job
+            val closed = channel.closeFuture()
+            val listener = ChannelFutureListener { job.cancel(WorkbookPeerClosed()) }
+            val checkPeer = { if (!channel.isActive) throw WorkbookPeerClosed() }
+            closed.addListener(listener)
+            try {
+                checkPeer()
+                block(checkPeer)
+            } finally {
+                closed.removeListener(listener)
+            }
+        }
+    } catch (failure: CancellationException) {
+        // Netty owns the closed connection; no application response for a known peer close.
+        if (channel.isActive) throw failure
+    }
+}
+
+private class WorkbookPeerClosed : CancellationException("Workbook upload peer disconnected")
+
+private suspend fun ApplicationCall.receiveWorkbookMessage(
+    token: String,
+    authWorkers: TeachWorkbookAuthWorkers,
+    uploadPermits: Semaphore,
+    validator: TeachWorkbookValidator,
+    beforeUpload: suspend () -> Unit,
+    timeoutMillis: Long,
+    checkPeer: () -> Unit,
+) {
+    val admitted = System.nanoTime()
+    fun remaining() = timeoutMillis * 1_000_000 - (System.nanoTime() - admitted)
+    val decision = authWorkers.submit(token)
+    if (decision == null) {
+        checkPeer()
+        respond(HttpStatusCode.TooManyRequests)
+        return
+    }
+
+    var acquiredUpload = false
+    try {
+        val outcome = withTimeoutOrNull(remaining().nanoseconds) {
+            val context = currentCoroutineContext()
+            val checkpoint = {
+                context.ensureActive()
+                checkPeer()
+                if (remaining() <= 0) throw WorkbookDeadline()
+            }
+            val resolved = decision.await()
+            checkpoint()
+            val authorization = resolved.getOrThrow()
+            if (authorization != TeachWorkbookAuthDecision.Allowed) {
+                return@withTimeoutOrNull authorization
+            }
+            beforeUpload()
+            checkpoint()
+            acquiredUpload = uploadPermits.tryAcquire()
+            if (!acquiredUpload) {
+                return@withTimeoutOrNull HttpStatusCode.TooManyRequests
+            }
+            val types = request.headers.getAll(HttpHeaders.ContentType)
+            if ('?' in request.uri || (types != null && (types.size != 1 || ',' in types.single()))) {
+                throw InvalidWorkbookMessage()
+            }
+            val filename = decodeWorkbookFilename(request.headers.getAll(WORKBOOK_FILENAME_HEADER))
+            if (!WORKBOOK_MEDIA_TYPE.equals(types?.singleOrNull(), ignoreCase = true) ||
+                request.headers.getAll(HttpHeaders.ContentEncoding) != null) throw InvalidWorkbook()
+            checkpoint()
+            val channel = receiveChannel()
+            var size = 0
+            val bytes = try {
+                // The receive pipeline can suspend; check again before reserving upload memory.
+                checkpoint()
+                val buffer = ByteArray(WORKBOOK_BODY_LIMIT)
+                while (size < buffer.size) {
+                    checkpoint()
+                    val read = channel.readAvailable(buffer, size, minOf(8192, buffer.size - size))
+                    if (read < 0) break
+                    size += read
+                }
+                if (size == buffer.size && channel.readAvailable(ByteArray(1), 0, 1) >= 0) throw WorkbookBudgetExceeded()
+                if (size == 0) throw InvalidWorkbookMessage()
+                buffer
+            } finally { channel.cancel() }
+            validator.validate(bytes, size, checkpoint)
+            checkpoint()
+            TeachWorkbookReceipt(TeachWorkbookAttachment("workbook", filename, size))
+        }
+        currentCoroutineContext().ensureActive()
+        checkPeer()
+        when {
+            outcome == null || remaining() <= 0 -> respond(HttpStatusCode.RequestTimeout)
+            outcome is TeachWorkbookAuthDecision -> denyWorkbookUpload(outcome)
+            outcome is HttpStatusCode -> respond(outcome)
+            outcome is TeachWorkbookReceipt -> respond(HttpStatusCode.OK, outcome)
+            else -> error("Unexpected workbook upload outcome")
+        }
+    } catch (_: WorkbookDeadline) {
+        checkPeer()
+        respond(HttpStatusCode.RequestTimeout)
+    } catch (_: InvalidWorkbookMessage) {
+        checkPeer()
+        respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_message"))
+    } catch (_: WorkbookBudgetExceeded) {
+        checkPeer()
+        respond(HttpStatusCode.PayloadTooLarge, mapOf("error" to "upload_too_large"))
+    } catch (_: InvalidWorkbook) {
+        checkPeer()
+        respond(HttpStatusCode.UnsupportedMediaType, mapOf("error" to "unsupported_workbook"))
+    } catch (_: IOException) {
+        checkPeer()
+        respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_message"))
+    } finally {
+        // Invalidate only the result, never the running task or its worker slot.
+        decision.cancel()
+        if (acquiredUpload) uploadPermits.release()
+    }
+}
+
+private suspend fun ApplicationCall.denyWorkbookUpload(decision: TeachWorkbookAuthDecision) {
+    when (decision) {
+        TeachWorkbookAuthDecision.InvalidToken -> respond(HttpStatusCode.Unauthorized, ErrorResponse(message = "Invalid Firebase ID token"))
+        TeachWorkbookAuthDecision.NotAdmin -> respond(HttpStatusCode.Forbidden,
+            ErrorResponse(message = "Esta cuenta no está autorizada para acceder al panel de administración."))
+        TeachWorkbookAuthDecision.NotNominated -> respond(HttpStatusCode.Forbidden, ErrorResponse(message = "Acceso a Enséñame no concedido."))
+        TeachWorkbookAuthDecision.Allowed -> error("An allowed decision cannot be denied")
+    }
+}
+
+private class WorkbookDeadline : RuntimeException()
+
+private fun decodeWorkbookFilename(values: List<String>?): String {
+    fun invalid(): Nothing = throw InvalidWorkbookMessage()
+    val wire = values?.singleOrNull()?.trim(' ', '\t') ?: invalid()
+    if (!filenameWire.matches(wire)) invalid()
+    val decoded = try { Base64.getUrlDecoder().decode(wire) } catch (_: IllegalArgumentException) { invalid() }
+    if (decoded.size > 255 || Base64.getUrlEncoder().withoutPadding().encodeToString(decoded) != wire) invalid()
+    val name = try { Charsets.UTF_8.newDecoder().decode(ByteBuffer.wrap(decoded)).toString() }
+    catch (_: CharacterCodingException) { invalid() }
+    val ext = name.takeLast(5).map { if (it in 'A'..'Z') it.lowercaseChar() else it }.joinToString("")
+    if (name.length <= 5 || ext != ".xlsx" || name.dropLast(5).isBlank() ||
+        name.any { it == '/' || it == '\\' || it.isISOControl() || isWorkbookBidi(it) || it == '\uFEFF' }) invalid()
+    return name
+}

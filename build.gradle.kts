@@ -66,6 +66,9 @@ dependencies {
 
     // PDF generation
     implementation("com.github.librepdf:openpdf:1.3.40")
+
+    // Enséñame: in-memory ZIP reader, only after bounded structural preflight.
+    implementation("org.apache.commons:commons-compress:1.28.0")
     
     testImplementation(kotlin("test"))
     testImplementation("io.ktor:ktor-server-test-host:2.3.12")

@@ -168,3 +168,63 @@ list of BmWeb admin emails. Accounts must also be present in `admin_users`.
 An empty or missing list grants nothing. Restart or recreate the QA backend
 to apply list changes; removing general admin access takes effect on the next
 request without a restart. No configuration is needed in production.
+
+`POST /api/v1/teach-me/messages` is also QA-only and rechecks the same grant
+before opening the request body. It accepts a single nonempty raw `.xlsx` body
+(`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`,
+no parameters, encoding or query). Send exactly one `X-Teach-Workbook-Filename`
+header: unpadded canonical Base64url of the UTF-8 presentation name (at most
+255 bytes). The only success is a `200` validation receipt with `attachment`
+containing `kind: "workbook"`, `filename`, and actual `sizeBytes`. It does not
+create a resource. Errors are non-cacheable; the view may retry explicitly.
+
+BmWeb's Node endpoint (`/api/teach-me/messages`) uses a Pages API boundary
+with body parsing disabled so it can distinguish raw duplicate header lines.
+It streams the original bytes with a count and does not forward the client
+length or other headers. Ktor 2.3.12 reads a raw `ByteReadChannel` into memory,
+never multipart, using a fixed 5 MiB buffer plus a one-byte over-limit probe.
+Both layers enforce 5 MiB of actual body bytes. The proxy has four slots and
+its own 15-second deadline. Ktor POST uses four private authorization workers
+with direct handoff (no queue) and four independent upload permits. Its single
+15-second deadline starts when authorization is admitted and also covers upload
+and validation. Saturation returns `429` without opening the body; authorization
+expiry returns `408` if still connected. The proxy can return `502` if its own
+upstream deadline expires first. Read rejection/timeout cancels the reader;
+checkpoints cover preflight, ZIP reads, inflation and XML.
+
+A timed-out or disconnected caller discards the authorization result; it
+cannot begin an upload later. The Firebase certificate fetch and JDBC admin
+lookup are blocking, so the worker remains occupied until the actual call
+returns. A stuck dependency can therefore reduce POST capacity. Follow-up:
+review dependency-native connect, read and query deadlines separately; this
+slice does not change global Firebase/JDBC timeouts or the GET path.
+
+The POST ties caller cancellation to the Netty channel's close notification
+and removes its listener at request exit. This covers a peer close once Netty
+observes it. With HTTP/1 read backpressure, a FIN behind unread request data
+can remain unobserved before authorization completes (confirmed in a loopback
+probe). The route does not force additional pre-authorization socket reads to
+discover it: doing so would bypass the engine's body backpressure. A guarantee
+for unobserved FINs needs a separate transport decision.
+
+On JDK 17 the bounded ZIP preflight counts and validates the real classic ZIP
+records (up to 256) **before** constructing Apache Commons Compress 1.28.0's
+`ZipFile` over a seekable memory channel. Only STORED and DEFLATED entries are
+permitted. The caller uses the bounded raw member stream and checks exact
+compressed consumption, actual inflated size, and CRC32; the 32 MiB aggregate
+and 256 KiB per identification XML budgets count output bytes, not ZIP claims.
+JDK StAX reads only `[Content_Types].xml` and `_rels/.rels`, with DTD and external
+resolution disabled. No workbook sheets, formulas, or values are interpreted.
+
+Dependency review for this slice: Commons Compress 1.28.0 plus resolved Commons
+IO 2.20.0, Codec 1.19.0, and Lang 3.18.0 are Apache-2.0 (JAR LICENSE/NOTICE).
+Review of Apache security pages and GitHub's Maven advisories found no advisory
+matching these selected versions at implementation time; this is not a full
+backend audit. No Commons FileUpload dependency is used.
+
+Use only synthetic files in local QA. The optional comment exists only in the
+browser view and is never sent. Neither layer stores, logs, or exposes the file
+for retrieval; bytes are discarded after the request. The browser only keeps
+the comment and presentation metadata for the lifetime of the same view/account.
+See the coordination spec `docs/specs/teach-workbook-attachment.md` for the
+approved runtime, validation, and no-retention boundaries.
