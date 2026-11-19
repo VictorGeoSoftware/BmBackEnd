@@ -65,17 +65,44 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
         return result
     }
 
+    fun inspectForProposalImport(
+        validator: TeachWorkbookValidator, bytes: ByteArray, size: Int, checkpoint: () -> Unit,
+    ): TeachDraftPreviewInspection {
+        var result: TeachDraftPreviewInspection? = null
+        inspectStructure(validator, bytes, size, checkpoint, preview = { result = it }, importOnly = true)
+        return checkNotNull(result)
+    }
+
     private fun inspectStructure(
         validator: TeachWorkbookValidator, bytes: ByteArray, size: Int, checkpoint: () -> Unit,
         visibleHeaders: MutableList<List<String>?>? = null,
         preview: ((TeachDraftPreviewInspection) -> Unit)? = null,
         supplierMarkers: ((List<Pair<String?, String?>>) -> Unit)? = null,
+        importOnly: Boolean = false,
     ): TeachWorkbookInspection = validator.readPackage(bytes, size, checkpoint) { names, read ->
         val xml = TeachWorkbookInspectionXml(limits, checkpoint, read)
         validator.identify(names, exact = true,
             types = { xml.metadata(TYPES, TYPES_NS, "Types", it) },
-            rels = { xml.metadata(RELS, RELS_NS, "Relationships", it) },
-        ) { main, contentType -> inspectParts(xml, names, main, contentType, visibleHeaders, preview, supplierMarkers) }
+            rels = { child ->
+                val seen = hashSetOf<String>()
+                xml.metadata(RELS, RELS_NS, "Relationships") { item ->
+                    if (importOnly) {
+                        fun attr(name: String) = item.getAttributeValue(XMLConstants.NULL_NS_URI, name)
+                        val type = attr("Type")
+                        val target = when (type) {
+                            "$DOC_RELS_NS/officeDocument" -> "xl/workbook.xml"
+                            "$DOC_RELS_NS/extended-properties" -> "docProps/app.xml"
+                            "http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" -> "docProps/core.xml"
+                            else -> throw TeachDraftPreviewConflict()
+                        }
+                        previewCheck(seen.add(target) && attr("Target")?.removePrefix("/") == target && target in names &&
+                            attr("TargetMode") in setOf(null, "Internal"))
+                    }
+                    child(item)
+                }
+                if (importOnly) previewCheck(seen.size == 3)
+            },
+        ) { main, contentType -> inspectParts(xml, names, main, contentType, visibleHeaders, preview, supplierMarkers, importOnly) }
     }
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -99,6 +126,7 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
         visibleHeaders: MutableList<List<String>?>?,
         preview: ((TeachDraftPreviewInspection) -> Unit)?,
         supplierMarkers: ((List<Pair<String?, String?>>) -> Unit)?,
+        importOnly: Boolean,
     ): TeachWorkbookInspection {
         val sheets = mutableListOf<TeachWorkbookSheetBinding>()
         val sheetNames = hashSetOf<String>()
@@ -132,6 +160,7 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                             val name = required("name")
                             val markerSheet = supplierMarkers != null && name == SUPPLIER_MARKER_SHEET
                             val state = attr("state") ?: "visible"
+                            if (importOnly) previewCheck(!hasQualifiedAttribute("state") && state == "visible")
                             val id = reader.getAttributeValue(DOC_RELS_NS, "id")?.takeIf(String::isNotBlank)
                                 ?: if (markerSheet) invalidSupplierEvidence()
                                 else throw InvalidWorkbook()
@@ -176,10 +205,19 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                             when (reader.localName) {
                                 "workbookProtection", "definedNames" -> { previewCheck(reader.attributeCount == 0); empty() }
                                 "calcPr" -> empty() // A setting, never an instruction to calculate.
-                                "bookViews" -> elements {
-                                    expect("workbookView")
-                                    previewCheck(attr("visibility") in setOf(null, "visible"))
-                                    empty()
+                                "bookViews" -> {
+                                    // The filename path still needs its own visibility proof when no marker exists.
+                                    if (importOnly) {
+                                        previewCheck(!seenBookViews)
+                                        seenBookViews = true
+                                    }
+                                    elements {
+                                        if (importOnly) previewCheck(reader.localName == "workbookView" && reader.namespaceURI == SHEET_NS &&
+                                            !hasQualifiedAttribute("visibility"))
+                                        else expect("workbookView")
+                                        previewCheck(attr("visibility") in setOf(null, "visible"))
+                                        empty()
+                                    }
                                 }
                                 else -> throw TeachDraftPreviewConflict()
                             }
@@ -189,13 +227,14 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
             }
             workbookCheck(seenSheets && sheets.isNotEmpty())
         }
-        if (preview != null) previewCheck(sheets.size == 1 && dateSystem == "1900")
+        if (importOnly) previewCheck(sheets.map { it.name } in listOf(listOf("Tarifas"), listOf("Tarifas", SUPPLIER_MARKER_SHEET)) && dateSystem == "1900")
+        else if (preview != null) previewCheck(sheets.size == 1 && dateSystem == "1900")
         val directory = main.substringBeforeLast('/', "").let { if (it.isEmpty()) "" else "$it/" }
         val relationships = "${directory}_rels/${main.substringAfterLast('/')}.rels"
         val used = hashSetOf(main, relationships, TYPES, RELS)
         val ids = hashSetOf<String>()
         val targets = mutableMapOf<String, String>()
-        val markerId = supplierMarkers?.let { sheets.singleOrNull { it.name == SUPPLIER_MARKER_SHEET }?.relationshipId }
+        val markerId = if (supplierMarkers != null || importOnly) sheets.singleOrNull { it.name == SUPPLIER_MARKER_SHEET }?.relationshipId else null
         var stringsPart: String? = null
         var stylesPart: String? = null
         var invalidSharedTable = false
@@ -215,6 +254,7 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                 if (target == null && (markerId == null || type != "$DOC_RELS_NS/sharedStrings")) throw InvalidWorkbook()
                 relationshipCheck(ids.add(id) && "vba" !in type.lowercase(Locale.ROOT))
                 val sheet = id in requiredIds
+                if (importOnly) previewCheck(type != "$DOC_RELS_NS/sharedStrings" && !hasQualifiedAttribute("TargetMode"))
                 if (preview != null) previewCheck(attr("TargetMode") in setOf(null, "Internal"))
                 if (sheet || type == "$DOC_RELS_NS/sharedStrings") {
                     relationshipCheck(!sheet || type == "$DOC_RELS_NS/worksheet")
@@ -243,12 +283,17 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                             contentType(part) == "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml")
                         stylesPart = part
                     }
-                    "$DOC_RELS_NS/theme" -> Unit // Not consulted; the pinned General number format does not depend on it.
+                    "$DOC_RELS_NS/theme" -> if (importOnly) {
+                        // Only the audited package's theme relationship; not consulted for General.
+                        previewCheck(target == "theme/theme1.xml" && used.add("xl/theme/theme1.xml") &&
+                            contentType("xl/theme/theme1.xml") == "application/vnd.openxmlformats-officedocument.theme+xml")
+                    } else Unit
                     else -> throw TeachDraftPreviewConflict()
                 }
                 emptyBinding(markerRelationship)
             }
         }
+        if (importOnly) previewCheck(names == used + setOf("docProps/app.xml", "docProps/core.xml") && "xl/theme/theme1.xml" in used)
         val styleDigest = if (preview != null) {
             val part = stylesPart ?: throw TeachDraftPreviewConflict()
             sha256Hex(MessageDigest.getInstance("SHA-256").digest(xml.readBoundedPart(part)))
@@ -281,8 +326,14 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
         var totalCells = 0
         val inspected = sheets.map { sheet ->
             val visibility = if (visibleHeaders != null && sheet.state == "visible") TeachClarificationVisibility(SHEET_NS) else null
-            val previewMetadata = if (preview != null) TeachDraftPreviewMetadata(SHEET_NS) else null
-            val markers = if (supplierMarkers != null && sheet.name == SUPPLIER_MARKER_SHEET) {
+            val importDimensions = when {
+                !importOnly -> null
+                sheet.name == SUPPLIER_MARKER_SHEET -> setOf("A1:B1", "A1:B2", "A2:B2")
+                // The teaching workbook's advisory range includes two empty leading columns.
+                else -> setOf("C14:AE20", "A14:AE20")
+            }
+            val previewMetadata = if (preview != null) TeachDraftPreviewMetadata(SHEET_NS, importDimensions) else null
+            val markers = if ((supplierMarkers != null || importOnly) && sheet.name == SUPPLIER_MARKER_SHEET) {
                 if (!visibleWorkbook) invalidSupplierEvidence()
                 TeachSupplierMarkerProjection(SHEET_NS)
             } else null
@@ -295,15 +346,25 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                             invalidUnrelatedSharedRef = true
                             "" // Discard the inspection below; do not let an unrelated ref shadow marker validation.
                         } else text
-                    }) { within(++totalCells <= limits.cells) }
+                    }, importOnly = importOnly) { within(++totalCells <= limits.cells) }
                 }
             } catch (failure: InvalidWorkbook) {
                 if (markers != null) invalidSupplierEvidence()
                 throw failure
             }
-            if (markers != null) checkNotNull(supplierMarkers)(markers.finish())
+            if (markers != null) {
+                val evidence = markers.finish()
+                supplierMarkers?.invoke(evidence)
+                if (importOnly) previewCheck(evidence.any { it.first != null } &&
+                    inspectedSheet.cells.all { markers.includes(it.a1) } &&
+                    checkNotNull(previewMetadata).finish(inspectedSheet, checkNotNull(styleDigest)).let {
+                        it.rowVisibility.keys.all { row -> row in 1..2 } &&
+                            it.defaultStyleCells.size == inspectedSheet.cells.size &&
+                            inspectedSheet.cells.all { cell -> cell.kind == "blank" || cell.a1 in it.visibleCells }
+                    })
+            }
             visibleHeaders?.add(if (visibility != null) visibility.result() else emptyList())
-            if (previewMetadata != null) checkNotNull(preview)(previewMetadata.finish(inspectedSheet, checkNotNull(styleDigest)))
+            if (previewMetadata != null && (!importOnly || markers == null)) checkNotNull(preview)(previewMetadata.finish(inspectedSheet, checkNotNull(styleDigest)))
             inspectedSheet
         }
         workbookCheck(!invalidSharedTable && !invalidUnrelatedSharedRef)
@@ -313,7 +374,7 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
     private fun TeachWorkbookInspectionXml.Cursor.worksheet(
         sheet: TeachWorkbookSheetBinding, visibility: TeachClarificationVisibility?,
         preview: TeachDraftPreviewMetadata?, markers: TeachSupplierMarkerProjection?,
-        sharedText: (String, Int?) -> String?, countCell: () -> Unit,
+        sharedText: (String, Int?) -> String?, importOnly: Boolean, countCell: () -> Unit,
     ): TeachWorkbookSheet {
         val cells = mutableListOf<TeachWorkbookCell>()
         var headers: List<String>? = null
@@ -360,7 +421,7 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                             previousCol = col
                             preview?.cell(reader, row, col, ref)
                             val type = if (markers != null) attr("t") else null
-                            val parsed = cell(ref, sharedText, markers)
+                            val parsed = cell(ref, sharedText, markers, importOnly)
                             markers?.cell(reader, parsed, type)
                             cells.add(parsed)
                             if (visibleCells != null && visibleHeaderRow.columnVisible(col)) visibleCells.add(parsed)
@@ -376,9 +437,10 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
     }
 
     private fun TeachWorkbookInspectionXml.Cursor.cell(
-        a1: String, sharedText: (String, Int?) -> String?, markers: TeachSupplierMarkerProjection?,
+        a1: String, sharedText: (String, Int?) -> String?, markers: TeachSupplierMarkerProjection?, importOnly: Boolean,
     ): TeachWorkbookCell {
         val type = attr("t") ?: "n"
+        if (importOnly) previewCheck(type != "str")
         var hasFormula = false
         var inline: String? = null
         var value: String? = null
@@ -386,6 +448,7 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
         elements {
             when (reader.localName) {
                 "f" -> {
+                    if (importOnly) throw TeachDraftPreviewConflict()
                     expect("f")
                     workbookCheck(!hasFormula && value == null && inline == null)
                     markers?.formula(reader)
@@ -403,6 +466,7 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                     inline = richText()
                 }
                 "extLst" -> {
+                    if (importOnly) throw TeachDraftPreviewConflict()
                     expect("extLst")
                     if (markers == null) skip() else skip { markers.rejectNestedEvidence(reader) }
                 }

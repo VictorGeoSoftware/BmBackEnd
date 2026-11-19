@@ -40,3 +40,24 @@ an audit capability nor a sentinel datasource. It runs outside Netty's event loo
 under the shared deadline/admission and closes SQL resources before releasing the
 upload permit. The restart test reconstructs the reader and registry instead of
 relying on a prior pointer, receipt, or key.
+
+## Enséñame — synthetic Excel proposal imports
+
+The optional import capability uses the existing QA guard, four authorization
+workers and four upload permits for POST and list GET. It passes the exact
+manifest-bound selection to the price applicator without retargeting. The
+import-only projection checks the synthetic table and optional identity sheet;
+V2 preview and activation still require their unchanged teaching pins.
+
+`TeachProposalImportStore` is independent of the catalog, PDF and the operational
+pricing repository. PostgreSQL composition and provisioning live only in `src/test`.
+The disposable proposal database has an append-only writer and a separate list
+login without access to the private attempt key or fingerprint. Each access
+verifies database, role, store identity, catalog identity, manifest, QA environment
+and schema version. The catalog and simulated PROD sentinel remain isolated.
+
+After preparation, the guard checks the same UID again before storage. A unique
+actor/attempt claim serializes duplicate writers. One transaction appends the batch
+and three cited proposal rows with exact SQL decimals, or the whole write rolls
+back. Committed attempts replay without selection; an independent read-only
+snapshot lists only the authenticated actor's committed batches.

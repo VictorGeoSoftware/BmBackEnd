@@ -100,8 +100,15 @@ internal class TeachDraftPreviewService(
 
     /** Same bounded inspection and semantic checks for preparation and execution; independent of the wire pin. */
     internal fun extract(bytes: ByteArray, checkpoint: () -> Unit): List<TeachDraftPreviewRow> {
-        val rule = gesternovaPreviewRule
         val inspection = inspector.inspectForDraftPreview(validator, bytes, checkpoint)
+        return applyTeachPriceRule(gesternovaPreviewRule, inspection, checkpoint)
+    }
+}
+
+/** Apply a resolved immutable rule to an already inspected table, without consulting the catalogue. */
+internal fun applyTeachPriceRule(
+    rule: TeachDraftPreviewRule, inspection: com.bm.backend.models.TeachDraftPreviewInspection, checkpoint: () -> Unit,
+): List<TeachDraftPreviewRow> {
         previewCheck(inspection.sheet.name == rule.sheet && inspection.stylesSha256 == rule.styleSha256)
         val cells = inspection.sheet.cells.associateBy { it.a1 }
         val headers = rule.headers + rule.bindings.map { it.header } + rule.absentHeaders
@@ -149,7 +156,6 @@ internal class TeachDraftPreviewService(
         }
         previewCheck(included == rule.fixedRows)
         return rows
-    }
 }
 
 private val decimalLexeme = Regex("(?:0|[1-9][0-9]{0,5})(?:\\.[0-9]{1,12})?")

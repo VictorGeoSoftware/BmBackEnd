@@ -42,3 +42,23 @@
   loopback, with A/B committed revisions from real preview and confirmation. A
   protected simulated sentinel says nothing about deployed stores, credentials,
   hosted QA, actual PROD or model/agent isolation. The hosted checklist remains open.
+
+## Enséñame — isolated QA Excel import harness
+
+- Harness only: no runtime mount, operational migrations/configuration, pricing
+  normalizer, PDF change, model, deployed service or hosted catalog. Do not
+  read real files, consult another environment or fall back on any failure.
+- The second synthetic workbook is not a teaching pin. Strict projection admits
+  the audited `Tarifas` table with at most the optional `BM Identity` sheet. The
+  actor sees only the three fixed rows of that batch, with exact decimal strings
+  and citations. Blanks are not zero and absent periods are not materialized.
+- Keep the selected revision, generation and manifest even if an activation
+  races with the import. Re-authorize before the write or replay, not inside
+  SQL; a later revocation cannot be made atomic with an in-flight commit.
+- Four shared permits and workers, one 15-second deadline. Check deadline and
+  observed peer closure before commit and wait for SQL close before releasing
+  the slot. Once commit starts, a lost response is not evidence of rollback.
+- Retain only successful receipts, cited rows and private dedupe keys for the
+  disposable fixture lifetime. No workbook, filename, token, export or backup.
+  The PDF test uses inert bytes and an isolated simulated repository with a fake
+  downstream on loopback. Nothing here validates or promotes a revision.

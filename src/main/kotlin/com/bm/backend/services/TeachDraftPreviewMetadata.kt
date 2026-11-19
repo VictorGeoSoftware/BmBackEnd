@@ -5,7 +5,7 @@ import com.bm.backend.models.TeachWorkbookSheet
 import javax.xml.stream.XMLStreamReader
 
 /** Additional worksheet proof only requested by V2. Nothing becomes visible by inference from headers. */
-internal class TeachDraftPreviewMetadata(private val namespace: String) {
+internal class TeachDraftPreviewMetadata(private val namespace: String, private val importDimensions: Set<String>? = null) {
     private val visibility = TeachClarificationVisibility(namespace)
     private val rows = mutableMapOf<Int, Boolean>()
     private val visible = mutableSetOf<String>()
@@ -55,7 +55,11 @@ internal class TeachDraftPreviewMetadata(private val namespace: String) {
                     empty()
                 }
             }
-            "dimension" -> { attributes(reader, setOf("ref")); empty() }
+            "dimension" -> {
+                attributes(reader, setOf("ref"))
+                importDimensions?.let { previewCheck(reader.getAttributeValue("", "ref") in it) }
+                empty()
+            }
             "pageMargins" -> { attributes(reader, MARGINS); empty() }
             // Merges, filters, alternate views, conditional formats, extensions, etc. are not in the profile.
             else -> throw TeachDraftPreviewConflict()

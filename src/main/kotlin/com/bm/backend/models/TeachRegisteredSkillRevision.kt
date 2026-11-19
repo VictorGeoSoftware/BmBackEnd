@@ -8,4 +8,5 @@ internal data class TeachRegisteredSkillRevision(
     val workbookSha256: String,
     val semantics: String,
     val manifest: String,
+    val rule: TeachDraftPreviewRule,
 )

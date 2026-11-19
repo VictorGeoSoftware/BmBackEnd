@@ -84,6 +84,8 @@ dependencies {
 
 tasks.test {
     useJUnitPlatform()
+    // The inert PDF regression starts an allowlisted child, never the application entry point.
+    doFirst { systemProperty("bm.teach.import.test.classpath", classpath.asPath) }
 }
 
 kotlin {

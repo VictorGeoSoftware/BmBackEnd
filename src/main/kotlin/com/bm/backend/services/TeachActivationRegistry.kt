@@ -30,6 +30,6 @@ internal class TeachActivationRegistry(pins: Set<String>) {
 
     fun exact(supplier: String, revision: String): TeachRegisteredSkillRevision? =
         if (supplier != GESTERNOVA_SUPPLIER) null else byRevision[revision]?.let { pin ->
-            TeachRegisteredSkillRevision(supplier, revision, GESTERNOVA_PREVIEW_PROFILE, pin, SEMANTICS, manifest)
+            TeachRegisteredSkillRevision(supplier, revision, GESTERNOVA_PREVIEW_PROFILE, pin, SEMANTICS, manifest, gesternovaPreviewRule)
         }
 }

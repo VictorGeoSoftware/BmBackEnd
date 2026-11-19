@@ -12,6 +12,12 @@ import com.bm.backend.models.TeachWorkbookPrincipal
 import com.bm.backend.models.TeachQaPilotPreview
 import com.bm.backend.models.TeachActivationResult
 import com.bm.backend.models.TeachWorkbookReceipt
+import com.bm.backend.models.TeachProposalImportReceipt
+import com.bm.backend.models.TeachProposalImportPage
+import com.bm.backend.repositories.ports.TeachProposalStoreUnavailable
+import com.bm.backend.repositories.ports.TeachProposalAttemptMismatch
+import com.bm.backend.services.TeachProposalImportService
+import com.bm.backend.services.teachProposalAttemptId
 import com.bm.backend.repositories.ports.TeachSkillCatalogUnavailable
 import com.bm.backend.services.InvalidWorkbook
 import com.bm.backend.services.InvalidReference
@@ -59,7 +65,7 @@ import io.ktor.server.response.respondBytes
 import io.ktor.server.routing.Route
 import io.ktor.server.routing.RoutingApplicationCall
 import io.ktor.server.routing.application
-import io.ktor.server.routing.post
+import io.ktor.server.routing.route
 import io.ktor.utils.io.cancel
 import io.netty.channel.ChannelFutureListener
 import kotlinx.coroutines.CancellationException
@@ -89,10 +95,14 @@ private const val REFERENCE_PATH = "/teach-me/references"
 private const val WORKBOOK_INSPECTION_PATH = "/teach-me/inspect-workbook"
 private const val CLARIFICATION_PATH = "/teach-me/clarifications"
 internal const val SUPPLIER_SELECTION_PATH = "/teach-me/select-supplier-skill"
+internal const val PROPOSAL_IMPORT_PATH = "/teach-me/proposal-import"
+internal const val PROPOSAL_IMPORT_LIST_PATH = "/teach-me/proposal-imports"
+internal const val PROPOSAL_IMPORT_ATTEMPT_HEADER = "X-Teach-Import-Attempt"
 private val teachUploadPaths = listOf(WORKBOOK_MESSAGE_PATH, REFERENCE_PATH, WORKBOOK_INSPECTION_PATH, CLARIFICATION_PATH)
 private val teachUploadApiSegments = teachUploadPaths.map { ("/api/v1$it").drop(1).split('/') }.toSet()
 private val activationApiSegments = ("/api/v1$ACTIVATION_PATH").drop(1).split('/')
 private val selectionApiSegments = ("/api/v1$SUPPLIER_SELECTION_PATH").drop(1).split('/')
+private val proposalApiSegments = listOf(PROPOSAL_IMPORT_PATH, PROPOSAL_IMPORT_LIST_PATH).map { "/api/v1$it".drop(1).split('/') }
 internal const val REFERENCE_FILENAME_HEADER = "X-Teach-Reference-Filename"
 internal const val REFERENCE_BODY_LIMIT = 2 * 1024 * 1024
 private val filenameWire = Regex("[A-Za-z0-9_-]{1,340}")
@@ -108,7 +118,7 @@ internal fun ApplicationCall.isTeachUpload(): Boolean {
     } catch (_: URLDecodeException) {
         return false // Leave malformed request paths to Ktor.
     }
-    return segments == activationApiSegments || segments == selectionApiSegments ||
+    return segments == activationApiSegments || segments == selectionApiSegments || segments in proposalApiSegments ||
         (request.httpMethod == HttpMethod.Post && segments in teachUploadApiSegments)
 }
 
@@ -123,9 +133,10 @@ internal fun Route.teachWorkbookMessageRoutes(
     draftPreviewEnabled: Boolean = false,
     activationPilot: TeachSkillActivationService? = null,
     supplierSelection: TeachSupplierSkillSelectionService? = null,
+    proposalImport: TeachProposalImportService? = null,
     authorize: (String) -> TeachWorkbookAuthDecision,
 ) {
-    // All POST routes use this one set of workers and permits; GET is independent.
+    // Both import operations share the existing upload workers and permits.
     val authWorkers = TeachWorkbookAuthWorkers(authorize)
     val owner = application
     val monitor = owner.environment.monitor
@@ -146,8 +157,10 @@ internal fun Route.teachWorkbookMessageRoutes(
     // At most the same four admitted upload requests can dispatch blocking catalog work.
     val catalogDispatcher = Dispatchers.IO.limitedParallelism(4)
     val paths = teachUploadPaths + listOfNotNull(ACTIVATION_PATH.takeIf { pilot != null },
-        SUPPLIER_SELECTION_PATH.takeIf { supplierSelection != null })
-    for (path in paths.filter { it != CLARIFICATION_PATH || clarification != null }) post(path) {
+        SUPPLIER_SELECTION_PATH.takeIf { supplierSelection != null }) +
+        if (proposalImport != null) listOf(PROPOSAL_IMPORT_PATH, PROPOSAL_IMPORT_LIST_PATH) else emptyList()
+    for (path in paths.filter { it != CLARIFICATION_PATH || clarification != null }) route(path,
+        if (path == PROPOSAL_IMPORT_LIST_PATH) HttpMethod.Get else HttpMethod.Post) { handle {
         if (call.response.headers[HttpHeaders.CacheControl] == null) call.response.header(HttpHeaders.CacheControl, "no-store")
         // A direct HTTP/1 caller should not reuse the connection after an early rejection.
         if (call.request.local.version.startsWith("HTTP/1")) call.response.header(HttpHeaders.Connection, "close")
@@ -155,41 +168,44 @@ internal fun Route.teachWorkbookMessageRoutes(
         if (path == CLARIFICATION_PATH && supplierDraft == null && SUPPLIER_DRAFT_MEDIA_TYPE.equals(
                 call.request.headers.getAll(HttpHeaders.ContentType)?.singleOrNull(), ignoreCase = true)) {
             call.respond(HttpStatusCode.NotFound)
-            return@post
+            return@handle
         }
         if (path == CLARIFICATION_PATH && draftPreview == null && DRAFT_PREVIEW_MEDIA_TYPE.equals(
                 call.request.headers.getAll(HttpHeaders.ContentType)?.singleOrNull(), ignoreCase = true)) {
             call.respond(HttpStatusCode.NotFound)
-            return@post
+            return@handle
         }
         val pilotPreview = path == CLARIFICATION_PATH && QA_PREVIEW_MEDIA_TYPE.equals(
             call.request.headers.getAll(HttpHeaders.ContentType)?.singleOrNull(), ignoreCase = true)
         val activate = path == ACTIVATION_PATH
         val select = path == SUPPLIER_SELECTION_PATH
+        val listImports = path == PROPOSAL_IMPORT_LIST_PATH
+        val importMode = listImports || path == PROPOSAL_IMPORT_PATH
         if (pilotPreview && pilot == null) {
             call.respond(HttpStatusCode.NotFound)
-            return@post
+            return@handle
         }
 
         val authHeader = call.request.headers[HttpHeaders.Authorization]
         if (authHeader.isNullOrBlank() || !authHeader.startsWith("Bearer ") ||
-            ((path == CLARIFICATION_PATH || activate || select) && (call.request.headers.getAll(HttpHeaders.Authorization)?.size != 1 || ',' in authHeader))) {
+            ((path == CLARIFICATION_PATH || activate || select || importMode) && (call.request.headers.getAll(HttpHeaders.Authorization)?.size != 1 || ',' in authHeader))) {
             call.respond(HttpStatusCode.Unauthorized, ErrorResponse(message = "Missing or invalid Authorization header"))
-            return@post
+            return@handle
         }
         val token = authHeader.removePrefix("Bearer ").trim()
         if (token.isBlank()) {
             call.respond(HttpStatusCode.Unauthorized, ErrorResponse(message = "Missing Firebase ID token"))
-            return@post
+            return@handle
         }
         call.withWorkbookPeer { checkPeer ->
             call.receiveTeachUpload(token, authWorkers, uploadPermits, validator, referenceValidator,
                 path == REFERENCE_PATH, inspector, path == WORKBOOK_INSPECTION_PATH,
                 clarification.takeIf { path == CLARIFICATION_PATH }, supplierDraft.takeIf { path == CLARIFICATION_PATH },
                 draftPreview.takeIf { path == CLARIFICATION_PATH }, pilot.takeIf { activate || pilotPreview }, activate,
-                supplierSelection.takeIf { select }, catalogDispatcher, beforeUpload, timeoutMillis, checkPeer)
+                supplierSelection.takeIf { select }, proposalImport.takeIf { importMode }, listImports,
+                catalogDispatcher, beforeUpload, timeoutMillis, checkPeer)
         }
-    }
+    } }
 }
 
 private suspend fun ApplicationCall.withWorkbookPeer(block: suspend (() -> Unit) -> Unit) {
@@ -236,6 +252,8 @@ private suspend fun ApplicationCall.receiveTeachUpload(
     pilot: TeachSkillActivationService?,
     activate: Boolean,
     selection: TeachSupplierSkillSelectionService?,
+    proposalImport: TeachProposalImportService?,
+    listImports: Boolean,
     catalogDispatcher: kotlinx.coroutines.CoroutineDispatcher,
     beforeUpload: suspend () -> Unit,
     timeoutMillis: Long,
@@ -266,7 +284,7 @@ private suspend fun ApplicationCall.receiveTeachUpload(
             if (authorization !is TeachWorkbookPrincipal && authorization != TeachWorkbookAuthDecision.Allowed) {
                 return@withTimeoutOrNull authorization
             }
-            if (pilot != null && (authorization !is TeachWorkbookPrincipal || !teachSyntheticActor.matches(authorization.uid))) {
+            if ((pilot != null || proposalImport != null) && (authorization !is TeachWorkbookPrincipal || !teachSyntheticActor.matches(authorization.uid))) {
                 return@withTimeoutOrNull HttpStatusCode.Forbidden
             }
             beforeUpload()
@@ -276,14 +294,40 @@ private suspend fun ApplicationCall.receiveTeachUpload(
                 return@withTimeoutOrNull HttpStatusCode.TooManyRequests
             }
             val types = request.headers.getAll(HttpHeaders.ContentType)
-            if ('?' in request.uri || (types != null && (types.size != 1 || ',' in types.single()))) {
+            if ((!listImports && '?' in request.uri) || (types != null && (types.size != 1 || ',' in types.single()))) {
                 throw InvalidTeachUpload()
             }
             val type = types?.singleOrNull()
-            if (selection != null && request.headers.names().any(::isSelectionOverride)) throw InvalidTeachUpload()
+            if ((selection != null || proposalImport != null) && request.headers.names().any { isSelectionOverride(it, proposalImport != null) }) throw InvalidTeachUpload()
+            val catalogRemaining = { checkpoint(); remainingMillis() }
+            if (proposalImport != null) {
+                val lengths = request.headers.getAll(HttpHeaders.ContentLength)
+                val encodings = request.headers.getAll(HttpHeaders.TransferEncoding)
+                if (listImports) {
+                    if ((lengths != null && lengths != listOf("0")) || encodings != null ||
+                        listOf(HttpHeaders.ContentType, HttpHeaders.ContentEncoding, WORKBOOK_FILENAME_HEADER,
+                            PROPOSAL_IMPORT_ATTEMPT_HEADER).any { request.headers.getAll(it) != null }) throw InvalidTeachUpload()
+                    val cursor = if ('?' !in request.uri) null else {
+                        Regex("cursor=([1-9][0-9]{0,18})").matchEntire(request.uri.substringAfter('?'))
+                            ?.groupValues?.get(1)?.toLongOrNull() ?: throw InvalidTeachUpload()
+                    }
+                    val uid = (authorization as TeachWorkbookPrincipal).uid
+                    val page = withContext(catalogDispatcher) { proposalImport.list(uid, cursor, catalogRemaining, checkpoint) }
+                    val bytes = clarificationJson.encodeToString(TeachProposalImportPage.serializer(), page).encodeToByteArray()
+                    checkpoint()
+                    if (bytes.size > 16 * 1024) return@withTimeoutOrNull HttpStatusCode.InternalServerError
+                    respondBytes(bytes, ContentType.parse("application/json; charset=UTF-8"), HttpStatusCode.OK)
+                    return@withTimeoutOrNull Unit
+                }
+                if (encodings != null && (lengths != null || !encodings.singleOrNull().equals("chunked", ignoreCase = true))) throw InvalidTeachUpload()
+                if (lengths != null) {
+                    val length = lengths.singleOrNull()?.takeIf { it.matches(Regex("[1-9][0-9]{0,18}")) }
+                        ?.toLongOrNull() ?: throw InvalidTeachUpload()
+                    if (length > WORKBOOK_BODY_LIMIT) throw TeachUploadTooLarge()
+                } else if (encodings == null) throw InvalidTeachUpload()
+            }
             if (pilot != null) {
                 val uid = (authorization as TeachWorkbookPrincipal).uid
-                val catalogRemaining = { checkpoint(); remainingMillis() }
                 if (!type.equals(if (activate) "application/json" else QA_PREVIEW_MEDIA_TYPE, ignoreCase = true) ||
                     request.headers.getAll(HttpHeaders.ContentEncoding) != null) return@withTimeoutOrNull HttpStatusCode.UnsupportedMediaType
                 if (listOf(WORKBOOK_FILENAME_HEADER, REFERENCE_FILENAME_HEADER, HttpHeaders.ContentDisposition)
@@ -358,6 +402,8 @@ private suspend fun ApplicationCall.receiveTeachUpload(
                     .encodeToByteArray().also { check(it.size <= 4096); checkpoint() }
             }
             val encoded = request.headers.getAll(if (reference) REFERENCE_FILENAME_HEADER else WORKBOOK_FILENAME_HEADER)
+            val attemptId = if (proposalImport == null) null else request.headers.getAll(PROPOSAL_IMPORT_ATTEMPT_HEADER)
+                ?.singleOrNull()?.takeIf(teachProposalAttemptId::matches) ?: throw InvalidTeachUpload()
             val filename: String
             val referenceType = if (reference) type?.lowercase() else null
             val pdf = referenceType == "application/pdf"
@@ -395,7 +441,26 @@ private suspend fun ApplicationCall.receiveTeachUpload(
                 if (size == 0) throw InvalidTeachUpload()
                 buffer
             } finally { channel.cancel() }
-            if (selection != null) {
+            if (proposalImport != null) {
+                val uid = (authorization as TeachWorkbookPrincipal).uid
+                val attempt = proposalImport.attempt(uid, checkNotNull(attemptId), filename, bytes, size)
+                val pending = withContext(catalogDispatcher) {
+                    proposalImport.prepare(attempt, filename, bytes, size, validator, inspector, catalogRemaining, checkpoint)
+                }
+                checkpoint()
+                val recheck = authWorkers.submit(token) ?: return@withTimeoutOrNull HttpStatusCode.TooManyRequests
+                val same = try { recheck.await().getOrThrow() } finally { recheck.cancel() }
+                checkpoint()
+                if (same != authorization) return@withTimeoutOrNull if (same == TeachWorkbookAuthDecision.InvalidToken)
+                    HttpStatusCode.Unauthorized else HttpStatusCode.Forbidden
+                val receipt = withContext(catalogDispatcher) { proposalImport.record(attempt, pending, catalogRemaining, checkpoint) }
+                val json = clarificationJson.encodeToString(TeachProposalImportReceipt.serializer(), receipt).encodeToByteArray()
+                checkpoint()
+                if (json.size > 4096) return@withTimeoutOrNull HttpStatusCode.InternalServerError
+                respondBytes(json, ContentType.parse("application/json; charset=UTF-8"),
+                    if (receipt.kind == "stored") HttpStatusCode.Created else HttpStatusCode.OK)
+                Unit
+            } else if (selection != null) {
                 val result = withContext(catalogDispatcher) {
                     selection.select(filename, validator, inspector, bytes, size, { checkpoint(); remainingMillis() }, checkpoint)
                 }
@@ -457,7 +522,17 @@ private suspend fun ApplicationCall.receiveTeachUpload(
         respond(HttpStatusCode.Conflict)
     } catch (_: TeachDraftPreviewConflict) {
         checkPeer()
-        respond(HttpStatusCode.Conflict)
+        if (proposalImport == null) respond(HttpStatusCode.Conflict)
+        else if (remaining() <= 0) respond(HttpStatusCode.RequestTimeout)
+        else respond(HttpStatusCode.Conflict, mapOf("error" to "incompatible_workbook"))
+    } catch (_: TeachProposalStoreUnavailable) {
+        checkPeer()
+        if (remaining() <= 0) respond(HttpStatusCode.RequestTimeout)
+        else respond(HttpStatusCode.ServiceUnavailable, mapOf("error" to "store_unavailable"))
+    } catch (_: TeachProposalAttemptMismatch) {
+        checkPeer()
+        if (remaining() <= 0) respond(HttpStatusCode.RequestTimeout)
+        else respond(HttpStatusCode.Conflict, mapOf("error" to "attempt_mismatch"))
     } catch (_: InvalidTeachSupplierDraft) {
         checkPeer()
         respond(HttpStatusCode.BadRequest, mapOf("error" to "invalid_message"))
@@ -489,11 +564,11 @@ private suspend fun ApplicationCall.receiveTeachUpload(
 private val selectionOverrides = setOf("env", "environment", "supplier", "supplierkey", "profile", "profilekey",
     "revision", "revisionid", "generation", "hash", "sha256", "workbookhash", "workbooksha256", "storeid", "manifest")
 
-private fun isSelectionOverride(header: String): Boolean {
+private fun isSelectionOverride(header: String, proposalImport: Boolean): Boolean {
     if (header.equals(HttpHeaders.ContentDisposition, ignoreCase = true) || header.equals(REFERENCE_FILENAME_HEADER, ignoreCase = true)) return true
     val key = header.lowercase(Locale.ROOT).replace('_', '-').removePrefix("x-").removePrefix("bm-")
         .removePrefix("teach-").replace("-", "")
-    return key in selectionOverrides
+    return key in selectionOverrides || (proposalImport && (key == "actor" || key == "uid"))
 }
 
 private suspend fun ApplicationCall.denyWorkbookUpload(decision: TeachWorkbookAuthDecision) {

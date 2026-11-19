@@ -608,3 +608,50 @@ BM_TEACH_CLARIFY_TEST_WEB="$(cd ../BmWeb && pwd)" ./gradlew test --rerun \
   --tests '*TeachSkillActivationRoutesTest.candidate Pages proxy and Ktor activate exact QA revision over loopback' --info
 ./gradlew build
 ```
+
+### Enséñame: synthetic QA Excel import harness
+
+Only the fixture Netty composition can mount this capability. With the existing
+QA guard, `POST /api/v1/teach-me/proposal-import` accepts `1..5 MiB` of raw XLSX
+with the singleton workbook media type, `X-Teach-Workbook-Filename` (unpadded
+base64url of the UTF-8 basename), and `X-Teach-Import-Attempt` (32 lowercase hex
+characters). `GET /api/v1/teach-me/proposal-imports` has no body and accepts
+only an optional exclusive positive BIGINT cursor (`?cursor=...`). Both routes
+are `no-store` and authorize independently, before the POST reads the body.
+
+The POST returns `201 stored` or `200 alreadyStored` with `importId`,
+`revisionId`, `generation`, and `proposalCount: 3`; it never returns proposal
+details. The GET returns `{kind:"imports",batches,nextCursor}` with up to
+four batches in decreasing ID order, limited to the authorized actor. IDs and
+generations are strings, as are exact decimal prices. Output includes units and
+source cell/header citations. Fixed `409` outcomes distinguish selector failures,
+`incompatible_workbook` and `attempt_mismatch`; the latter reuses a key with a
+different basename or different bytes. If a response is lost, consult the list
+or repeat the same attempt explicitly in the current view; do not generate a
+new attempt automatically. Commit may have finished even if confirmation was lost.
+
+Use only `src/test/resources/ensename/gesternova-20td-import-synthetic.xlsx`
+and the approved `oraculo-importacion.md`, both copied byte-for-byte. Compared
+with the sanitized teaching fixture, the import XLSX changes nine cell values
+and two benign XML metadata fields: the advisory sheet dimension (`A14:AE20`
+to `C14:AE20`) and the core `modified` timestamp. Cell coordinates, types,
+styles, blanks and visibility are unchanged. No commercial original was used.
+Tests derive a marker variant in memory and leave the existing teaching pins
+unchanged. PostgreSQL 16 is mandatory and disposable; DB/role/identity and
+protected sentinel checks happen against that fixture, never against a BM
+runtime. No hosted QA, model, publication
+or commercial verification is implied.
+
+With JDK 17 and Node 20 on `PATH` for the opt-in joint:
+
+```sh
+./gradlew test --rerun --tests '*TeachProposalImport*Test' --tests '*TeachSupplierSkillSelection*Test' --tests '*TeachSkillActivation*Test' --tests '*TeachDraftPreview*Test' --tests '*TeachMeAccessRoutesTest' --tests '*FirebaseRouteAuthTest' --tests '*PriceTableServiceTest' --tests '*PriceTableRepositoryTest' --info
+BM_TEACH_CLARIFY_TEST_WEB="$(cd ../BmWeb && pwd)" ./gradlew test --rerun \
+  --tests '*TeachProposalImportRoutesTest.candidate Pages proxy and Ktor import and list exact QA Excel proposals over loopback' --info
+./gradlew build
+```
+
+The focused gate includes the unchanged PDF multipart/admin-list routes against
+a separate simulated store and an allowlisted child pointed at a synthetic
+Docling HTTP server on loopback. Run the prior clarification, draft, preview
+and activation joints separately as well; default skips are not evidence.
