@@ -17,6 +17,7 @@ internal class TeachClarificationVisibility(private val sheetNamespace: String) 
     private var seenDefaults = false
     var headers: List<String>? = null
     fun result(): List<String>? = if (known) headers.orEmpty() else null
+    fun isKnown(): Boolean = known
 
     fun rowVisible(reader: XMLStreamReader): Boolean {
         val hidden = boolean(reader, "hidden")
@@ -27,7 +28,7 @@ internal class TeachClarificationVisibility(private val sheetNamespace: String) 
 
     fun columnVisible(column: Int): Boolean = known && !hiddenColumns[column]
 
-    fun skipMetadata(cursor: TeachWorkbookInspectionXml.Cursor, afterSheetData: Boolean) = with(cursor) {
+    fun skipMetadata(cursor: TeachWorkbookInspectionXml.Cursor, afterSheetData: Boolean, checkColumn: (XMLStreamReader) -> Unit = {}) = with(cursor) {
         when (reader.localName) {
             "cols" -> {
                 if (afterSheetData || reader.namespaceURI != sheetNamespace) known = false
@@ -40,6 +41,7 @@ internal class TeachClarificationVisibility(private val sheetNamespace: String) 
                                 known = false
                             } else {
                                 columns++
+                                checkColumn(reader)
                                 column(reader)
                             }
                         }

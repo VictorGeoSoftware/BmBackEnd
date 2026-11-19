@@ -1,6 +1,7 @@
 package com.bm.backend.services
 
 import com.bm.backend.models.TeachClarificationInspection
+import com.bm.backend.models.TeachDraftPreviewInspection
 import com.bm.backend.models.TeachWorkbookAttachment
 import com.bm.backend.models.TeachWorkbookCell
 import com.bm.backend.models.TeachWorkbookInspection
@@ -12,6 +13,7 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.encodeToStream
 import java.io.ByteArrayOutputStream
 import java.io.OutputStream
+import java.security.MessageDigest
 import java.time.LocalDate
 import java.time.LocalDateTime
 import java.time.format.DateTimeParseException
@@ -45,15 +47,24 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
         return TeachClarificationInspection(workbook, visibleHeaders)
     }
 
+    fun inspectForDraftPreview(
+        validator: TeachWorkbookValidator, bytes: ByteArray, checkpoint: () -> Unit,
+    ): TeachDraftPreviewInspection {
+        var result: TeachDraftPreviewInspection? = null
+        inspectStructure(validator, bytes, bytes.size, checkpoint, preview = { result = it })
+        return checkNotNull(result)
+    }
+
     private fun inspectStructure(
         validator: TeachWorkbookValidator, bytes: ByteArray, size: Int, checkpoint: () -> Unit,
         visibleHeaders: MutableList<List<String>?>? = null,
+        preview: ((TeachDraftPreviewInspection) -> Unit)? = null,
     ): TeachWorkbookInspection = validator.readPackage(bytes, size, checkpoint) { names, read ->
         val xml = TeachWorkbookInspectionXml(limits, checkpoint, read)
         validator.identify(names, exact = true,
             types = { xml.metadata(TYPES, TYPES_NS, "Types", it) },
             rels = { xml.metadata(RELS, RELS_NS, "Relationships", it) },
-        ) { main, contentType -> inspectParts(xml, names, main, contentType, visibleHeaders) }
+        ) { main, contentType -> inspectParts(xml, names, main, contentType, visibleHeaders, preview) }
     }
 
     @OptIn(ExperimentalSerializationApi::class)
@@ -75,6 +86,7 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
     private fun inspectParts(
         xml: TeachWorkbookInspectionXml, names: Set<String>, main: String, contentType: (String) -> String?,
         visibleHeaders: MutableList<List<String>?>?,
+        preview: ((TeachDraftPreviewInspection) -> Unit)?,
     ): TeachWorkbookInspection {
         val sheets = mutableListOf<TeachWorkbookSheetBinding>()
         val sheetNames = hashSetOf<String>()
@@ -116,17 +128,33 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                             empty()
                         }
                     }
-                    else -> skip()
+                    else -> {
+                        if (preview == null) skip() else {
+                            previewCheck(reader.namespaceURI == SHEET_NS)
+                            when (reader.localName) {
+                                "workbookProtection", "definedNames" -> { previewCheck(reader.attributeCount == 0); empty() }
+                                "calcPr" -> empty() // A setting, never an instruction to calculate.
+                                "bookViews" -> elements {
+                                    expect("workbookView")
+                                    previewCheck(attr("visibility") in setOf(null, "visible"))
+                                    empty()
+                                }
+                                else -> throw TeachDraftPreviewConflict()
+                            }
+                        }
+                    }
                 }
             }
             workbookCheck(seenSheets && sheets.isNotEmpty())
         }
+        if (preview != null) previewCheck(sheets.size == 1 && dateSystem == "1900")
         val directory = main.substringBeforeLast('/', "").let { if (it.isEmpty()) "" else "$it/" }
         val relationships = "${directory}_rels/${main.substringAfterLast('/')}.rels"
         val used = hashSetOf(main, relationships, TYPES, RELS)
         val ids = hashSetOf<String>()
         val targets = mutableMapOf<String, String>()
         var stringsPart: String? = null
+        var stylesPart: String? = null
         xml.parse(relationships, RELS_NS, "Relationships") {
             elements {
                 expect("Relationship", RELS_NS)
@@ -135,6 +163,7 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                 val target = required("Target")
                 workbookCheck(ids.add(id) && "vba" !in type.lowercase(Locale.ROOT))
                 val sheet = id in requiredIds
+                if (preview != null) previewCheck(attr("TargetMode") in setOf(null, "Internal"))
                 if (sheet || type == "$DOC_RELS_NS/sharedStrings") {
                     workbookCheck(!sheet || type == "$DOC_RELS_NS/worksheet")
                     val mode = attr("TargetMode")
@@ -146,10 +175,23 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                         workbookCheck(stringsPart == null)
                         stringsPart = part
                     }
+                } else if (preview != null) when (type) {
+                    "$DOC_RELS_NS/styles" -> {
+                        val part = if (target.startsWith('/')) target.drop(1) else directory + target
+                        previewCheck(stylesPart == null && safeWorkbookPart(part) && part in names && used.add(part) &&
+                            contentType(part) == "application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml")
+                        stylesPart = part
+                    }
+                    "$DOC_RELS_NS/theme" -> Unit // Not consulted; the pinned General number format does not depend on it.
+                    else -> throw TeachDraftPreviewConflict()
                 }
                 empty()
             }
         }
+        val styleDigest = if (preview != null) {
+            val part = stylesPart ?: throw TeachDraftPreviewConflict()
+            sha256Hex(MessageDigest.getInstance("SHA-256").digest(xml.readBoundedPart(part)))
+        } else null
         workbookCheck(targets.keys == requiredIds)
         val strings = stringsPart?.let { part ->
             xml.parse(part, SHEET_NS, "sst") {
@@ -170,24 +212,28 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
         var totalCells = 0
         val inspected = sheets.map { sheet ->
             val visibility = if (visibleHeaders != null && sheet.state == "visible") TeachClarificationVisibility(SHEET_NS) else null
+            val previewMetadata = if (preview != null) TeachDraftPreviewMetadata(SHEET_NS) else null
             val inspectedSheet = xml.parse(targets.getValue(sheet.relationshipId), SHEET_NS, "worksheet") {
-                worksheet(sheet, strings, visibility) { within(++totalCells <= limits.cells) }
+                worksheet(sheet, strings, visibility, previewMetadata) { within(++totalCells <= limits.cells) }
             }
             visibleHeaders?.add(if (visibility != null) visibility.result() else emptyList())
+            if (previewMetadata != null) checkNotNull(preview)(previewMetadata.finish(inspectedSheet, checkNotNull(styleDigest)))
             inspectedSheet
         }
         return TeachWorkbookInspection(1, dateSystem, inspected)
     }
 
     private fun TeachWorkbookInspectionXml.Cursor.worksheet(
-        sheet: TeachWorkbookSheetBinding, strings: List<String>, visibility: TeachClarificationVisibility?, countCell: () -> Unit,
+        sheet: TeachWorkbookSheetBinding, strings: List<String>, visibility: TeachClarificationVisibility?,
+        preview: TeachDraftPreviewMetadata?, countCell: () -> Unit,
     ): TeachWorkbookSheet {
         val cells = mutableListOf<TeachWorkbookCell>()
         var headers: List<String>? = null
         var sheetData = false
         elements {
             if (reader.localName != "sheetData") {
-                if (visibility != null) visibility.skipMetadata(this, sheetData) else skip()
+                if (preview != null) preview.metadata(this, sheetData)
+                else if (visibility != null) visibility.skipMetadata(this, sheetData) else skip()
             } else {
                 expect("sheetData")
                 workbookCheck(!sheetData)
@@ -200,7 +246,9 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                     val rowRef = required("r")
                     workbookCheck(ROW.matches(rowRef))
                     val row = rowRef.toInt()
+                    if (preview != null) previewCheck(row > previousRow)
                     workbookCheck(row in (previousRow + 1)..1_048_576)
+                    preview?.row(reader, row)
                     previousRow = row
                     var previousCol = 0
                     val firstCell = cells.size
@@ -208,6 +256,7 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                     val visibleCells = visibleHeaderRow?.let { mutableListOf<TeachWorkbookCell>() }
                     elements {
                         if (reader.localName == "extLst") {
+                            if (preview != null) throw TeachDraftPreviewConflict()
                             expect("extLst")
                             skip()
                         } else {
@@ -216,8 +265,10 @@ internal class TeachWorkbookInspector(private val limits: TeachWorkbookInspectio
                             val ref = required("r")
                             val match = A1.matchEntire(ref) ?: throw InvalidWorkbook()
                             val col = match.groupValues[1].fold(0) { acc, c -> acc * 26 + (c - 'A' + 1) }
+                            if (preview != null) previewCheck(col > previousCol && match.groupValues[2] == rowRef)
                             workbookCheck(col in (previousCol + 1)..16_384 && match.groupValues[2] == rowRef)
                             previousCol = col
+                            preview?.cell(reader, row, col, ref)
                             val parsed = cell(ref, strings)
                             cells.add(parsed)
                             if (visibleCells != null && visibleHeaderRow.columnVisible(col)) visibleCells.add(parsed)

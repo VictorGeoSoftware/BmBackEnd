@@ -2,6 +2,7 @@ package com.bm.backend.routes
 
 import com.bm.backend.models.ErrorResponse
 import com.bm.backend.models.TeachClarificationResult
+import com.bm.backend.models.TeachDraftPreviewResult
 import com.bm.backend.models.TeachReferenceAttachment
 import com.bm.backend.models.TeachReferenceReceipt
 import com.bm.backend.models.TeachSupplierDraftResponse
@@ -14,6 +15,8 @@ import com.bm.backend.services.InvalidTeachSupplierDraft
 import com.bm.backend.services.TeachClarificationAdapter
 import com.bm.backend.services.TeachClarificationConflict
 import com.bm.backend.services.TeachClarificationService
+import com.bm.backend.services.TeachDraftPreviewConflict
+import com.bm.backend.services.TeachDraftPreviewService
 import com.bm.backend.services.TeachReferenceValidator
 import com.bm.backend.services.TeachSupplierDraftAdapter
 import com.bm.backend.services.TeachSupplierDraftConflict
@@ -99,6 +102,7 @@ internal fun Route.teachWorkbookMessageRoutes(
     clarificationAdapter: TeachClarificationAdapter = fixedTeachClarificationAdapter,
     supplierDraftEnabled: Boolean = false,
     supplierDraftAdapter: TeachSupplierDraftAdapter = fixedTeachSupplierDraftAdapter,
+    draftPreviewEnabled: Boolean = false,
     authorize: (String) -> TeachWorkbookAuthDecision,
 ) {
     // All POST routes use this one set of workers and permits; GET is independent.
@@ -117,12 +121,18 @@ internal fun Route.teachWorkbookMessageRoutes(
     val inspector = TeachWorkbookInspector()
     val clarification = if (clarificationEnabled) TeachClarificationService(validator, inspector, referenceValidator, clarificationAdapter) else null
     val supplierDraft = if (clarificationEnabled && supplierDraftEnabled) TeachSupplierDraftService(validator, inspector, supplierDraftAdapter) else null
+    val draftPreview = if (supplierDraft != null && draftPreviewEnabled) TeachDraftPreviewService(validator, inspector) else null
     for (path in teachUploadPaths.filter { it != CLARIFICATION_PATH || clarification != null }) post(path) {
         if (call.response.headers[HttpHeaders.CacheControl] == null) call.response.header(HttpHeaders.CacheControl, "no-store")
         // A direct HTTP/1 caller should not reuse the connection after an early rejection.
         if (call.request.local.version.startsWith("HTTP/1")) call.response.header(HttpHeaders.Connection, "close")
 
         if (path == CLARIFICATION_PATH && supplierDraft == null && SUPPLIER_DRAFT_MEDIA_TYPE.equals(
+                call.request.headers.getAll(HttpHeaders.ContentType)?.singleOrNull(), ignoreCase = true)) {
+            call.respond(HttpStatusCode.NotFound)
+            return@post
+        }
+        if (path == CLARIFICATION_PATH && draftPreview == null && DRAFT_PREVIEW_MEDIA_TYPE.equals(
                 call.request.headers.getAll(HttpHeaders.ContentType)?.singleOrNull(), ignoreCase = true)) {
             call.respond(HttpStatusCode.NotFound)
             return@post
@@ -143,7 +153,7 @@ internal fun Route.teachWorkbookMessageRoutes(
             call.receiveTeachUpload(token, authWorkers, uploadPermits, validator, referenceValidator,
                 path == REFERENCE_PATH, inspector.takeIf { path == WORKBOOK_INSPECTION_PATH },
                 clarification.takeIf { path == CLARIFICATION_PATH }, supplierDraft.takeIf { path == CLARIFICATION_PATH },
-                beforeUpload, timeoutMillis, checkPeer)
+                draftPreview.takeIf { path == CLARIFICATION_PATH }, beforeUpload, timeoutMillis, checkPeer)
         }
     }
 }
@@ -187,6 +197,7 @@ private suspend fun ApplicationCall.receiveTeachUpload(
     inspector: TeachWorkbookInspector?,
     clarification: TeachClarificationService?,
     supplierDraft: TeachSupplierDraftService?,
+    draftPreview: TeachDraftPreviewService?,
     beforeUpload: suspend () -> Unit,
     timeoutMillis: Long,
     checkPeer: () -> Unit,
@@ -228,8 +239,23 @@ private suspend fun ApplicationCall.receiveTeachUpload(
             val type = types?.singleOrNull()
             if (clarification != null) {
                 val draftWire = SUPPLIER_DRAFT_MEDIA_TYPE.equals(type, ignoreCase = true)
-                if ((!draftWire && !CLARIFICATION_MEDIA_TYPE.equals(type, ignoreCase = true)) || request.headers.getAll(HttpHeaders.ContentEncoding) != null) {
+                val previewWire = DRAFT_PREVIEW_MEDIA_TYPE.equals(type, ignoreCase = true)
+                if ((!draftWire && !previewWire && !CLARIFICATION_MEDIA_TYPE.equals(type, ignoreCase = true)) || request.headers.getAll(HttpHeaders.ContentEncoding) != null) {
                     return@withTimeoutOrNull HttpStatusCode.UnsupportedMediaType
+                }
+                if (previewWire) {
+                    val service = checkNotNull(draftPreview)
+                    if (request.headers.getAll(WORKBOOK_FILENAME_HEADER) != null || request.headers.getAll(REFERENCE_FILENAME_HEADER) != null) {
+                        throw InvalidTeachUpload()
+                    }
+                    checkpoint()
+                    val channel = receiveChannel()
+                    val frame = try { readDraftPreviewFrame(channel, checkpoint) } finally { channel.cancel() }
+                    val result = service.execute(frame, checkpoint)
+                    checkpoint()
+                    val json = clarificationJson.encodeToString(TeachDraftPreviewResult.serializer(), result).encodeToByteArray()
+                    checkpoint()
+                    return@withTimeoutOrNull if (json.size <= 4096) json else HttpStatusCode.InternalServerError
                 }
                 if (draftWire) {
                     val service = checkNotNull(supplierDraft)
@@ -322,6 +348,9 @@ private suspend fun ApplicationCall.receiveTeachUpload(
         checkPeer()
         respond(HttpStatusCode.Conflict)
     } catch (_: TeachSupplierDraftConflict) {
+        checkPeer()
+        respond(HttpStatusCode.Conflict)
+    } catch (_: TeachDraftPreviewConflict) {
         checkPeer()
         respond(HttpStatusCode.Conflict)
     } catch (_: InvalidTeachSupplierDraft) {

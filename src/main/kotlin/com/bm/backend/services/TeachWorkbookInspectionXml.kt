@@ -38,9 +38,14 @@ internal class TeachWorkbookInspectionXml(
         }
     }
 
-    fun <T> parse(part: String, ns: String, root: String, block: Cursor.() -> T): T {
+    fun readBoundedPart(part: String): ByteArray {
         val bytes = read(part, minOf(limits.xmlPart, limits.xmlTotal - bytesRead))
         bytesRead += bytes.size
+        return bytes
+    }
+
+    fun <T> parse(part: String, ns: String, root: String, block: Cursor.() -> T): T {
+        val bytes = readBoundedPart(part)
         val bom = bytes.size >= 3 && bytes[0] == 0xef.toByte() && bytes[1] == 0xbb.toByte() && bytes[2] == 0xbf.toByte()
         val offset = if (bom) 3 else 0
         val source = object : ByteArrayInputStream(bytes, offset, bytes.size - offset) {

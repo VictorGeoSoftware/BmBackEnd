@@ -444,3 +444,75 @@ question, both content-derived IDs, invalid continuity and live admin
 revocation before the denied body is opened. Vitest runs without inherited
 credentials or Vite `.env` files; the test does not certify hosted QA, real
 Firebase, a real model or browser layout.
+
+### Preview draft prices (isolated local QA, V2)
+
+Default off. Requires all the QA/clarification/demo opt-ins above and, separately,
+`BM_TEACH_PREVIEW_LOCAL=true` on BmBackend and `NEXT_PUBLIC_TEACH_PREVIEW_LOCAL=true`
+in BmWeb. Do not configure this in hosted QA or production. The same guard,
+four auth workers, four upload permits, 15-second deadline and observed-close
+behavior apply to each POST. No context or execution history is stored.
+
+Use `/api/v1/teach-me/clarifications` with singleton
+`Content-Type: application/vnd.bm.teach-draft-preview`; no parameters, encoding,
+query, redirects, names or references. The four-byte BE length prefixes a
+strict UTF-8 tuple (1–32 KiB), then exactly `xlsxBytes` raw bytes (1–5 MiB):
+
+```text
+[1,"prepare",xlsxBytes,profileKey]
+[1,"preview",xlsxBytes,profileKey,supplierKey,workbookSha256,revisionId]
+```
+
+Select `gesternova-20td-sanitized` explicitly; `supplierKey` is `gesternova`.
+Only the exact approved [`gesternova-20td-sanitized.xlsx`](src/test/resources/ensename/gesternova-20td-sanitized.xlsx)
+bytes are eligible, including on execution. The separate [oracle](src/test/resources/ensename/oraculo-borrador.md)
+documents the expected prices, unit literals, citations and exclusions. These
+resources are for tests only; neither is read by the service at runtime. The
+bounded workbook inspector supplies literal cell values plus preview-only
+visibility and style proof. `Tarifas` row 14 is the header and only visible
+`2.0TD` / `Precio por Periodos` rows 16–18 yield offers. Read energy P1 from
+`K` and power P1/P2 from `S/T` at verified General format, no conversions.
+Energy P2/P3 in `L/M` must be blank or absent; zero is a price, not absence.
+No formula caches, non-General styles, localized decimals, or inferences from
+surplus fields. Decimals are strings from exact BigDecimal parsing of unsigned
+plain literals with 1–6 integer digits (no padding) and up to 12 fractional
+digits, no exponent, precision ≤18, scale 0–12, range 0–999999.999999999999.
+
+`prepare` returns `{kind:"draft",draft:<V2>}` where V2 contains `schemaVersion:2`,
+the profile and supplier keys, the byte digest, the closed `rule` and `revisionId`.
+`preview` reconstructs V2 again and returns `{kind:"preview",profileKey,supplierKey,workbookSha256,revisionId,rows}`.
+The ordered rows include proposal/tariff/type with citations and ordered prices
+with term/period/unit/exact decimal and header/value citations. Neither response
+is an import payload. Both successes are at most 4 KiB and no-store, without
+truncation. Wrong profile, selection, supported-but-different XLSX or profile
+semantics gives `409`; malformed frame `400`, budget `413`, invalid format
+`415`; auth, disabled, deadline and saturation statuses are unchanged. Invalid
+upstream success becomes a generic `502` at Pages.
+
+V2 revision ID: lowercase SHA-256 of concatenated UTF-8 fields, each prefixed
+with its byte length as ASCII unpadded decimal followed by `:`. Lists begin
+with their element count as an ordinary field. Field order:
+
+1. `bm.teach.supplier-draft/v2`, `2`, `profileKey`, `supplierKey`, `workbookSha256`;
+2. rule `kind`, `sheet`, `candidateRows`, `fixedRows`, `tariff`, `otherTariff`, `fixedType`, `excludedTypes`;
+3. `headers` as `(a1,label)`; `bindings` as `(term,period,unit,header.a1,header.label)`; `absentHeaders` as `(a1,label)`;
+4. `styleSha256`, `decimalPolicy`.
+
+The kind and policy names tag the closed extraction/format semantics; change
+their version if changing those semantics outside the declarative fields. V1
+IDs do not identify a V2 rule. V2 IDs are not a grant, signature, locator or
+proof of a prior request. The route calls only in-process inspection/extraction:
+no store, PDF/import/catalog/proposal operation, BmPriceAgent, model or provider.
+
+With JDK 17, add `--tests '*TeachDraftPreview*Test'` to the focused gate above.
+With Node 20 on `PATH`, run both earlier joints and:
+
+```sh
+BM_TEACH_CLARIFY_TEST_WEB="$(cd ../BmWeb && pwd)" ./gradlew test --rerun \
+  --tests '*TeachDraftPreviewRoutesTest.candidate Pages proxy and Ktor prepare and preview over loopback' --info
+```
+
+This compares the complete oracle at the Pages → Netty boundary and tests wrong
+bytes/revision, disabled flags and revocation without opening the denied body.
+It uses ephemeral loopback, controlled authorization and no QA stack. The full
+backend gate is still `./gradlew build`.

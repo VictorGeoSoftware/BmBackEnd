@@ -24,6 +24,7 @@ internal fun Route.teachMeAccessRoutes(
     clarificationAdapter: TeachClarificationAdapter = fixedTeachClarificationAdapter,
     supplierDraftEnabled: Boolean = false,
     supplierDraftAdapter: TeachSupplierDraftAdapter = fixedTeachSupplierDraftAdapter,
+    draftPreviewEnabled: Boolean = false,
     verifyToken: (String) -> AuthenticatedFirebaseUser = ::verifyFirebaseIdToken
 ) {
     if (!policy.enabled) return
@@ -38,7 +39,8 @@ internal fun Route.teachMeAccessRoutes(
         call.respond(HttpStatusCode.NoContent)
     }
     teachWorkbookMessageRoutes(clarificationEnabled = clarificationEnabled, clarificationAdapter = clarificationAdapter,
-        supplierDraftEnabled = supplierDraftEnabled, supplierDraftAdapter = supplierDraftAdapter) { token ->
+        supplierDraftEnabled = supplierDraftEnabled, supplierDraftAdapter = supplierDraftAdapter,
+        draftPreviewEnabled = draftPreviewEnabled) { token ->
         val user = try { verifyToken(token) } catch (_: FirebaseAuthException) {
             return@teachWorkbookMessageRoutes TeachWorkbookAuthDecision.InvalidToken
         }
