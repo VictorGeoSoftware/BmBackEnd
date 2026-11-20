@@ -18,9 +18,6 @@ import com.bm.backend.repositories.UserActivityRepository
 import com.bm.backend.repositories.WebPushTokensRepository
 import com.bm.backend.routes.priceTableRoutes
 import com.bm.backend.routes.adminAccessRoutes
-import com.bm.backend.routes.teachMeAccessRoutes
-import com.bm.backend.routes.isTeachUpload
-import com.bm.backend.services.TeachMeAccessPolicy
 import com.bm.backend.routes.authRoutes
 import com.bm.backend.routes.collectedPricesRoutes
 import com.bm.backend.routes.grantedUsersRoutes
@@ -59,7 +56,6 @@ import com.bm.backend.services.UserConsumptionService
 import com.bm.backend.services.UserDataService
 import com.bm.backend.services.UserActivityService
 import com.bm.backend.services.ValidationException
-import io.ktor.http.HttpHeaders
 import io.ktor.serialization.kotlinx.json.*
 import io.ktor.server.application.*
 import io.ktor.server.metrics.micrometer.*
@@ -139,18 +135,9 @@ fun Application.configurePlugins(): PrometheusMeterRegistry {
         registry = prometheusMeterRegistry
     }
 
-    // Cover even unmatched (non-QA) and rate-limited upload requests, without mounting a non-QA route.
-    intercept(ApplicationCallPipeline.Plugins) {
-        if (call.isTeachUpload()) call.response.header(HttpHeaders.CacheControl, "no-store")
-    }
-
     install(StatusPages) {
         // Validation failures are expected, caller-fixable and safe to echo back.
         exception<ValidationException> { call, cause ->
-            if (call.isTeachUpload()) {
-                call.respond(io.ktor.http.HttpStatusCode.BadRequest, ErrorResponse(message = "Invalid request", requestId = call.requestId))
-                return@exception
-            }
             call.application.log.warn("Validation failed: {}", cause.message)
             call.respond(
                 io.ktor.http.HttpStatusCode.BadRequest,
@@ -164,17 +151,12 @@ fun Application.configurePlugins(): PrometheusMeterRegistry {
         // stack trace (previously it was silently swallowed) and return a generic
         // message, since `cause.message` can leak SQL fragments and file paths.
         exception<Throwable> { call, cause ->
-            if (call.isTeachUpload()) {
-                // Third-party parse/IO errors can contain user-controlled metadata. Never log the exception here.
-                call.application.log.error("Unhandled Enséñame upload failure")
-            } else {
-                call.application.log.error(
-                    "Unhandled exception while processing {} {}",
-                    call.request.httpMethod.value,
-                    call.request.path(),
-                    cause,
-                )
-            }
+            call.application.log.error(
+                "Unhandled exception while processing {} {}",
+                call.request.httpMethod.value,
+                call.request.path(),
+                cause,
+            )
             call.respond(
                 io.ktor.http.HttpStatusCode.InternalServerError,
                 ErrorResponse(
@@ -313,13 +295,6 @@ fun Application.configureRouting(
                     )
                     authRoutes(userActivityService, accessControlService)
                     adminAccessRoutes(adminAccessControlService)
-                    teachMeAccessRoutes(
-                        adminAccessControlService,
-                        TeachMeAccessPolicy(DeploymentInfo.environment, System.getenv("BM_TEACH_ME_ADMIN_EMAILS")),
-                        clarificationEnabled = System.getenv("BM_TEACH_CLARIFY_LOCAL") == "true",
-                        supplierDraftEnabled = System.getenv("BM_TEACH_DRAFT_LOCAL") == "true",
-                        draftPreviewEnabled = System.getenv("BM_TEACH_PREVIEW_LOCAL") == "true",
-                    )
                     grantedUsersRoutes(grantedUsersService, adminAccessControlService)
                     collectedPricesRoutes(
                         collectedPricesService,
