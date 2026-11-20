@@ -28,7 +28,6 @@ on:
 jobs:
   deploy:
     name: Deploy to VPS (Docker)
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
 
     steps:
@@ -79,77 +78,10 @@ jobs:
             docker compose up -d backend-prod
           "
 
-      - name: Health check (PROD)
-        if: github.ref == 'refs/heads/main'
-        run: |
-          sleep 15
-          echo "Checking PROD backend..."
-          # Through nginx + TLS, the path real clients use. Port 8081 is bound
-          # to 127.0.0.1 on the VPS and is not reachable from GitHub runners.
-          curl -f https://api.poweredbyadvisors.com/health || exit 1
-          echo "✅ PROD deployment successful!"
-
-      - name: Notify on failure (PROD)
-        if: failure() && github.ref == 'refs/heads/main'
-        run: |
-          echo "❌ PROD deployment failed! Recent backend-prod logs:"
-          ssh root@217.154.181.175 "cd /opt/bm/BmInfra && docker compose logs --tail=100 backend-prod" || true
-
-  deploy-qa:
-    name: Deploy QA to VPS (Docker)
-    if: github.ref == 'refs/heads/qa'
-    runs-on: ubuntu-latest
-    environment: qa
-    concurrency: deploy-backend-qa
-
-    steps:
-      - name: Setup SSH
-        env:
-          SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
-        run: |
-          umask 077
-          mkdir -p ~/.ssh
-          printf '%s\n' "$SSH_PRIVATE_KEY" > ~/.ssh/id_rsa
-          printf '%s\n' '217.154.181.175 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIFHKk7WnrrLvg1+QLYR3z5NGy7p7ZTFmwkG2Yl8j6SdG' > ~/.ssh/known_hosts
-
       - name: Deploy QA on server
-        env:
-          BM_TEACH_ME_ADMIN_EMAILS: ${{ secrets.BM_TEACH_ME_ADMIN_EMAILS }}
+        if: github.ref == 'refs/heads/qa'
         run: |
-          email='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
-          if [[ ! "$BM_TEACH_ME_ADMIN_EMAILS" =~ ^[[:blank:]]*($email)[[:blank:]]*,[[:blank:]]*($email)[[:blank:]]*$ ]]; then
-            echo '::error::Set BM_TEACH_ME_ADMIN_EMAILS in the qa environment to two comma-separated sign-in emails.'
-            exit 1
-          fi
-          first=${BASH_REMATCH[1],,}
-          second=${BASH_REMATCH[2],,}
-          if [[ "$first" == "$second" ]]; then
-            echo '::error::The two Ensename nominees must be distinct.'
-            exit 1
-          fi
-
-          # Pass the value as data on SSH stdin, not as shell code or an argument.
-          IFS= read -r -d '' remote_script <<'REMOTE' || true
-            set -euo pipefail
-            IFS= read -r allowlist
-
-            cd /opt/bm/BmInfra
-            umask 077
-            tmp=$(mktemp .teach-me-qa.XXXXXX)
-            trap 'rm -f -- "$tmp"' EXIT
-            printf 'BM_TEACH_ME_ADMIN_EMAILS=%s\n' "$allowlist" > "$tmp"
-            mv -fT -- "$tmp" teach-me-qa.env
-
-            docker compose config --format json | EXPECTED_TEACH_ALLOWLIST="$allowlist" python3 -c '
-          import json, os, sys
-          services = json.load(sys.stdin)["services"]
-          key = "BM_TEACH_ME_ADMIN_EMAILS"
-          targets = {name for name, cfg in services.items() if key in cfg.get("environment", {})}
-          if targets != {"backend-qa"} or services["backend-qa"]["environment"].get(key) != os.environ["EXPECTED_TEACH_ALLOWLIST"]:
-              sys.exit("Ensename allowlist must resolve from the VPS override for backend-qa only.")
-          print("Ensename allowlist is configured for QA only.")
-          '
-
+          ssh root@217.154.181.175 "set -e
             # QA gets its own checkout so the qa branch never touches the
             # main checkout used by PROD builds.
             if [ ! -d /opt/bm/BmBackEnd-qa ]; then
@@ -168,19 +100,35 @@ jobs:
             docker compose build backend-qa
 
             echo '🔄 Recreating QA backend container...'
-            docker compose up -d --no-deps backend-qa
-          REMOTE
-          printf '%s,%s\n' "$first" "$second" | ssh -o BatchMode=yes -o StrictHostKeyChecking=yes root@217.154.181.175 "$remote_script"
+            docker compose up -d backend-qa
+          "
+
+      - name: Health check (PROD)
+        if: github.ref == 'refs/heads/main'
+        run: |
+          sleep 15
+          echo "Checking PROD backend..."
+          # Through nginx + TLS, the path real clients use. Port 8081 is bound
+          # to 127.0.0.1 on the VPS and is not reachable from GitHub runners.
+          curl -f https://api.poweredbyadvisors.com/health || exit 1
+          echo "✅ PROD deployment successful!"
 
       - name: Health check (QA)
+        if: github.ref == 'refs/heads/qa'
         run: |
           sleep 15
           echo "Checking QA backend..."
           curl -f https://api.qa.poweredbyadvisors.com/health || exit 1
           echo "✅ QA deployment successful!"
 
+      - name: Notify on failure (PROD)
+        if: failure() && github.ref == 'refs/heads/main'
+        run: |
+          echo "❌ PROD deployment failed! Recent backend-prod logs:"
+          ssh root@217.154.181.175 "cd /opt/bm/BmInfra && docker compose logs --tail=100 backend-prod" || true
+
       - name: Notify on failure (QA)
-        if: failure()
+        if: failure() && github.ref == 'refs/heads/qa'
         run: |
           echo "❌ QA deployment failed! Recent backend-qa logs:"
           ssh root@217.154.181.175 "cd /opt/bm/BmInfra && docker compose logs --tail=100 backend-qa" || true
