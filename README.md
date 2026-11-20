@@ -169,6 +169,25 @@ An empty or missing list grants nothing. Restart or recreate the QA backend
 to apply list changes; removing general admin access takes effect on the next
 request without a restart. No configuration is needed in production.
 
+For hosted QA, store the two comma-separated emails as the
+`BM_TEACH_ME_ADMIN_EMAILS` secret in the BmBackEnd GitHub `qa` environment, not
+as a repository secret. Restrict that environment to the `qa` branch. The QA
+deploy writes the allowlist to `/opt/bm/BmInfra/teach-me-qa.env` with mode `0600`.
+Before the first deploy, add this under the existing `services.backend-qa` in
+the VPS-local `docker-compose.override.yml`, preserving its other settings:
+
+```yaml
+    env_file:
+      - path: ./teach-me-qa.env
+        required: false
+```
+
+To revoke all Ensename access immediately, remove the QA secret and the
+server-local `teach-me-qa.env`, then run `docker compose up -d --no-deps
+--force-recreate backend-qa` from `/opt/bm/BmInfra`. Removing the GitHub secret
+alone does not change the running container. The QA workflow requires a valid
+secret on subsequent deployments.
+
 `POST /api/v1/teach-me/messages` is also QA-only and rechecks the same grant
 before opening the request body. It accepts a single nonempty raw `.xlsx` body
 (`Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet`,
